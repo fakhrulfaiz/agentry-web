@@ -21,6 +21,10 @@ Copy `.env.example` to `.env.local` and fill it in. The server validates these v
 | `AGENTRY_WEB_KEYCLOAK_CLIENT_ID` | keycloak mode | Confidential client id (e.g. `agentry-web`). |
 | `AGENTRY_WEB_KEYCLOAK_CLIENT_SECRET` | keycloak mode | Client secret. |
 
+Behind a reverse proxy, forward `X-Forwarded-Proto` and `X-Forwarded-Host` (the app uses them for same-origin checks and Keycloak redirect URIs), or set Auth.js's `AUTH_URL` to the public URL.
+
+The session cookie is `Secure` whenever `NODE_ENV=production`, so `pnpm start` over plain `http://` needs HTTPS in front of it (Safari drops `Secure` cookies on `http://localhost`); use `pnpm dev` for local http.
+
 ## Development
 
 ```bash
@@ -36,5 +40,17 @@ Other scripts:
 | `pnpm typecheck` | TypeScript check. |
 | `pnpm test` | Unit and component tests (Vitest). |
 | `pnpm test:e2e` | End-to-end tests (Playwright; run `pnpm exec playwright install chromium` once). |
+
+## Keycloak live check
+
+The Keycloak sign-in path is covered by unit tests against a mocked token endpoint; check it once against a real realm before release:
+
+1. In the realm, create a confidential client (e.g. `agentry-web`) with valid redirect URI `<app origin>/api/auth/callback/keycloak` and valid post-logout redirect URI `<app origin>/login`.
+2. Start the app with `AGENTRY_WEB_AUTH=keycloak` and the three `AGENTRY_WEB_KEYCLOAK_*` variables (behind your proxy if you deploy behind one).
+3. Sign in from `/login`: you land on `/` signed in, and the user menu shows your owner id (`sub`) and realm roles.
+4. In the browser dev tools, check that no cookie, storage entry, response or JS-readable value contains an access, refresh or ID token (only the encrypted `agentry_session*` cookies and Auth.js's own cookies exist).
+5. Lower the realm's access token lifespan (e.g. 2 minutes), wait past it, then reload a chat: it keeps working (the BFF refreshed the token), with "Revoke Refresh Token" both off and on.
+6. Stop Keycloak briefly and use the app: requests answer 503 and you stay signed in; start it again and the app recovers.
+7. Sign out from the user menu: Keycloak asks to confirm, then returns you to `/login`; going back to `/` asks you to sign in again.
 
 Contributor and agent conventions live in [AGENTS.md](AGENTS.md); the change history is in [CHANGELOG.md](CHANGELOG.md).

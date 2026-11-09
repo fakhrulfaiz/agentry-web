@@ -38,7 +38,16 @@ async function sendInChat(page: Page, text: string) {
 }
 
 test('apikey sign-in, then a new chat streams the scripted reply', async ({ page }) => {
-  await page.goto('/')
+  const cspViolations: string[] = []
+  page.on('console', (m) => {
+    if (/Content Security Policy/i.test(m.text())) cspViolations.push(m.text())
+  })
+  const first = await page.goto('/')
+  const headers = first?.headers() ?? {}
+  expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
+  expect(headers['content-security-policy']).toContain("img-src 'self' data:")
+  expect(headers['x-content-type-options']).toBe('nosniff')
+  expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
   await expect(page).toHaveURL(/\/login$/)
   await signIn(page)
   await startChat(page, 'Hello there')
@@ -51,6 +60,7 @@ test('apikey sign-in, then a new chat streams the scripted reply', async ({ page
   // The new chat is in the sidebar under its first message.
   await expect(page.getByRole('link', { name: 'Hello there' })).toBeVisible()
   await expect(composer(page)).toBeFocused()
+  expect(cspViolations).toEqual([])
 })
 
 test('reopening a chat shows the full history once: user, tool and assistant', async ({ page }) => {

@@ -4,8 +4,43 @@ import type { NextConfig } from 'next'
 
 const root = import.meta.dirname
 
+const isDev = process.env.NODE_ENV === 'development'
+
+/**
+ * Baseline Content Security Policy (no nonces). Next's inline bootstrap scripts
+ * need 'unsafe-inline' (and dev/HMR 'unsafe-eval'); KaTeX and astryx set inline
+ * styles. Fonts: theme-neutral imports Figtree from Google Fonts. Images only
+ * from this origin or data: URLs (assistant Markdown never loads remote images).
+ * `form-action` is left unset: the Keycloak sign-in form redirects to the
+ * realm's origin, which is only known at runtime.
+ */
+const csp = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data:",
+  `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ')
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: csp },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+        ],
+      },
+    ]
+  },
 }
 
 // StyleX via the SWC (Rust) compiler, so next/font keeps working. Turbopack compiles

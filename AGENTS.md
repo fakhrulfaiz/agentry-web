@@ -8,7 +8,7 @@ Read this first in every session. `CLAUDE.md` is a symlink to this file; edit `A
 
 ## Status
 
-- F1 (shell + sign-in + chat): spec approved, plan written, **implementation in progress** (Task 1 scaffold done).
+- F1 (shell + sign-in + chat): **implemented** on `feat/f1` (all 8 plan tasks). The final whole-branch review is done and its fixes are in (Markdown images, Keycloak refresh/logout hardening, stream snapshot ordering, security headers). **Pending:** the manual Keycloak live check (README "Keycloak live check") and the live check against a real Agentry (`docs/live-check.md`).
   - Spec: `docs/superpowers/specs/2026-11-08-agentry-web-f1-design.md`
   - Plan: `docs/superpowers/plans/2026-11-08-agentry-web-f1.md` (8 tasks)
 - Later specs: F2 admin, F3 artifacts/files, F4 trace inspector + subagent views.
