@@ -1,13 +1,25 @@
 /**
- * Conversation reducer: folds Agentry wire events (and, optionally, saved
- * items) into the views the chat renders. Pure functions; every update returns
- * a new state and never mutates the previous one.
+ * Conversation reducer: folds Agentry wire events and saved items into the
+ * views the chat renders. Pure functions; every update returns a new state and
+ * never mutates the previous one.
  *
  * Event ids: an event with an SSE `id` is durable. It is applied once (ids
  * already in `seen`, or numerically at or below `lastEventId`, are ignored)
  * and moves `lastEventId`. An event without an `id` is ephemeral (status
  * snapshots, approval overlays, dispatch errors): it is always applied and
  * never enters `seen` or moves `lastEventId`.
+ *
+ * History then replay (ruling R14): the hook folds `GET /items` first and then
+ * replays the stream from `Last-Event-ID: 0`. Item ids are deterministic and
+ * shared by `/items` and the stream, so every view is upserted by id: a
+ * replayed event for a view the items already created updates it in place.
+ * A finished assistant message ignores replayed `item.added` and deltas, so its
+ * text is never doubled.
+ *
+ * Order: each view remembers its turn (`turnOf`). A new view is inserted after
+ * the last view of the same turn, so a replayed notice or delegation card for
+ * an old turn lands inside that turn, not at the bottom. Views without a turn
+ * are appended.
  *
  * Required actions: durable status frames own `function_call` and
  * `environment_connection` actions. Approval and question actions only ever
@@ -42,25 +54,30 @@ export interface ConversationState {
   items: MessageView[]
   lastEventId: string | null
   seen: ReadonlySet<string>
+  /** View id → turn id, for chronological insertion. */
+  turnOf: ReadonlyMap<string, string>
+  /** The open top-level turn, if any. */
+  openTurn: string | null
 }
 
 type ToolView = Extract<MessageView, { kind: 'tool' }>
 type ActionView = Extract<MessageView, { kind: 'action' }>
+type UserView = Extract<MessageView, { kind: 'user' }>
 
 const LOCAL_PREFIX = 'local:'
 
 export function initialState(sessionId: string): ConversationState {
-  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set() }
+  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null }
 }
 
 /** Folds saved items (`GET .../items`, oldest first). Subagent items are skipped; event ids are untouched. */
 export function applyItems(s: ConversationState, items: StoredSessionItem[]): ConversationState {
-  let views = s.items
+  let next = s
   for (const item of items) {
     if (item.subagent_id) continue
-    views = applyItem(views, item, true)
+    next = applyItem(next, item, true)
   }
-  return views === s.items ? s : { ...s, items: views }
+  return actionsLast(next)
 }
 
 /** Folds one wire event. `id` is the SSE `id:` line; omit it for ephemeral events. */
@@ -76,8 +93,25 @@ export function applyEvent(s: ConversationState, e: { id?: string; event: OAISes
 }
 
 /**
+ * Shows a just-sent message before the server echoes it; replaced by the
+ * server item with the same text. Sent during a turn, it belongs to that turn
+ * (steering), so later replies of the turn follow it.
+ */
+export function appendLocalUserMessage(s: ConversationState, text: string): ConversationState {
+  const n = s.items.filter((v) => v.id.startsWith(LOCAL_PREFIX)).length + 1
+  return place(s, { kind: 'user', id: `${LOCAL_PREFIX}${n}`, text }, s.openTurn ?? undefined, true)
+}
+
+/** Drops the latest optimistic message with this text (its send failed). */
+export function removeLocalUserMessage(s: ConversationState, text: string): ConversationState {
+  const index = s.items.findLastIndex((v) => v.kind === 'user' && v.id.startsWith(LOCAL_PREFIX) && v.text === text)
+  if (index === -1) return s
+  return { ...s, items: [...s.items.slice(0, index), ...s.items.slice(index + 1)] }
+}
+
+/**
  * Pending actions always render after the conversation: an approval taken from
- * the session snapshot can arrive before the replayed history it belongs to.
+ * the session snapshot can arrive before the history it belongs to.
  */
 function actionsLast(s: ConversationState): ConversationState {
   const firstAction = s.items.findIndex((v) => v.kind === 'action')
@@ -86,12 +120,6 @@ function actionsLast(s: ConversationState): ConversationState {
     ...s,
     items: [...s.items.filter((v) => v.kind !== 'action'), ...s.items.filter((v) => v.kind === 'action')],
   }
-}
-
-/** Shows a just-sent message before the server echoes it; replaced by the server item with the same text. */
-export function appendLocalUserMessage(s: ConversationState, text: string): ConversationState {
-  const n = s.items.filter((v) => v.id.startsWith(LOCAL_PREFIX)).length + 1
-  return { ...s, items: [...s.items, { kind: 'user', id: `${LOCAL_PREFIX}${n}`, text }] }
 }
 
 function isAtOrBefore(id: string, last: string | null): boolean {
@@ -111,30 +139,28 @@ function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean
       return applyStatus(s, event, ephemeral)
     case 'agent.session.turn.created':
     case 'agent.session.turn.in_progress':
-      return event.turn.subagent_id ? { ...s, items: upsertSubagent(s.items, event.turn) } : s
+      return event.turn.subagent_id ? placeSubagent(s, event.turn) : { ...s, openTurn: event.turn.id }
     case 'agent.session.turn.completed':
     case 'agent.session.turn.failed':
     case 'agent.session.turn.cancelled':
       return applyTurnEnd(s, event.turn)
     case 'agent.session.turn.item.added':
-      return { ...s, items: applyItem(s.items, event.item, false) }
+      return applyItem(s, event.item, false, event.turn_id)
     case 'agent.session.turn.item.done':
-      return { ...s, items: applyItem(s.items, event.item, true) }
+      return applyItem(s, event.item, true, event.turn_id)
     case 'agent.session.turn.output_text.delta': {
       const current = find(s.items, event.item_id)
+      if (current?.kind === 'assistant' && !current.streaming) return s // replay of a finished message
       const text = (current?.kind === 'assistant' ? current.text : '') + event.delta
-      return { ...s, items: upsert(s.items, { kind: 'assistant', id: event.item_id, text, streaming: true }) }
+      return place(s, { kind: 'assistant', id: event.item_id, text, streaming: true }, event.turn_id)
     }
     case 'agent.session.turn.output_text.done': {
       const current = find(s.items, event.item_id)
       const streaming = current?.kind === 'assistant' ? current.streaming : true
-      return { ...s, items: upsert(s.items, { kind: 'assistant', id: event.item_id, text: event.text, streaming }) }
+      return place(s, { kind: 'assistant', id: event.item_id, text: event.text, streaming }, event.turn_id)
     }
     case 'error':
-      return {
-        ...s,
-        items: upsert(s.items, { kind: 'notice', id: `notice:${event.event_id}`, level: 'failed', message: event.error.message }),
-      }
+      return place(s, { kind: 'notice', id: `notice:${event.event_id}`, level: 'failed', message: event.error.message }, undefined)
     default:
       return s
   }
@@ -170,50 +196,59 @@ function applyStatus(s: ConversationState, event: OAISessionStatusEvent, ephemer
 }
 
 function applyTurnEnd(s: ConversationState, turn: OAITurn): ConversationState {
-  if (turn.subagent_id) return { ...s, items: upsertSubagent(s.items, turn) }
-  let items = s.items.map((v) => (v.kind === 'assistant' && v.streaming ? { ...v, streaming: false } : v))
+  if (turn.subagent_id) return placeSubagent(s, turn)
+  let next: ConversationState = {
+    ...s,
+    openTurn: s.openTurn === turn.id ? null : s.openTurn,
+    items: s.items.map((v) => (v.kind === 'assistant' && v.streaming ? { ...v, streaming: false } : v)),
+  }
   if (turn.status === 'failed') {
-    items = upsert(items, { kind: 'notice', id: `notice:${turn.id}`, level: 'failed', message: turn.error?.message ?? 'The turn failed' })
+    next = place(next, { kind: 'notice', id: `notice:${turn.id}`, level: 'failed', message: turn.error?.message ?? 'The turn failed' }, turn.id)
   } else if (turn.status === 'cancelled') {
     const interrupted = turn.error?.code === 'interrupted'
-    items = upsert(items, {
+    next = place(next, {
       kind: 'notice',
       id: `notice:${turn.id}`,
       level: interrupted ? 'interrupted' : 'cancelled',
       message: interrupted ? (turn.error?.message ?? 'Interrupted') : 'Stopped',
-    })
+    }, turn.id)
   }
-  return { ...s, items }
+  return next
 }
 
-function upsertSubagent(items: MessageView[], turn: OAITurn): MessageView[] {
-  return upsert(items, { kind: 'subagent', id: `subagent:${turn.id}`, name: turn.subagent_id ?? 'subagent', status: turn.status })
+/** A subagent turn carries no parent turn id; it belongs to the open top-level turn. */
+function placeSubagent(s: ConversationState, turn: OAITurn): ConversationState {
+  const id = `subagent:${turn.id}`
+  const parent = s.turnOf.get(id) ?? s.openTurn ?? undefined
+  return place(s, { kind: 'subagent', id, name: turn.subagent_id ?? 'subagent', status: turn.status }, parent)
 }
 
-function applyItem(items: MessageView[], item: OAISessionItem, done: boolean): MessageView[] {
+function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, eventTurn?: string): ConversationState {
+  const turn = item.turn_id || eventTurn
   switch (item.type) {
     case 'message': {
       const text = item.content.map((part) => part.text).join('')
-      if (item.role === 'user') return upsertUser(items, { kind: 'user', id: item.id, text })
-      const current = find(items, item.id)
-      const streaming = !done && item.status === 'in_progress'
-      // An `item.added` for a message that already streamed keeps its text.
-      const keep = current?.kind === 'assistant' && !done ? current.text : text
-      return upsert(items, { kind: 'assistant', id: item.id, text: keep || text, streaming })
+      if (item.role === 'user') return placeUser(s, { kind: 'user', id: item.id, text }, turn)
+      const current = find(s.items, item.id)
+      if (!done && current?.kind === 'assistant') {
+        // `item.added` for a message we already show (streamed, or loaded from items): keep it as is.
+        return current.streaming || !text ? s : place(s, { ...current, text }, turn)
+      }
+      return place(s, { kind: 'assistant', id: item.id, text, streaming: !done && item.status === 'in_progress' }, turn)
     }
     case 'reasoning':
-      return upsert(items, { kind: 'reasoning', id: item.id, text: (item.summary ?? []).map((p) => p.text).join('') })
+      return place(s, { kind: 'reasoning', id: item.id, text: (item.summary ?? []).map((p) => p.text).join('') }, turn)
     case 'function_call':
-      return upsertTool(items, {
+      return placeTool(s, {
         kind: 'tool',
         id: item.id,
         callId: item.call_id,
         name: item.name,
         args: parseArgs(item.arguments),
         status: toolStatus(item.status, 'running'),
-      })
+      }, turn)
     case 'mcp_call':
-      return upsertTool(items, {
+      return placeTool(s, {
         kind: 'tool',
         id: item.id,
         callId: item.id,
@@ -221,9 +256,9 @@ function applyItem(items: MessageView[], item: OAISessionItem, done: boolean): M
         args: item.arguments,
         status: toolStatus(item.status, 'running'),
         ...withOutput(item.error ?? item.output),
-      })
+      }, turn)
     case 'command_execution':
-      return upsertTool(items, {
+      return placeTool(s, {
         kind: 'tool',
         id: item.id,
         callId: item.id,
@@ -231,15 +266,15 @@ function applyItem(items: MessageView[], item: OAISessionItem, done: boolean): M
         args: item.cwd === undefined ? { command: item.command } : { command: item.command, cwd: item.cwd },
         status: toolStatus(item.status, 'running'),
         ...withOutput(item.output),
-      })
+      }, turn)
     case 'function_call_output': {
-      const call = items.find((v): v is ToolView => v.kind === 'tool' && v.callId === item.call_id)
-      if (!call) return items
+      const call = s.items.find((v): v is ToolView => v.kind === 'tool' && v.callId === item.call_id)
+      if (!call) return s
       const failed = item.status === 'failed' || item.status === 'incomplete' || Boolean(item.error)
-      return upsert(items, { ...call, status: failed ? 'failed' : 'done', output: item.output })
+      return place(s, { ...call, status: failed ? 'failed' : 'done', output: item.output }, turn)
     }
     default:
-      return items
+      return s
   }
 }
 
@@ -263,36 +298,46 @@ function parseArgs(args: Record<string, unknown> | string): unknown {
 }
 
 /** A re-sent call item never regresses a finished tool or drops its output. */
-function upsertTool(items: MessageView[], view: ToolView): MessageView[] {
-  const current = find(items, view.id)
+function placeTool(s: ConversationState, view: ToolView, turn: string | undefined): ConversationState {
+  const current = find(s.items, view.id)
   if (current?.kind === 'tool' && current.status !== 'running') {
-    return upsert(items, { ...view, status: current.status, ...withOutput(current.output ?? view.output) })
+    return place(s, { ...view, status: current.status, ...withOutput(current.output ?? view.output) }, turn)
   }
-  return upsert(items, view)
+  return place(s, view, turn)
 }
 
-function upsertUser(items: MessageView[], view: Extract<MessageView, { kind: 'user' }>): MessageView[] {
-  if (find(items, view.id)) return upsert(items, view)
-  const local = items.find((v) => v.kind === 'user' && v.id.startsWith(LOCAL_PREFIX) && v.text === view.text)
-  if (local) return items.map((v) => (v === local ? view : v))
-  return [...items, view]
+/** A server user message replaces the optimistic one with the same text, in its position. */
+function placeUser(s: ConversationState, view: UserView, turn: string | undefined): ConversationState {
+  if (find(s.items, view.id)) return place(s, view, turn)
+  const local = s.items.find((v) => v.kind === 'user' && v.id.startsWith(LOCAL_PREFIX) && v.text === view.text)
+  if (!local) return place(s, view, turn)
+  const turnOf = new Map(s.turnOf)
+  turnOf.delete(local.id)
+  if (turn) turnOf.set(view.id, turn)
+  return { ...s, turnOf, items: s.items.map((v) => (v === local ? view : v)) }
 }
 
 function find(items: MessageView[], id: string): MessageView | undefined {
   return items.find((v) => v.id === id)
 }
 
-function upsert(items: MessageView[], view: MessageView): MessageView[] {
-  const index = items.findIndex((v) => v.id === view.id)
-  if (index === -1) return [...items, view]
-  const copy = items.slice()
-  copy[index] = view
-  return copy
-}
-
-/** Drops the latest optimistic message with this text (its send failed). */
-export function removeLocalUserMessage(s: ConversationState, text: string): ConversationState {
-  const index = s.items.findLastIndex((v) => v.kind === 'user' && v.id.startsWith(LOCAL_PREFIX) && v.text === text)
-  if (index === -1) return s
-  return { ...s, items: [...s.items.slice(0, index), ...s.items.slice(index + 1)] }
+/**
+ * Upserts `view` by id. An existing view is replaced in place. A new one goes
+ * right after the last view of `turn` (or at the end without a turn, or when
+ * `append`).
+ */
+function place(s: ConversationState, view: MessageView, turn: string | undefined, append = false): ConversationState {
+  const index = s.items.findIndex((v) => v.id === view.id)
+  const turnOf = turn && !s.turnOf.has(view.id) ? new Map(s.turnOf).set(view.id, turn) : s.turnOf
+  if (index !== -1) {
+    const items = s.items.slice()
+    items[index] = view
+    return { ...s, items, turnOf }
+  }
+  let at = s.items.length
+  if (turn && !append) {
+    const last = s.items.findLastIndex((v) => s.turnOf.get(v.id) === turn)
+    if (last !== -1) at = last + 1
+  }
+  return { ...s, items: [...s.items.slice(0, at), view, ...s.items.slice(at)], turnOf }
 }

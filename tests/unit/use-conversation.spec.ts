@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAIAgentSession, OAIRequiredAction, OAISessionEvent } from '@/api/types'
 import { useConversation } from '@/chat/use-conversation'
 import approvalTurn from '../fixtures/approval-turn.json'
+import twoTurns from '../fixtures/two-turns.json'
 
 interface Frame {
   id?: string
@@ -37,8 +38,11 @@ function sessionResource(status: OAIAgentSession['status'], required_actions: OA
 
 let streams: Array<() => Response>
 let session: OAIAgentSession
+let itemsResponse: () => Response | Promise<Response>
 const fetchMock = vi.fn<typeof fetch>()
 
+const itemsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith(`/api/agentry/agents/sessions/${SID}/items`))
+const itemsList = (data: unknown[]) => Response.json({ object: 'list', data, first_id: null, last_id: null, has_more: false })
 const streamCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith(`/sessions/${SID}/stream`))
 const lastEventIds = () => streamCalls().map(([, init]) => new Headers(init?.headers).get('last-event-id'))
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0) })
@@ -49,9 +53,11 @@ beforeEach(() => {
   document.head.innerHTML = `<meta name="agentry-csrf" content="${CSRF}">`
   streams = []
   session = sessionResource('idle')
+  itemsResponse = () => itemsList([])
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input, init) => {
     const url = String(input)
+    if (url.startsWith(`/api/agentry/agents/sessions/${SID}/items`)) return itemsResponse()
     if (url.endsWith('/stream')) return (streams.shift() ?? (() => streamResponse('', true)))()
     if (url === `/api/agentry/agents/sessions/${SID}` && (init?.method ?? 'GET') === 'GET') return Response.json(session)
     if (url === `/api/agentry/agents/sessions/${SID}/events`) return Response.json({})
@@ -215,5 +221,94 @@ describe('useConversation', () => {
     expect(signal?.aborted).toBe(true)
     await advance(60_000)
     expect(streamCalls()).toHaveLength(1)
+  })
+
+  describe('history before replay (R14)', () => {
+    const TWO = twoTurns as unknown as { historyThrough: number; frames: Frame[] }
+    const isUserOrTool = (f: Frame) =>
+      (f.event.type === 'agent.session.turn.item.added' || f.event.type === 'agent.session.turn.item.done') &&
+      ((f.event.item.type === 'message' && f.event.item.role === 'user') || f.event.item.type === 'function_call' || f.event.item.type === 'function_call_output' || f.event.item.type === 'reasoning')
+    /** Saved items as `GET /items` returns them: every item, in order, once. */
+    const savedItems = (frames: Frame[]) => {
+      const byId = new Map<string, unknown>()
+      for (const f of frames) {
+        if (f.event.type === 'agent.session.turn.item.added' || f.event.type === 'agent.session.turn.item.done') byId.set(f.event.item.id, f.event.item)
+      }
+      return [...byId.values()]
+    }
+
+    it('fetches items before opening the stream', async () => {
+      let release!: () => void
+      itemsResponse = () => new Promise<Response>((resolve) => { release = () => resolve(itemsList([])) })
+      streams.push(() => streamResponse('', true))
+      const { unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      expect(itemsCalls()).toHaveLength(1)
+      expect(String(itemsCalls()[0][0])).toBe(`/api/agentry/agents/sessions/${SID}/items?limit=100`)
+      expect(streamCalls()).toHaveLength(0)
+      await act(async () => {
+        release()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(streamCalls()).toHaveLength(1)
+      expect(lastEventIds()).toEqual(['0'])
+      unmount()
+    })
+
+    it('a replay covering an item already loaded gives exactly one bubble', async () => {
+      const turn1 = TWO.frames.slice(0, TWO.historyThrough)
+      itemsResponse = () => itemsList(savedItems(turn1))
+      streams.push(() => streamResponse(sse(turn1), true))
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      expect(result.current.state.items).toEqual([
+        { kind: 'user', id: 'item_msg_3', text: 'Say hello' },
+        { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.' },
+        { kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false },
+      ])
+      unmount()
+    })
+
+    it('a reopened chat shows user, tool and assistant items when the stream carries only assistant frames', async () => {
+      itemsResponse = () => itemsList(savedItems(TWO.frames))
+      // The backend stream has no user, reasoning or tool item frames.
+      streams.push(() => streamResponse(sse(TWO.frames.filter((f) => !isUserOrTool(f))), true))
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      expect(result.current.state.items).toEqual([
+        { kind: 'user', id: 'item_msg_3', text: 'Say hello' },
+        { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.' },
+        { kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false },
+        { kind: 'user', id: 'item_msg_7', text: 'Search the docs' },
+        { kind: 'tool', id: 'item_fn_8', callId: 'call_1', name: 'search', args: { query: 'docs' }, status: 'done', output: '3 results' },
+        { kind: 'assistant', id: 'item_msg_10', text: 'Found 3 results.', streaming: false },
+      ])
+      expect(result.current.state.lastEventId).toBe(TWO.frames.at(-1)?.id)
+      unmount()
+    })
+
+    it('reconnects resume from the last id without reloading items', async () => {
+      itemsResponse = () => itemsList(savedItems(TWO.frames))
+      streams.push(() => streamResponse(sse(TWO.frames)))
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      await advance(1_000)
+      expect(streamCalls()).toHaveLength(2)
+      expect(lastEventIds()).toEqual(['0', TWO.frames.at(-1)?.id])
+      expect(itemsCalls()).toHaveLength(1)
+      expect(result.current.state.items.filter((v) => v.kind === 'assistant')).toHaveLength(2)
+      unmount()
+    })
+
+    it('a 401 while loading items signs out without opening the stream', async () => {
+      itemsResponse = () => Response.json({ error: 'signed_out' }, { status: 401 })
+      const onSignedOut = vi.fn()
+      const { result, unmount } = renderHook(() => useConversation(SID, { onSignedOut }))
+      await flush()
+      expect(onSignedOut).toHaveBeenCalled()
+      expect(result.current.connection).toBe('closed')
+      expect(streamCalls()).toHaveLength(0)
+      unmount()
+    })
   })
 })

@@ -235,10 +235,40 @@ describe('conversation reducer', () => {
     expect(kinds(s)).toEqual(['user', 'action'])
   })
 
+  it('replaying a message the items already show never doubles its text, even mid-replay', () => {
+    const { frames, historyThrough } = TWO_TURNS
+    const items = frames.slice(0, historyThrough).flatMap((f) => (f.event.type === 'agent.session.turn.item.done' ? [f.event.item] : []))
+    const loaded = applyItems(initialState(SID), items)
+    const lastDelta = frames.slice(0, historyThrough).findLastIndex((f) => f.event.type === 'agent.session.turn.output_text.delta')
+    const mid = fold(frames.slice(0, lastDelta + 1), loaded)
+    expect(mid.items).toEqual(loaded.items)
+    expect(fold(frames.slice(0, historyThrough), loaded).items).toEqual(loaded.items)
+  })
+
+  it('a replayed notice for an older turn lands inside that turn', () => {
+    const items: StoredSessionItem[] = [
+      { id: 'u1', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'one' }], status: 'completed', turn_id: 'turn_a' },
+      { id: 'a1', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }], status: 'completed', turn_id: 'turn_a' },
+      { id: 'u2', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'two' }], status: 'completed', turn_id: 'turn_b' },
+    ]
+    let s = applyItems(initialState(SID), items)
+    s = applyEvent(s, { id: '1', event: { type: 'agent.session.turn.cancelled', event_id: 'e1', session_id: SID, turn_id: 'turn_a', turn: { ...turn('cancelled'), id: 'turn_a' } } })
+    s = applyEvent(s, { id: '2', event: { type: 'agent.session.turn.failed', event_id: 'e2', session_id: SID, turn_id: 'turn_b', turn: { ...turn('failed', { code: 'x', message: 'boom' }), id: 'turn_b' } } })
+    expect(s.items.map((v) => v.id)).toEqual(['u1', 'a1', 'notice:turn_a', 'u2', 'notice:turn_b'])
+  })
+
+  it('a reply after a steering message follows it', () => {
+    let s = fold(TWO_TURNS.frames.slice(0, 6)) // turn_2 open, its user message shown
+    s = appendLocalUserMessage(s, 'actually, be brief')
+    s = fold(TWO_TURNS.frames.slice(6, TWO_TURNS.historyThrough), s)
+    expect(s.items.map((v) => v.id)).toEqual(['item_msg_3', 'local:1', 'item_reason_4', 'item_msg_4'])
+  })
+
   it('does not mutate the previous state', () => {
     const s = initialState(SID)
-    const snapshot = structuredClone({ ...s, seen: [...s.seen] })
-    fold(TWO_TURNS.frames, s)
-    expect({ ...s, seen: [...s.seen] }).toEqual(snapshot)
+    const before = applyItems(s, [])
+    const snapshot = structuredClone(before)
+    fold(TWO_TURNS.frames, before)
+    expect(before).toEqual(snapshot)
   })
 })

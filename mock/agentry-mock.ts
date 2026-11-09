@@ -18,6 +18,8 @@
  * (ephemeral) and never replayed, as in backend Task 6 (provisional). Unlike the
  * backend at 4307e21, the mock also emits `item.added`/`item.done` for user
  * messages and function calls, so the conversation renders them live.
+ * `GET .../items` returns the same items with the same ids and `turn_id`s as the
+ * stream's item frames, so the client's items-then-replay load (R14) collapses them.
  *
  * Scripted turns: the reply is chosen by keywords in the user's message
  * (case-insensitive, first match wins):

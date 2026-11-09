@@ -3,9 +3,12 @@
 /**
  * Live conversation state for one session.
  *
- * Opening (ruling R1): the stream is requested with `Last-Event-ID: 0`, so
- * Agentry replays the whole history as wire events, folded by the reducer,
- * then continues live. The session resource (`GET /agents/sessions/{id}`) is
+ * Opening (ruling R14): the saved items (`GET .../items`) are folded first, so
+ * the history shows what the stream does not carry (user messages, tool calls,
+ * reasoning). Only then is the stream requested with `Last-Event-ID: 0`:
+ * Agentry replays every wire event (the reducer updates the views the items
+ * created, by id) and continues live. Reconnects resume from the last seen id
+ * and do not reload items. The session resource (`GET /agents/sessions/{id}`) is
  * applied as an id-less status snapshot so pending approvals (ephemeral, never
  * replayed) appear; it is fetched again on every reconnect, because approval
  * changes made while disconnected are not replayed either.
@@ -17,10 +20,11 @@
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { api, isSignedOut } from '@/api/client'
-import type { OAIAgentSession, OAISessionEvent } from '@/api/types'
+import type { OAIAgentSession, OAISessionEvent, StoredSessionItem } from '@/api/types'
 import {
   appendLocalUserMessage,
   applyEvent,
+  applyItems,
   initialState,
   removeLocalUserMessage,
   type ConversationState,
@@ -36,6 +40,7 @@ export const BACKOFF_CAP_MS = 30_000
 type Action =
   | { type: 'reset'; sessionId: string }
   | { type: 'event'; id?: string; event: OAISessionEvent }
+  | { type: 'items'; items: StoredSessionItem[] }
   | { type: 'local-user'; text: string }
   | { type: 'drop-local'; text: string }
 
@@ -45,6 +50,8 @@ function reducer(s: ConversationState, a: Action): ConversationState {
       return s.sessionId === a.sessionId && s.lastEventId === null && s.items.length === 0 ? s : initialState(a.sessionId)
     case 'event':
       return applyEvent(s, a.id === undefined ? { event: a.event } : { id: a.id, event: a.event })
+    case 'items':
+      return applyItems(s, a.items)
     case 'local-user':
       return appendLocalUserMessage(s, a.text)
     case 'drop-local':
@@ -122,7 +129,24 @@ export function useConversation(
       }
     }
 
+    const loadItems = async (): Promise<boolean> => {
+      try {
+        const items = await api.items(sessionId)
+        if (!signal.aborted) dispatch({ type: 'items', items })
+      } catch (error) {
+        if (signal.aborted) return false
+        if (isSignedOut(error)) {
+          setConnection('closed')
+          onSignedOut()
+          return false
+        }
+        // Any other failure: the stream replay still shows the assistant side.
+      }
+      return !signal.aborted
+    }
+
     const run = async () => {
+      if (!(await loadItems())) return
       while (!signal.aborted) {
         let received = false
         void snapshot()
