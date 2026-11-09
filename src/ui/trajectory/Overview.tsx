@@ -26,7 +26,9 @@ export type Interval = { from: number; to: number }
 const styles = stylex.create({
   area: {
     position: 'relative',
-    blockSize: `calc(${spacingVars['--spacing-6']} * 2 + ${spacingVars['--spacing-2']} * 3)`,
+    flexGrow: 1,
+    minInlineSize: 0,
+    blockSize: `calc(${spacingVars['--spacing-4']} * 2 + ${spacingVars['--spacing-1']} * 2)`,
     borderRadius: radiusVars['--radius-inner'],
     backgroundColor: colorVars['--color-background-muted'],
     overflow: 'hidden',
@@ -39,14 +41,14 @@ const styles = stylex.create({
     insetInlineStart: left,
     inlineSize: width,
     insetBlockStart: top,
-    blockSize: spacingVars['--spacing-6'],
-    minInlineSize: spacingVars['--spacing-1'],
-    borderRadius: radiusVars['--radius-inner'],
+    blockSize: spacingVars['--spacing-2'],
+    minInlineSize: spacingVars['--spacing-0-5'],
   }),
   // The kind chip colours: a turn is the assistant's (teal), a subagent run its subtools' (pink).
-  turn: { backgroundColor: dataVars['--color-data-categorical-teal'], opacity: 0.45 },
-  subagent: { backgroundColor: dataVars['--color-data-categorical-pink'], opacity: 0.45 },
-  failed: { backgroundColor: dataVars['--color-data-categorical-red'], opacity: 0.55 },
+  turn: { backgroundColor: dataVars['--color-data-categorical-teal'], opacity: 0.8 },
+  subagent: { backgroundColor: dataVars['--color-data-categorical-pink'], opacity: 0.8 },
+  failed: { backgroundColor: dataVars['--color-data-categorical-red'], opacity: 0.85 },
+  laneLabel: { blockSize: spacingVars['--spacing-4'] },
   selection: (left: string, width: string) => ({
     position: 'absolute',
     insetBlock: 0,
@@ -59,7 +61,15 @@ const styles = stylex.create({
   }),
 })
 
-const LANE_TOP = { turn: spacingVars['--spacing-2'], subagent: `calc(${spacingVars['--spacing-2']} * 2 + ${spacingVars['--spacing-6']})` }
+// Each lane is a --spacing-4 row; its bar is centred in it.
+const LANE_TOP = {
+  turn: `calc(${spacingVars['--spacing-1']} * 2)`,
+  subagent: `calc(${spacingVars['--spacing-1']} * 2 + ${spacingVars['--spacing-4']})`,
+}
+const LANES = [
+  { key: 'turn', label: 'Turns' },
+  { key: 'subagent', label: 'Subagents' },
+] as const
 
 interface Placed {
   span: TimelineSpan
@@ -164,41 +174,52 @@ export function Overview({
 
   return (
     <VStack gap={1}>
-      <VStack
-        ref={area}
-        xstyle={styles.area}
-        role="group"
-        aria-label="Timeline overview; drag horizontally to focus events"
-        data-testid="trajectory-overview"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => setDrag(null)}
-        onWheel={onWheel}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          setZoom(null)
-          onIntervalChange(null)
-        }}
-      >
-        {placed.map(({ span, left, width }) => (
-          <Tooltip
-            key={span.id}
-            delay={500}
-            content={`${span.label} · Started ${formatClock(span.start)} · ${span.end !== undefined ? `Total ${formatSeconds(span.end - span.start)}` : 'Running'}`}
-          >
-            <VStack
-              aria-label={span.label}
-              data-testid="trajectory-span"
-              xstyle={[styles.span(pct(left), pct(width), LANE_TOP[span.lane]), span.status === 'failed' ? styles.failed : styles[span.lane]]}
-            />
-          </Tooltip>
-        ))}
-        {mark && <VStack xstyle={styles.selection(pct(mark.left), pct(mark.width))} />}
-      </VStack>
+      <HStack gap={2}>
+        <VStack paddingBlock={1} aria-hidden>
+          {LANES.map((lane) => (
+            <HStack key={lane.key} vAlign="center" hAlign="end" xstyle={styles.laneLabel}>
+              <Text type="supporting" size="xsm">
+                {lane.label}
+              </Text>
+            </HStack>
+          ))}
+        </VStack>
+        <VStack
+          ref={area}
+          xstyle={styles.area}
+          role="group"
+          aria-label="Timeline overview; drag horizontally to focus events"
+          data-testid="trajectory-overview"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={() => setDrag(null)}
+          onWheel={onWheel}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setZoom(null)
+            onIntervalChange(null)
+          }}
+        >
+          {placed.map(({ span, left, width }) => (
+            <Tooltip
+              key={span.id}
+              delay={500}
+              content={`${span.label} · Started ${formatClock(span.start)} · ${span.end !== undefined ? `Total ${formatSeconds(span.end - span.start)}` : 'Running'}`}
+            >
+              <VStack
+                aria-label={span.label}
+                data-testid="trajectory-span"
+                xstyle={[styles.span(pct(left), pct(width), LANE_TOP[span.lane]), span.status === 'failed' ? styles.failed : styles[span.lane]]}
+              />
+            </Tooltip>
+          ))}
+          {mark && <VStack xstyle={styles.selection(pct(mark.left), pct(mark.width))} />}
+        </VStack>
+      </HStack>
       {interval && (
         <HStack gap={2}>
-          <Text type="supporting" hasTabularNumbers>
+          <Text type="supporting" size="xsm" hasTabularNumbers>
             Focused {formatClock(interval.from)} – {formatSeconds(interval.to - interval.from)}
           </Text>
         </HStack>

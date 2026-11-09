@@ -38,6 +38,11 @@ const styles = stylex.create({
   metric: { minInlineSize: spacingVars['--spacing-12'] },
   nested: { paddingInlineStart: spacingVars['--spacing-6'] },
   muted: { opacity: 0.6 },
+  // The kind chip column: fixed and narrow, chips right-aligned before the preview.
+  chip: { inlineSize: `calc(${spacingVars['--spacing-12']} * 2)`, flexShrink: 0 },
+  // Previews share the row and ellipsize on one line.
+  preview: { minInlineSize: 0, flexShrink: 1 },
+  name: { flexShrink: 0, maxInlineSize: '40%' },
 })
 
 export interface Folds {
@@ -63,11 +68,22 @@ export interface LedgerProps {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <VStack hAlign="end" xstyle={styles.metric}>
-      <Text type="supporting">{label}</Text>
-      <Text hasTabularNumbers>{value}</Text>
-    </VStack>
+    <HStack gap={1} vAlign="center" hAlign="end" xstyle={styles.metric}>
+      <Text type="supporting" size="xsm">
+        {label}
+      </Text>
+      <Text size="xsm" hasTabularNumbers>
+        {value}
+      </Text>
+    </HStack>
   )
+}
+
+/** A one-line preview of a tool's result. */
+function resultPreview(r: TrajectoryRecord): string | undefined {
+  if (r.output === undefined || r.output === '') return undefined
+  const text = typeof r.output === 'string' ? r.output : JSON.stringify(r.output)
+  return text.replace(/\s+/g, ' ').slice(0, 200)
 }
 
 function usageCells(usage: OAITokenUsage | undefined) {
@@ -89,23 +105,44 @@ function description(r: TrajectoryRecord): string | undefined {
 function Row({ record, selected, onSelect, muted }: { record: TrajectoryRecord; selected: boolean; onSelect(): void; muted?: boolean }) {
   const status = STATUS[record.status]
   const isTool = (record.subKind ?? record.kind) === 'tool'
-  // A tool row leads with its recorded name, then the argument summary.
-  const label = isTool ? recordName(record) : record.title || recordName(record)
+  // A tool row leads with its recorded name, then the argument summary and its result.
+  const name = isTool ? recordName(record) : record.title || recordName(record)
+  const detail = description(record)
+  const result = isTool ? resultPreview(record) : undefined
   const time = record.startedAt !== undefined && record.endedAt !== undefined ? formatSeconds(record.endedAt - record.startedAt) : ''
   return (
     <ListItem
-      label={label}
-      description={description(record)}
-      startContent={<KindChip record={record} />}
+      label={
+        <HStack gap={2} vAlign="center">
+          <Text type={isTool ? 'code' : 'body'} size="sm" maxLines={1} xstyle={isTool ? styles.name : styles.preview}>
+            {name}
+          </Text>
+          {detail && (
+            <Text type={isTool ? 'code' : 'supporting'} size="sm" color="secondary" maxLines={1} xstyle={styles.preview}>
+              {detail}
+            </Text>
+          )}
+          {result && (
+            <Text type="code" size="sm" color="secondary" maxLines={1} xstyle={styles.preview}>
+              {`→ ${result}`}
+            </Text>
+          )}
+        </HStack>
+      }
+      startContent={
+        <HStack hAlign="end" vAlign="center" xstyle={styles.chip}>
+          <KindChip record={record} />
+        </HStack>
+      }
       endContent={
         <HStack gap={2} vAlign="center">
           {time && (
-            <Text type="supporting" hasTabularNumbers>
+            <Text type="supporting" size="xsm" hasTabularNumbers>
               {time}
             </Text>
           )}
           {record.status === 'pending' && <Spinner size="sm" aria-label="Pending" />}
-          <Token size="sm" label={status.label} color={status.color} />
+          {record.status !== 'completed' && <Token size="sm" label={status.label} color={status.color} />}
         </HStack>
       }
       isSelected={selected}
@@ -118,7 +155,22 @@ function Row({ record, selected, onSelect, muted }: { record: TrajectoryRecord; 
 }
 
 function Summary({ label, onExpand, testId }: { label: string; onExpand(): void; testId: string }) {
-  return <ListItem label={label} startContent={<Icon icon={ChevronRightIcon} size="sm" color="secondary" />} onClick={onExpand} data-testid={testId} />
+  return (
+    <ListItem
+      label={
+        <Text type="supporting" size="sm">
+          {label}
+        </Text>
+      }
+      startContent={
+        <HStack hAlign="end" vAlign="center" xstyle={styles.chip}>
+          <Icon icon={ChevronRightIcon} size="sm" color="secondary" />
+        </HStack>
+      }
+      onClick={onExpand}
+      data-testid={testId}
+    />
+  )
 }
 
 function Records({ records, props }: { records: TrajectoryRecord[]; props: LedgerProps }) {
@@ -139,7 +191,7 @@ function Records({ records, props }: { records: TrajectoryRecord[]; props: Ledge
       if (folds.subcalls.has(r.id) || (searching && children.length > 0)) {
         out.push(
           <VStack key={`${r.id}:sub`} xstyle={styles.nested} as="li">
-            <List density="compact">
+            <List density="compact" hasDividers>
               {children.map((c) => (
                 <Row key={c.id} record={c} selected={selectedId === c.id} onSelect={() => onSelect(c)} />
               ))}
@@ -152,7 +204,7 @@ function Records({ records, props }: { records: TrajectoryRecord[]; props: Ledge
       }
     }
   }
-  return out.length > 0 ? <List density="compact">{out}</List> : null
+  return out.length > 0 ? <List density="compact" hasDividers>{out}</List> : null
 }
 
 function TurnSection({ turn, props }: { turn: TrajectoryTurn; props: LedgerProps }) {
@@ -164,7 +216,7 @@ function TurnSection({ turn, props }: { turn: TrajectoryTurn; props: LedgerProps
   if (props.visible !== null && !turn.records.some((r) => props.visible?.has(r.id) || r.subcalls?.some((c) => props.visible?.has(c.id)))) return null
   return (
     <VStack as="section" aria-label={`Turn ${turn.index}`} data-testid="trajectory-turn">
-      <HStack gap={3} vAlign="center" paddingBlock={2} paddingInline={2} xstyle={styles.header}>
+      <HStack gap={3} vAlign="center" paddingBlock={0.5} paddingInline={1} xstyle={styles.header}>
         <StackItem size="fill">
           <HStack gap={2} vAlign="center">
             <Button
@@ -191,14 +243,16 @@ function TurnSection({ turn, props }: { turn: TrajectoryTurn; props: LedgerProps
 export function Ledger(props: LedgerProps) {
   const between = props.between
   return (
-    <VStack gap={2}>
+    <VStack>
       {props.turns.map((turn) => (
         <TurnSection key={turn.id} turn={turn} props={props} />
       ))}
       {between.length > 0 && (
         <VStack as="section" aria-label="Between turns">
-          <HStack paddingBlock={2} paddingInline={2} xstyle={styles.header}>
-            <Text weight="semibold">Between turns</Text>
+          <HStack paddingBlock={1} paddingInline={2} xstyle={styles.header}>
+            <Text type="supporting" size="xsm" weight="semibold">
+              Between turns
+            </Text>
           </HStack>
           <Records records={between} props={props} />
         </VStack>

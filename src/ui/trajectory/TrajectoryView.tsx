@@ -8,11 +8,14 @@
  * user scrolls up.
  */
 import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { ScrollableArea } from '@astryxdesign/core/ScrollableArea'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
+import { ClockIcon, ListBulletIcon, MagnifyingGlassIcon, QueueListIcon, RectangleStackIcon } from '@heroicons/react/16/solid'
+import { spacingVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SidePanelLayout } from '@/ui/shell/SidePanel'
@@ -25,6 +28,8 @@ const styles = stylex.create({
   page: { flexGrow: 1, minBlockSize: 0, minInlineSize: 0 },
   ledger: { flexGrow: 1, minBlockSize: 0 },
 })
+
+const SEARCH_WIDTH = `calc(${spacingVars['--spacing-12']} * 4)`
 
 /** Unix seconds, ticking every second while `live`. */
 function useNow(live: boolean): number {
@@ -106,39 +111,59 @@ export function TrajectoryView({
       }}
       panel={selected ? <Inspector record={selected} onShowInChat={onShowInChat} /> : null}
     >
-      <VStack gap={3} padding={4} xstyle={styles.page} data-testid="trajectory-view">
-        <HStack gap={2} vAlign="center" wrap="wrap" role="toolbar" aria-label="Trajectory toolbar">
+      <VStack gap={2} paddingBlock={2} paddingInline={3} xstyle={styles.page} data-testid="trajectory-view">
+        <HStack gap={1} vAlign="center" wrap="wrap" role="toolbar" aria-label="Trajectory toolbar">
           <ToggleButton
             label="Duration"
+            icon={<Icon icon={ClockIcon} size="sm" />}
             size="sm"
             isPressed={actual}
             onPressedChange={setActual}
             tooltip={actual ? 'Use equal-width operations' : 'Use actual duration'}
-          />
+          >
+            Duration
+          </ToggleButton>
           <ToggleButton
             label="Turns"
+            icon={<Icon icon={RectangleStackIcon} size="sm" />}
             size="sm"
             isPressed={turnsFolded}
             onPressedChange={(fold) => setFolds((f) => ({ ...f, turns: new Set(fold ? trajectory.turns.map((t) => t.id) : []) }))}
             tooltip={turnsFolded ? 'Expand turns' : 'Collapse turns'}
-          />
+          >
+            Turns
+          </ToggleButton>
           <ToggleButton
             label="Calls"
+            icon={<Icon icon={QueueListIcon} size="sm" />}
             size="sm"
             isPressed={callsFolded}
             onPressedChange={(fold) => setFolds((f) => ({ ...f, calls: new Set(fold ? stepIds : []) }))}
             tooltip={callsFolded ? 'Expand calls' : 'Collapse calls'}
-          />
+          >
+            Calls
+          </ToggleButton>
           <ToggleButton
             label="Subcalls"
+            icon={<Icon icon={ListBulletIcon} size="sm" />}
             size="sm"
             isPressed={subcallsFolded}
             onPressedChange={(fold) => setFolds((f) => ({ ...f, subcalls: new Set(fold ? [] : callIds) }))}
             tooltip={subcallsFolded ? 'Expand subcalls' : 'Collapse subcalls'}
+          >
+            Subcalls
+          </ToggleButton>
+          <StackItem size="fill" />
+          <TextInput
+            label="Search trajectory"
+            isLabelHidden
+            placeholder="Search"
+            size="sm"
+            startIcon={MagnifyingGlassIcon}
+            value={query}
+            onChange={setQuery}
+            width={SEARCH_WIDTH}
           />
-          <StackItem size="fill">
-            <TextInput label="Search trajectory" isLabelHidden placeholder="Search" size="sm" value={query} onChange={setQuery} />
-          </StackItem>
         </HStack>
         <Overview spans={spans} now={now} actual={actual} interval={interval} onIntervalChange={setInterval_} />
         <ScrollableArea label="Trajectory ledger" xstyle={styles.ledger}>
