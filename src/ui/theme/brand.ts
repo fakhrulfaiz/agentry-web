@@ -13,6 +13,14 @@ import { neutralTheme } from '@astryxdesign/theme-neutral'
 const ACCENT: [string, string] = ['#0f766e', '#5eead4']
 const ACCENT_MUTED: [string, string] = ['#ccebe7', '#134e4a']
 
+/**
+ * Input controls sit one step lower on the radius scale than astryx's
+ * defaults, for a quieter look: fields and selects use `--radius-inner`
+ * (instead of `--radius-element`, which buttons keep), and the chat composer
+ * `--radius-container` (instead of `--radius-chat`, which only it uses).
+ */
+const INPUT_RADIUS = { borderRadius: 'var(--radius-inner)' }
+
 export const agentryTheme = defineTheme({
   name: 'agentry',
   extends: neutralTheme,
@@ -21,6 +29,13 @@ export const agentryTheme = defineTheme({
     '--color-icon-accent': ACCENT,
     '--color-text-accent': ACCENT,
     '--color-accent-muted': ACCENT_MUTED,
+    '--radius-chat': 'var(--radius-container)',
+  },
+  components: {
+    'text-input': { base: INPUT_RADIUS },
+    'text-area': { base: INPUT_RADIUS },
+    selector: { base: INPUT_RADIUS },
+    typeahead: { base: INPUT_RADIUS },
   },
 })
 

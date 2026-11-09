@@ -214,7 +214,8 @@ export const agentryTheme = {
     "--shadow-inset-selected": "inset 0px 0px 0px 2px #0074e280",
     "--shadow-inset-success": "inset 0px 0px 0px 2px #2f7d334D",
     "--shadow-inset-warning": "inset 0px 0px 0px 2px #f8d36a4D",
-    "--shadow-inset-error": "inset 0px 0px 0px 2px #de47454D"
+    "--shadow-inset-error": "inset 0px 0px 0px 2px #de47454D",
+    "--radius-chat": "var(--radius-container)"
   },
   localTokens: {
     "--astryx-theme-neutral-color-status-fill-accent": "light-dark(#0074e2, #6d9cfe)"
@@ -428,6 +429,26 @@ export const agentryTheme = {
     "section": {
       "base": {
         "padding": "var(--spacing-3)"
+      }
+    },
+    "text-input": {
+      "base": {
+        "borderRadius": "var(--radius-inner)"
+      }
+    },
+    "text-area": {
+      "base": {
+        "borderRadius": "var(--radius-inner)"
+      }
+    },
+    "selector": {
+      "base": {
+        "borderRadius": "var(--radius-inner)"
+      }
+    },
+    "typeahead": {
+      "base": {
+        "borderRadius": "var(--radius-inner)"
       }
     }
   },
