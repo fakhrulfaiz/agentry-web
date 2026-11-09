@@ -2,8 +2,8 @@
 
 /**
  * Message composer, from astryx's full-featured `ChatComposer` template:
- * header (attach), input (with the slash-command menu), footer (model and
- * reasoning-effort menus), send / stop.
+ * input (with the slash-command menu), then a footer row with attach, the
+ * model and reasoning-effort menus, and send / stop.
  *
  * Multi-line; Enter sends, Shift+Enter adds a line. While a turn runs the send
  * button becomes Stop (typing and Enter still send, which steers the running
@@ -188,10 +188,12 @@ export function Composer({
           </ChatComposerDrawer>
         ) : undefined
       }
-      headerActions={
-        <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly isDisabled tooltip={ATTACH_HINT} />
+      footerActions={
+        <>
+          <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly isDisabled tooltip={ATTACH_HINT} />
+          {settings && <SettingsMenus settings={settings} />}
+        </>
       }
-      footerActions={settings ? <SettingsMenus settings={settings} /> : undefined}
       status={status}
     />
   )

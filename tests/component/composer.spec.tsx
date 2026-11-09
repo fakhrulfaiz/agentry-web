@@ -149,6 +149,16 @@ describe('Composer footer and header', () => {
     expect(isDisabled(attach)).toBe(true)
     expect(document.body).toHaveTextContent(ATTACH_HINT)
   })
+
+  it('the attach button sits in the footer row, after the input and before the model menu', () => {
+    const settings: ComposerSettings = { models: ['m1'], model: 'm1', onModelChange: vi.fn(), effort: 'auto', onEffortChange: vi.fn() }
+    render(<Composer onSend={vi.fn(async () => {})} settings={settings} />)
+    const attach = screen.getByRole('button', { name: 'Attach files' })
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+    const model = screen.getByRole('combobox', { name: 'Model' })
+    expect(input.compareDocumentPosition(attach) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(attach.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })
 
 describe('Composer slash commands', () => {
