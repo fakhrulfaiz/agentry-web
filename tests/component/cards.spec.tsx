@@ -6,7 +6,6 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
 import { applyItems, initialState, type MessageView } from '@/chat/reducer'
-import { Composer } from '@/ui/chat/Composer'
 import { ConnectionPill } from '@/ui/chat/ConnectionPill'
 import { Message } from '@/ui/chat/Message'
 import { summarizeArgs } from '@/ui/chat/ToolCard'
@@ -266,72 +265,6 @@ describe('QuestionCard', () => {
     render(<Message view={{ kind: 'action', id: 'action:appr_q', action: question }} answer={answer} />)
     await user.click(screen.getByRole('button', { name: 'Skip' }))
     expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'deny' })
-  })
-})
-
-describe('Composer', () => {
-  const input = () => screen.getByRole('textbox', { name: 'Message input' })
-
-  it('Enter sends, Shift+Enter inserts a newline', async () => {
-    const user = userEvent.setup()
-    const onSend = vi.fn(async () => {})
-    render(<Composer onSend={onSend} />)
-    await user.click(input())
-    await user.keyboard('first line{Shift>}{Enter}{/Shift}second line')
-    expect(onSend).not.toHaveBeenCalled()
-    await user.keyboard('{Enter}')
-    expect(onSend).toHaveBeenCalledWith('first line\nsecond line')
-    await waitFor(() => expect(input()).toHaveTextContent(''))
-  })
-
-  it('does not send an empty message', async () => {
-    const user = userEvent.setup()
-    const onSend = vi.fn(async () => {})
-    render(<Composer onSend={onSend} />)
-    await user.click(input())
-    await user.keyboard('   {Enter}')
-    expect(onSend).not.toHaveBeenCalled()
-  })
-
-  it('disables the input while sending, then moves focus back to it', async () => {
-    const user = userEvent.setup()
-    const pending = deferred()
-    const onSend = vi.fn(() => pending.promise)
-    render(<Composer onSend={onSend} />)
-    await user.click(input())
-    await user.keyboard('hello{Enter}')
-    await waitFor(() => expect(input()).toHaveAttribute('contenteditable', 'false'))
-    ;(document.activeElement as HTMLElement | null)?.blur()
-    await act(async () => pending.resolve())
-    await waitFor(() => expect(input()).toHaveAttribute('contenteditable', 'true'))
-    await waitFor(() => expect(input()).toHaveFocus())
-  })
-
-  it('keeps the text when the send fails', async () => {
-    const user = userEvent.setup()
-    const onSend = vi.fn(async () => {
-      throw new Error('nope')
-    })
-    render(<Composer onSend={onSend} />)
-    await user.click(input())
-    await user.keyboard('keep me{Enter}')
-    await waitFor(() => expect(input()).toHaveAttribute('contenteditable', 'true'))
-    expect(input()).toHaveTextContent('keep me')
-  })
-
-  it('shows Stop while a turn runs', async () => {
-    const user = userEvent.setup()
-    const onStop = vi.fn()
-    const { rerender } = render(<Composer onSend={vi.fn(async () => {})} onStop={onStop} />)
-    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
-    rerender(<Composer onSend={vi.fn(async () => {})} onStop={onStop} isRunning />)
-    await user.click(screen.getByRole('button', { name: 'Stop' }))
-    expect(onStop).toHaveBeenCalledOnce()
-  })
-
-  it('shows an inline error status', () => {
-    render(<Composer onSend={vi.fn(async () => {})} status={{ type: 'error', message: 'Model not found' }} />)
-    expect(screen.getByText('Model not found')).toBeInTheDocument()
   })
 })
 

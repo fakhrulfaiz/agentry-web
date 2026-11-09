@@ -5,7 +5,6 @@
  * send creates the session (its title comes from the message) and opens it.
  */
 import { Center } from '@astryxdesign/core/Center'
-import { Selector } from '@astryxdesign/core/Selector'
 import { VStack } from '@astryxdesign/core/VStack'
 import * as stylex from '@stylexjs/stylex'
 import { useRouter } from 'next/navigation'
@@ -16,7 +15,7 @@ import { Wordmark } from '@/ui/brand/Wordmark'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { SESSIONS_CHANGED } from '@/ui/shell/Sidebar'
 import { TopBar } from '@/ui/shell/TopBar'
-import { Composer } from './Composer'
+import { Composer, type EffortChoice } from './Composer'
 import { pickModel, readModelCookie } from './model-cookie'
 
 const styles = stylex.create({ page: { blockSize: '100%', minBlockSize: 0 } })
@@ -27,6 +26,7 @@ export function NewChat() {
   const router = useRouter()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
+  const [effort, setEffort] = useState<EffortChoice>('auto')
   const [failure, setFailure] = useState<Failure | null>(null)
 
   const loadModels = useCallback(async () => {
@@ -47,7 +47,7 @@ export function NewChat() {
 
   async function start(text: string) {
     try {
-      const session = await api.createSession({ text, model })
+      const session = await api.createSession({ text, model, ...(effort === 'auto' ? {} : { effort }) })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
     } catch (error) {
@@ -79,19 +79,7 @@ export function NewChat() {
                   ? { type: 'warning', message: 'No models are configured.' }
                   : undefined
             }
-            footer={
-              <Selector
-                label="Model"
-                isLabelHidden
-                size="sm"
-                variant="ghost"
-                options={models ?? []}
-                value={model}
-                onChange={setModel}
-                isLoading={models === null}
-                placeholder="Model"
-              />
-            }
+            settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort }}
           />
         </VStack>
       </Center>

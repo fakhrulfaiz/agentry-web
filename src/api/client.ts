@@ -11,6 +11,7 @@ import type {
   OAIListResponse,
   OAISubagent,
   OAITurn,
+  ReasoningEffort,
   StoredSessionItem,
 } from './types'
 
@@ -123,10 +124,10 @@ export const api = {
     return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}`)
   },
 
-  /** Starts a session with the first message; the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string }): Promise<OAIAgentSession> {
+  /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
-      agent: { model: input.model },
+      agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
       input: input.text,
       metadata: { title: titleFrom(input.text) },
     }

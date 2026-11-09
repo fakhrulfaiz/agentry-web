@@ -16,7 +16,6 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
-import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
 import * as stylex from '@stylexjs/stylex'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,7 +29,7 @@ import { TopBar } from '@/ui/shell/TopBar'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
 import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
-import { Composer } from './Composer'
+import { Composer, type ComposerSettings, type EffortChoice } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
@@ -49,6 +48,24 @@ const styles = stylex.create({
   page: { blockSize: '100%', minBlockSize: 0 },
   chat: { flexGrow: 1, minBlockSize: 0 },
 })
+
+/**
+ * Agentry takes the model and reasoning effort when a chat starts; a follow-up
+ * message cannot carry them, and a session update does not reach the running
+ * agent. So an open chat shows them read-only.
+ */
+export const SETTINGS_HINT = 'Model and reasoning effort are set when a chat starts; changing them mid-chat needs backend support'
+const EFFORT_CHOICES = new Set<string>(['low', 'medium', 'high'])
+
+function settingsOf(session: OAIAgentSession | null): ComposerSettings {
+  const effort = session?.agent.reasoning?.effort
+  return {
+    models: null,
+    model: session?.agent.model ?? '',
+    effort: effort && EFFORT_CHOICES.has(effort) ? (effort as EffortChoice) : 'auto',
+    hint: SETTINGS_HINT,
+  }
+}
 
 const CLOSED_NOTICE: Record<ClosedReason, { title: string; description: string }> = {
   forbidden: {
@@ -171,7 +188,6 @@ export function Conversation({ sessionId }: { sessionId: string }) {
         end={
           <HStack gap={2} vAlign="center">
             <ConnectionPill connection={connection} />
-            {session && <Token size="sm" label={session.agent.model} description="Model" />}
           </HStack>
         }
         tabs={blank ? undefined : <ViewTabs views={VIEWS} value={view} onChange={setView} />}
@@ -190,6 +206,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
               onStop={onStop}
               isRunning={running}
               autoFocus
+              settings={settingsOf(session)}
               status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
             />
           }

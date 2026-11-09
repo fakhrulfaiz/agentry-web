@@ -29,6 +29,10 @@ describe('api client', () => {
     expect(lastCall().headers.get('x-agentry-csrf')).toBe(CSRF)
     expect(lastCall().headers.get('authorization')).toBeNull()
 
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's2', status: 'in_progress' }))
+    await api.createSession({ text: 'Think hard', model: 'm1', effort: 'high' })
+    expect(lastCall().body).toMatchObject({ agent: { model: 'm1', reasoning: { effort: 'high' } } })
+
     fetchMock.mockResolvedValue(Response.json({ object: 'list', data: [], first_id: null, last_id: null, has_more: false }))
     await api.listSessions({ after: 's9', limit: 20 })
     expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions?after=s9&limit=20', method: 'GET' })
