@@ -136,37 +136,41 @@ test('a web lookup shows thinking, tool cards and a streamed answer as it happen
   await expect(assistantMessages(page)).toHaveCount(1)
 })
 
-test('the trace panel lists the turn and its steps live, and a step scrolls to its item', async ({ page }) => {
+test('the Trajectory view shows the turn, its tool rows and an inspector, and reveals a record in the chat', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await signIn(page)
   await startChat(page, 'Look up the latest Node.js release on the web')
-  const toggle = page.getByRole('button', { name: 'Trace' })
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.getByRole('complementary', { name: 'Trace' })).toHaveCount(0)
-  await toggle.click()
-  const panel = page.getByRole('complementary', { name: 'Trace' })
-  const turn = panel.getByRole('region', { name: 'Turn 1' })
-  // Live: the tool steps show up while the turn runs, then the turn finishes.
-  await expect(turn.getByText('Running')).toBeVisible()
-  await expect(turn.getByRole('button', { name: /web_search/ })).toBeVisible()
-  await expect(turn.getByRole('button', { name: /web_fetch/ })).toBeVisible()
-  await expect(turn.getByText('Done')).toBeVisible()
-  await expect(turn.getByTestId('trace-step')).toHaveCount(7)
+  await expect(assistantMessages(page).last()).toContainText('v26.13.0')
+  const views = page.getByRole('navigation', { name: 'Views' })
+  await views.getByRole('button', { name: 'Trajectory' }).click()
+  await expect(composer(page)).toHaveCount(0)
+  const turn = page.getByRole('region', { name: 'Turn 1' })
+  for (const label of ['Input', 'Output', 'Think', 'Time']) await expect(turn.getByText(label, { exact: true })).toBeVisible()
+  const fetchRow = page.getByTestId('trajectory-row').filter({ hasText: 'web_fetch' })
+  await expect(fetchRow).toBeVisible()
+  await expect(page.getByTestId('trajectory-span')).toHaveCount(1) // the turn; items have no timing
 
-  await turn.getByRole('button', { name: /web_search/ }).click()
-  const row = page.locator('[data-item-id]').filter({ has: page.getByRole('button', { name: /web_search/ }) })
-  await expect(row).toBeInViewport()
+  await fetchRow.click()
+  const details = page.getByRole('complementary', { name: 'Event details' })
+  await expect(details.getByText('web_fetch', { exact: true })).toBeVisible()
+  await expect(details.getByRole('region', { name: 'Timing' })).toContainText('Not recorded')
 
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    await expect.poll(() => overflow(page), { message: `overflow at ${width}px` }).toEqual({ missing: false, outside: [], pageScrolls: false })
+    await expect.poll(() => page.evaluate(() => {
+      const root = document.scrollingElement ?? document.documentElement
+      return root.scrollWidth > root.clientWidth
+    }), { message: `page scrolls sideways at ${width}px` }).toBe(false)
   }
-  // Narrow: the trace is a drawer over the page; choosing a step closes it.
-  const drawer = page.getByRole('dialog', { name: 'Trace' })
-  await expect(drawer).toBeVisible()
-  await drawer.getByRole('button', { name: /web_fetch/ }).click()
-  await expect(drawer).toBeHidden()
+  // Narrow: the details are a drawer; Show in chat goes back to the chat at that call.
+  await page.getByRole('dialog', { name: 'Event details' }).getByRole('button', { name: 'Show in chat' }).click()
+  await expect(composer(page)).toBeVisible()
   await expect(page.locator('[data-item-id]').filter({ has: page.getByRole('button', { name: /web_fetch/ }) })).toBeInViewport()
+
+  // The chosen view is remembered for this chat.
+  await views.getByRole('button', { name: 'Trajectory' }).click()
+  await page.reload()
+  await expect(page.getByRole('region', { name: 'Turn 1' })).toBeVisible()
 })
 
 test('a delegated subagent shows live status, then expands to its own activity', async ({ page }) => {

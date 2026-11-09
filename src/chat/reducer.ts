@@ -38,10 +38,11 @@
  * one card per child, right after the `subagent` call whose output names it
  * ("started subagent <id>"), named by that call's `description`.
  *
- * Turns and the log (for the trace): `turns` holds each top-level turn record,
+ * Turns, the log and subagent runs (for the trajectory): `turns` holds each top-level turn record,
  * from the stream's turn frames and `GET .../turns` (`applyTurns`); a finished
  * turn never goes back to running when its `created` frame is replayed. `log`
- * is the latest `GET .../items` list as fetched.
+ * is the latest `GET .../items` list as fetched; `subagents` the latest
+ * subagent runs with their turns and items.
  *
  * Tool calls: the backend leaves a `function_call` `in_progress` until its
  * output item arrives. A call still without output when its turn has ended is
@@ -101,6 +102,8 @@ export interface ConversationState {
   turns: OAITurn[]
   /** The latest saved-items list (`GET .../items`). */
   log: StoredSessionItem[]
+  /** The latest subagent runs as read (for the trajectory). */
+  subagents: SubagentActivity[]
 }
 
 type ToolView = Extract<MessageView, { kind: 'tool' }>
@@ -110,16 +113,17 @@ type AssistantView = Extract<MessageView, { kind: 'assistant' }>
 type ReasoningView = Extract<MessageView, { kind: 'reasoning' }>
 type SubagentView = Extract<MessageView, { kind: 'subagent' }>
 
-/** One subagent with its turns, as the hook reads them. */
+/** One subagent with its turns (and its items, once read), as the hook reads them. */
 export interface SubagentActivity {
   subagent: OAISubagent
   turns: OAITurn[]
+  items?: StoredSessionItem[]
 }
 
 const LOCAL_PREFIX = 'local:'
 
 export function initialState(sessionId: string): ConversationState {
-  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [] }
+  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [], subagents: [] }
 }
 
 /**
@@ -171,7 +175,7 @@ function endedToolStatus(status: OAITurn['status']): ToolView['status'] {
 
 /** Upserts one card per subagent with its live status and timing. */
 export function applySubagents(s: ConversationState, children: SubagentActivity[]): ConversationState {
-  let next = s
+  let next: ConversationState = { ...s, subagents: children }
   for (const { subagent, turns } of children) {
     const last = turns.at(-1)
     const status = last?.status ?? (subagent.status === 'closed' ? 'completed' : 'queued')

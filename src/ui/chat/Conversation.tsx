@@ -6,31 +6,44 @@
  * `/login` (the hook and client do this); a 503 shows the ErrorBanner with
  * Retry; any other error shows the API's message inline in the composer. A
  * stream the server refuses (403/404) shows a warning banner.
+ *
+ * Views: Chat, and Trajectory (what the agent did, as a ledger with timing and
+ * an inspector), switched by the tabs under the title and remembered per
+ * session. Both read the same live state. The trajectory's "Show in chat"
+ * switches to Chat, scrolls to the record's row and marks it briefly.
  */
 import { Banner } from '@astryxdesign/core/Banner'
-import { Button } from '@astryxdesign/core/Button'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
-import { Icon } from '@astryxdesign/core/Icon'
 import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
-import { QueueListIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
 import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { sessionTitle } from '@/ui/shell/group'
-import { NARROW_QUERY, SidePanelLayout } from '@/ui/shell/SidePanel'
 import { TopBar } from '@/ui/shell/TopBar'
-import { buildTrace } from '@/ui/trace/build-trace'
-import { TracePanel } from '@/ui/trace/TracePanel'
+import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
+import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
+import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
 import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
+import { scrollToItem } from './reveal'
+import { usePrefersReducedMotion } from './use-reduced-motion'
+
+type View = 'chat' | 'trajectory'
+const VIEWS: ViewOption<View>[] = [
+  { value: 'chat', label: 'Chat' },
+  { value: 'trajectory', label: 'Trajectory' },
+]
+const VIEW_VALUES = VIEWS.map((v) => v.value)
+/** How long a row revealed from the trajectory stays marked. */
+export const HIGHLIGHT_MS = 1_600
 
 const styles = stylex.create({
   page: { blockSize: '100%', minBlockSize: 0 },
@@ -70,13 +83,41 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<OAIAgentSession | null>(null)
   const [missing, setMissing] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
-  const [traceOpen, setTraceOpen] = useState(false)
-  // Same state as the conversation, so the trace updates live with it.
-  const trace = useMemo(() => buildTrace(state.turns, state.log), [state.turns, state.log])
-  // In the drawer (narrow screens) a chosen step closes the trace so the row is visible.
-  const onStepSelect = useCallback(() => {
-    if (window.matchMedia?.(NARROW_QUERY).matches) setTraceOpen(false)
-  }, [])
+  const [view, setView] = useSessionView<View>(sessionId, VIEW_VALUES, 'chat')
+  const [selected, setSelected] = useState<string | null>(null)
+  const [reveal, setReveal] = useState<string | null>(null)
+  const [highlight, setHighlight] = useState<string | null>(null)
+  const reducedMotion = usePrefersReducedMotion()
+  // Same state as the chat, so the trajectory updates live with it.
+  const model = session?.agent.model
+  const trajectory = useMemo(
+    () => buildTrajectory(state.turns, state.log, state.subagents, model ? { model } : {}),
+    [state.turns, state.log, state.subagents, model],
+  )
+  const showInChat = useCallback(
+    (record: TrajectoryRecord) => {
+      setView('chat')
+      setReveal(record.chatItemId)
+    },
+    [setView],
+  )
+  // Once Chat is rendered, scroll to the revealed row and mark it.
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (view !== 'chat' || reveal === null) return
+    const id = reveal
+    setReveal(null)
+    if (!scrollToItem(id, !reducedMotion)) return
+    setHighlight(id)
+    if (highlightTimer.current) clearTimeout(highlightTimer.current)
+    highlightTimer.current = setTimeout(() => setHighlight(null), HIGHLIGHT_MS)
+  }, [view, reveal, reducedMotion])
+  useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current)
+    },
+    [],
+  )
 
   const loadSession = useCallback(async () => {
     try {
@@ -119,6 +160,9 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const running = state.status === 'in_progress' || state.status === 'requires_action'
   const streaming = state.items.some((v) => v.kind === 'assistant' && v.streaming)
   const retries = retryTexts(state.items)
+  // A chat with nothing in it yet has no trajectory to switch to.
+  const blank = state.items.length === 0 && state.turns.length === 0
+  const shown: View = blank ? 'chat' : view
 
   return (
     <VStack xstyle={styles.page}>
@@ -128,25 +172,15 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           <HStack gap={2} vAlign="center">
             <ConnectionPill connection={connection} />
             {session && <Token size="sm" label={session.agent.model} description="Model" />}
-            <Button
-              label="Trace"
-              variant="ghost"
-              size="sm"
-              icon={<Icon icon={QueueListIcon} />}
-              aria-pressed={traceOpen}
-              onClick={() => setTraceOpen((open) => !open)}
-            />
           </HStack>
         }
+        tabs={blank ? undefined : <ViewTabs views={VIEWS} value={view} onChange={setView} />}
       />
       {closedReason && <Banner status="warning" container="section" {...CLOSED_NOTICE[closedReason]} />}
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={() => failure.retry?.()} />}
-      <SidePanelLayout
-        title="Trace"
-        isOpen={traceOpen}
-        onOpenChange={setTraceOpen}
-        panel={<TracePanel turns={trace} onStepSelect={onStepSelect} />}
-      >
+      {shown === 'trajectory' ? (
+        <TrajectoryView trajectory={trajectory} selectedId={selected} onSelect={setSelected} onShowInChat={showInChat} />
+      ) : (
         <ChatLayout
           xstyle={styles.chat}
           density="spacious"
@@ -167,6 +201,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                 <Message
                   key={view.id}
                   view={view}
+                  highlighted={highlight === view.id}
                   answer={onAnswer}
                   onRetry={retryText !== undefined && !running ? () => void onSend(retryText).catch(() => {}) : undefined}
                 />
@@ -174,7 +209,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             })}
           </ChatMessageList>
         </ChatLayout>
-      </SidePanelLayout>
+      )}
     </VStack>
   )
 }

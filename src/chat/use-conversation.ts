@@ -23,9 +23,9 @@
  * (coalesced, `ITEMS_REFRESH_DELAY_MS`) and every `ITEMS_POLL_MS` while the
  * session is in progress, so running tools show up before the next message.
  * The turn records (`GET .../turns`, for the trace) are read with them.
- * Subagents (`GET .../subagents` and each one's turns) are read with the items;
+ * Subagents (`GET .../subagents`, each one's turns and items) are read with the items;
  * a subagent can outlive the turn that started it, so the poll also runs while
- * one is still working. A finished, closed subagent's turns are not read again.
+ * one is still working. A finished, closed subagent's turns and items are not read again.
  * A hidden tab does not poll; it refreshes when it becomes visible.
  *
  * Reconnecting: when the stream ends or fails it is retried after 1s, doubling
@@ -167,7 +167,7 @@ export function useConversation(
     let refreshAgain = false
     // Subagents: whether one still works, and the turns of finished, closed ones.
     let childrenRunning = false
-    const finishedChildren = new Map<string, OAITurn[]>()
+    const finishedChildren = new Map<string, { turns: OAITurn[]; items: StoredSessionItem[] }>()
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
@@ -229,10 +229,15 @@ export function useConversation(
         const children = await Promise.all(
           list.map(async (subagent): Promise<SubagentActivity> => {
             const known = finishedChildren.get(subagent.id)
-            if (known) return { subagent, turns: known }
-            const turns = await api.subagentTurns(sessionId, subagent.id)
-            if (subagent.status === 'closed' && turns.every((t) => TERMINAL.has(t.status))) finishedChildren.set(subagent.id, turns)
-            return { subagent, turns }
+            if (known) return { subagent, ...known }
+            const [turns, items] = await Promise.all([
+              api.subagentTurns(sessionId, subagent.id),
+              // The trajectory nests a subagent's own activity; optional.
+              api.subagentItems(sessionId, subagent.id).catch(() => undefined),
+            ])
+            const run = items ? { turns, items } : { turns }
+            if (subagent.status === 'closed' && turns.every((t) => TERMINAL.has(t.status)) && items) finishedChildren.set(subagent.id, { turns, items })
+            return { subagent, ...run }
           }),
         )
         if (signal.aborted) return
