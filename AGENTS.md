@@ -53,6 +53,16 @@ Progress is tracked in the plan's ledger under `.superpowers/sdd/` (git-ignored)
 - Theme: `src/ui/theme/brand.ts` defines the Agentry theme (`theme-neutral` plus one teal accent); `pnpm exec astryx theme build src/ui/theme/brand.ts --out src/ui/theme/agentry.css` writes the generated `agentry.{css,js,d.ts}` (do not edit; rebuild after changing `brand.ts` or upgrading astryx). `src/ui/theme/AppTheme.tsx` applies it in the mode from the `agentry_theme` cookie (`system` | `light` | `dark`, helpers in `src/ui/theme/theme-cookie.ts`), read by `app/layout.tsx`. `src/astryx-themes.ts` is the CLI's theme registry and is not imported by the app.
 - Shell: `app/(app)/layout.tsx` guards every signed-in page (`requirePageSession()`), renders `<meta name="agentry-csrf">`, and wraps pages in `src/ui/shell/Shell.tsx` (astryx `AppShell` + `Sidebar`). DOM tests import `tests/helpers/dom.ts` for jsdom's missing `<dialog>` methods.
 
+## Backlog (agreed 2026-11-09; each needs its own spec)
+
+Cowork capabilities beyond F1. Backend pieces live in `~/code/dsh-agents-api` (mirrored in its `AGENTS.md`).
+
+1. **Skill picker.** `/name` in a message already invokes a DSH user-invocable skill (`dsh-tool-skill` scans user messages). Add a backend skill-catalog endpoint and a `/` autocomplete menu in the composer. Skills come from `<workspace>/.agents/skills`, `$DSH_HOME/skills`, `~/.agents/skills`, a configured directory, and `skill-office`.
+2. **Screenshots in tool cards.** Browser tools return images through the tool-result pipeline and attachment store. Add a backend attachment/image endpoint and image rendering in tool cards (F4 scope).
+3. **Browser automation.** Mount `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` (or the Chrome DevTools / Stagehand variant) in the Agentry profile (backend Task 8).
+4. **Vision-capable model route.** DSH sends screenshots to the model only on an image-capable route; non-vision routes get a diagnostic. Needed for "review the screenshot" workflows.
+5. **Artifacts panel (F3).** Agent-produced files, documents, HTML previews, and per-turn diffs in the right-hand panel; needs backend cowork endpoints (deliverables, workspace changes, uploads).
+
 ## Astryx conventions (installed by `pnpm exec astryx init`)
 
 The managed block below is written by `astryx init`; refresh it with the CLI, do not hand-edit it. In short: read a component's props with `pnpm exec astryx component <Name>` before using it; build layout from astryx components (`Center`, `VStack`, `HStack`, `Layout`, …) instead of raw `<div>`s; style with component props first, then `xstyle` + StyleX tokens, never raw hex/px or `className`/`style`; colors go through the theme, never `:root` overrides; start new pages from `pnpm exec astryx build "<idea>"` / `astryx template`.
