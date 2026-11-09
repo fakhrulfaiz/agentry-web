@@ -22,6 +22,7 @@
  * items are refreshed shortly after each durable `item.done` or turn end
  * (coalesced, `ITEMS_REFRESH_DELAY_MS`) and every `ITEMS_POLL_MS` while the
  * session is in progress, so running tools show up before the next message.
+ * The turn records (`GET .../turns`, for the trace) are read with them.
  * Subagents (`GET .../subagents` and each one's turns) are read with the items;
  * a subagent can outlive the turn that started it, so the poll also runs while
  * one is still working. A finished, closed subagent's turns are not read again.
@@ -41,6 +42,7 @@ import {
   applyEvent,
   applyItems,
   applySubagents,
+  applyTurns,
   initialState,
   removeLocalUserMessage,
   type ConversationState,
@@ -77,6 +79,7 @@ type Action =
   | { type: 'reset'; sessionId: string }
   | { type: 'event'; id?: string; event: OAISessionEvent }
   | { type: 'items'; items: StoredSessionItem[] }
+  | { type: 'turns'; turns: OAITurn[] }
   | { type: 'subagents'; children: SubagentActivity[] }
   | { type: 'local-user'; text: string }
   | { type: 'drop-local'; text: string }
@@ -89,6 +92,8 @@ function reducer(s: ConversationState, a: Action): ConversationState {
       return applyEvent(s, a.id === undefined ? { event: a.event } : { id: a.id, event: a.event })
     case 'items':
       return applyItems(s, a.items)
+    case 'turns':
+      return applyTurns(s, a.turns)
     case 'subagents':
       return applySubagents(s, a.children)
     case 'local-user':
@@ -200,8 +205,12 @@ export function useConversation(
 
     const loadItems = async (): Promise<boolean> => {
       try {
+        // Turn records (status, timing, usage) feed the trace; optional, so a failure is ignored.
+        const turns = api.turns(sessionId).catch(() => null)
         const items = await api.items(sessionId)
         if (!signal.aborted) dispatch({ type: 'items', items })
+        const records = await turns
+        if (!signal.aborted && records) dispatch({ type: 'turns', turns: records })
       } catch (error) {
         if (signal.aborted) return false
         if (isSignedOut(error)) {

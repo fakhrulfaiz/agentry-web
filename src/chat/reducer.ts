@@ -38,6 +38,16 @@
  * one card per child, right after the `subagent` call whose output names it
  * ("started subagent <id>"), named by that call's `description`.
  *
+ * Turns and the log (for the trace): `turns` holds each top-level turn record,
+ * from the stream's turn frames and `GET .../turns` (`applyTurns`); a finished
+ * turn never goes back to running when its `created` frame is replayed. `log`
+ * is the latest `GET .../items` list as fetched.
+ *
+ * Tool calls: the backend leaves a `function_call` `in_progress` until its
+ * output item arrives. A call still without output when its turn has ended is
+ * shown done (or failed, when the turn failed), so it never keeps spinning; an
+ * output that arrives later still fills it in.
+ *
  * Required actions: durable status frames own `function_call` and
  * `environment_connection` actions. Approval and question actions only ever
  * travel on ephemeral frames (backend Task 6, provisional), so only an
@@ -87,6 +97,10 @@ export interface ConversationState {
   turnOf: ReadonlyMap<string, string>
   /** The open top-level turn, if any. */
   openTurn: string | null
+  /** Top-level turn records, oldest first. */
+  turns: OAITurn[]
+  /** The latest saved-items list (`GET .../items`). */
+  log: StoredSessionItem[]
 }
 
 type ToolView = Extract<MessageView, { kind: 'tool' }>
@@ -105,7 +119,7 @@ export interface SubagentActivity {
 const LOCAL_PREFIX = 'local:'
 
 export function initialState(sessionId: string): ConversationState {
-  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null }
+  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [] }
 }
 
 /**
@@ -114,10 +128,45 @@ export function initialState(sessionId: string): ConversationState {
  * Afterwards the views follow the log order (see `inLogOrder`).
  */
 export function applyItems(s: ConversationState, items: StoredSessionItem[]): ConversationState {
-  let next = s
+  let next: ConversationState = { ...s, log: items }
   const top = items.filter((item) => !item.subagent_id)
   for (const item of top) next = applyItem(next, item, true)
   return actionsLast(inLogOrder(next, top))
+}
+
+/** Upserts top-level turn records (`GET .../turns`); subagent turns are skipped. */
+export function applyTurns(s: ConversationState, turns: OAITurn[]): ConversationState {
+  let next = s
+  for (const turn of turns) next = upsertTurn(next, turn)
+  return next
+}
+
+const TERMINAL_TURN = new Set<OAITurn['status']>(['completed', 'failed', 'cancelled'])
+
+/**
+ * Upserts one top-level turn record; a finished record is never replaced by an
+ * unfinished one. A finished turn settles its tool calls that have no output.
+ */
+function upsertTurn(s: ConversationState, turn: OAITurn): ConversationState {
+  if (turn.subagent_id) return s
+  const index = s.turns.findIndex((t) => t.id === turn.id)
+  const current = index === -1 ? undefined : s.turns[index]
+  if (current && TERMINAL_TURN.has(current.status) && !TERMINAL_TURN.has(turn.status)) return s
+  const turns = index === -1 ? [...s.turns, turn] : s.turns.with(index, turn)
+  const next = { ...s, turns }
+  if (!TERMINAL_TURN.has(turn.status)) return next
+  const ended = endedToolStatus(turn.status)
+  let changed = false
+  const items = next.items.map((v) => {
+    if (v.kind !== 'tool' || v.status !== 'running' || v.output !== undefined || next.turnOf.get(v.id) !== turn.id) return v
+    changed = true
+    return { ...v, status: ended }
+  })
+  return changed ? { ...next, items } : next
+}
+
+function endedToolStatus(status: OAITurn['status']): ToolView['status'] {
+  return status === 'failed' ? 'failed' : 'done'
 }
 
 /** Upserts one card per subagent with its live status and timing. */
@@ -232,7 +281,7 @@ function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean
       return applyStatus(s, event, ephemeral)
     case 'agent.session.turn.created':
     case 'agent.session.turn.in_progress':
-      return event.turn.subagent_id ? placeSubagent(s, event.turn) : { ...s, openTurn: event.turn.id }
+      return event.turn.subagent_id ? placeSubagent(s, event.turn) : { ...upsertTurn(s, event.turn), openTurn: event.turn.id }
     case 'agent.session.turn.completed':
     case 'agent.session.turn.failed':
     case 'agent.session.turn.cancelled':
@@ -290,10 +339,11 @@ function applyStatus(s: ConversationState, event: OAISessionStatusEvent, ephemer
 
 function applyTurnEnd(s: ConversationState, turn: OAITurn): ConversationState {
   if (turn.subagent_id) return placeSubagent(s, turn)
+  const recorded = upsertTurn(s, turn)
   let next: ConversationState = {
-    ...s,
+    ...recorded,
     openTurn: s.openTurn === turn.id ? null : s.openTurn,
-    items: s.items.map((v) => ((v.kind === 'assistant' || v.kind === 'reasoning') && v.streaming ? { ...v, streaming: false } : v)),
+    items: recorded.items.map((v) => ((v.kind === 'assistant' || v.kind === 'reasoning') && v.streaming ? { ...v, streaming: false } : v)),
   }
   if (turn.status === 'failed') {
     next = place(next, { kind: 'notice', id: `notice:${turn.id}`, level: 'failed', message: turn.error?.message ?? 'The turn failed' }, turn.id)
@@ -459,11 +509,18 @@ function parseArgs(args: Record<string, unknown> | string): unknown {
   }
 }
 
-/** A re-sent call item never regresses a finished tool or drops its output. */
+/**
+ * A re-sent call item never regresses a finished tool or drops its output. A
+ * call first seen after its turn ended is settled at once.
+ */
 function placeTool(s: ConversationState, view: ToolView, turn: string | undefined): ConversationState {
   const current = find(s.items, view.id)
   if (current?.kind === 'tool' && current.status !== 'running') {
     return place(s, { ...view, status: current.status, ...withOutput(current.output ?? view.output) }, turn)
+  }
+  const record = turn ? s.turns.find((t) => t.id === turn) : undefined
+  if (view.status === 'running' && view.output === undefined && record && TERMINAL_TURN.has(record.status)) {
+    return place(s, { ...view, status: endedToolStatus(record.status) }, turn)
   }
   return place(s, view, turn)
 }

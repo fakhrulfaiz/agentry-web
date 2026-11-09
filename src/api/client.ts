@@ -173,6 +173,11 @@ export const api = {
     return listAll(`${AGENTRY}/agents/sessions/${seg(id)}/items`)
   },
 
+  /** Every turn of the session, oldest first (follows `has_more`). */
+  turns(id: string): Promise<OAITurn[]> {
+    return listAll(`${AGENTRY}/agents/sessions/${seg(id)}/turns`)
+  },
+
   /** The subagents this session's turns delegated to. */
   async subagents(id: string): Promise<OAISubagent[]> {
     const page = await request<OAIListResponse<OAISubagent>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/subagents`)

@@ -313,6 +313,21 @@ describe('useConversation', () => {
     unmount()
   })
 
+  it('loads the turn records with the items, for the trace', async () => {
+    const turn = delegation.turns[0] as OAITurn
+    const base = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) =>
+      String(input).startsWith(`/api/agentry/agents/sessions/${SID}/turns`)
+        ? Response.json({ object: 'list', data: [turn], first_id: turn.id, last_id: turn.id, has_more: false })
+        : base(input, init),
+    )
+    streams.push(() => streamResponse('', true))
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    expect(result.current.state.turns).toEqual([turn])
+    unmount()
+  })
+
   it('stops the stream on unmount', async () => {
     streams.push(() => streamResponse('', true))
     const { unmount } = renderHook(() => useConversation(SID))

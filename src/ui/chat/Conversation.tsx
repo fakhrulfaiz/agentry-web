@@ -8,20 +8,26 @@
  * stream the server refuses (403/404) shows a warning banner.
  */
 import { Banner } from '@astryxdesign/core/Banner'
+import { Button } from '@astryxdesign/core/Button'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
 import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
+import { QueueListIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
 import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { sessionTitle } from '@/ui/shell/group'
+import { NARROW_QUERY, SidePanelLayout } from '@/ui/shell/SidePanel'
 import { TopBar } from '@/ui/shell/TopBar'
+import { buildTrace } from '@/ui/trace/build-trace'
+import { TracePanel } from '@/ui/trace/TracePanel'
 import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
@@ -64,6 +70,13 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<OAIAgentSession | null>(null)
   const [missing, setMissing] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
+  const [traceOpen, setTraceOpen] = useState(false)
+  // Same state as the conversation, so the trace updates live with it.
+  const trace = useMemo(() => buildTrace(state.turns, state.log), [state.turns, state.log])
+  // In the drawer (narrow screens) a chosen step closes the trace so the row is visible.
+  const onStepSelect = useCallback(() => {
+    if (window.matchMedia?.(NARROW_QUERY).matches) setTraceOpen(false)
+  }, [])
 
   const loadSession = useCallback(async () => {
     try {
@@ -115,38 +128,53 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           <HStack gap={2} vAlign="center">
             <ConnectionPill connection={connection} />
             {session && <Token size="sm" label={session.agent.model} description="Model" />}
+            <Button
+              label="Trace"
+              variant="ghost"
+              size="sm"
+              icon={<Icon icon={QueueListIcon} />}
+              aria-pressed={traceOpen}
+              onClick={() => setTraceOpen((open) => !open)}
+            />
           </HStack>
         }
       />
       {closedReason && <Banner status="warning" container="section" {...CLOSED_NOTICE[closedReason]} />}
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={() => failure.retry?.()} />}
-      <ChatLayout
-        xstyle={styles.chat}
-        density="spacious"
-        composer={
-          <Composer
-            onSend={onSend}
-            onStop={onStop}
-            isRunning={running}
-            autoFocus
-            status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
-          />
-        }
+      <SidePanelLayout
+        title="Trace"
+        isOpen={traceOpen}
+        onOpenChange={setTraceOpen}
+        panel={<TracePanel turns={trace} onStepSelect={onStepSelect} />}
       >
-        <ChatMessageList isStreaming={streaming}>
-          {state.items.map((view) => {
-            const retryText = retries.get(view.id)
-            return (
-              <Message
-                key={view.id}
-                view={view}
-                answer={onAnswer}
-                onRetry={retryText !== undefined && !running ? () => void onSend(retryText).catch(() => {}) : undefined}
-              />
-            )
-          })}
-        </ChatMessageList>
-      </ChatLayout>
+        <ChatLayout
+          xstyle={styles.chat}
+          density="spacious"
+          composer={
+            <Composer
+              onSend={onSend}
+              onStop={onStop}
+              isRunning={running}
+              autoFocus
+              status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
+            />
+          }
+        >
+          <ChatMessageList isStreaming={streaming}>
+            {state.items.map((view) => {
+              const retryText = retries.get(view.id)
+              return (
+                <Message
+                  key={view.id}
+                  view={view}
+                  answer={onAnswer}
+                  onRetry={retryText !== undefined && !running ? () => void onSend(retryText).catch(() => {}) : undefined}
+                />
+              )
+            })}
+          </ChatMessageList>
+        </ChatLayout>
+      </SidePanelLayout>
     </VStack>
   )
 }

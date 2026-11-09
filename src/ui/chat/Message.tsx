@@ -23,9 +23,12 @@ import { usePrefersReducedMotion } from './use-reduced-motion'
 
 const styles = stylex.create({ userText: { whiteSpace: 'pre-wrap' } })
 
-function AssistantRow({ children }: { children: ReactNode }) {
+/** The attribute the trace finds a row by (`data-item-id`, the view id); top-level rows only. */
+export const ITEM_ANCHOR = 'data-item-id'
+
+function AssistantRow({ anchor, children }: { anchor?: string; children: ReactNode }) {
   return (
-    <ChatMessage sender="assistant" name="">
+    <ChatMessage sender="assistant" name="" data-item-id={anchor}>
       <ChatMessageBubble variant="ghost" width="100%">
         {children}
       </ChatMessageBubble>
@@ -54,10 +57,12 @@ export function Message({
   /** Subagent nesting: 1 in the conversation, one more inside each expanded subagent card. */
   depth?: number
 }) {
+  // Subagent items reuse the parent's item ids, so only top-level rows are anchors.
+  const anchor = depth === 1 ? view.id : undefined
   switch (view.kind) {
     case 'user':
       return (
-        <ChatMessage sender="user" name="">
+        <ChatMessage sender="user" name="" data-item-id={anchor}>
           <ChatMessageBubble>
             <Text xstyle={styles.userText}>{view.text}</Text>
           </ChatMessageBubble>
@@ -67,31 +72,31 @@ export function Message({
       // A step that was only reasoning (or only tool calls) leaves an empty message: show nothing.
       if (!view.text) return null
       return (
-        <AssistantRow>
+        <AssistantRow anchor={anchor}>
           <AssistantText text={view.text} streaming={view.streaming} />
         </AssistantRow>
       )
     case 'reasoning':
       return (
-        <AssistantRow>
+        <AssistantRow anchor={anchor}>
           <ReasoningBlock text={view.text} streaming={view.streaming} />
         </AssistantRow>
       )
     case 'tool':
       return (
-        <AssistantRow>
+        <AssistantRow anchor={anchor}>
           <ToolCard view={view} />
         </AssistantRow>
       )
     case 'subagent':
       return (
-        <AssistantRow>
+        <AssistantRow anchor={anchor}>
           <SubagentCard view={view} depth={depth} />
         </AssistantRow>
       )
     case 'notice':
       return (
-        <AssistantRow>
+        <AssistantRow anchor={anchor}>
           <Notice view={view} onRetry={onRetry} />
         </AssistantRow>
       )
@@ -100,13 +105,13 @@ export function Message({
       if (action.type !== 'approval') {
         const what = action.type === 'function_call' ? `Waiting for ${action.name} to run` : 'Waiting for the environment to connect'
         return (
-          <AssistantRow>
+          <AssistantRow anchor={anchor}>
             <Text type="supporting">{what}</Text>
           </AssistantRow>
         )
       }
       return (
-        <AssistantRow>
+        <AssistantRow anchor={anchor}>
           {action.kind === 'user_question' ? (
             <QuestionCard action={action} answer={answer} />
           ) : (

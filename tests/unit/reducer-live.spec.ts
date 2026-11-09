@@ -16,6 +16,7 @@ import {
   applyEvent,
   applyItems,
   applySubagents,
+  applyTurns,
   type SubagentActivity,
   initialState,
   type ConversationState,
@@ -219,5 +220,68 @@ describe('subagents on a recorded delegating turn', () => {
     const cmd = s.items.find((v) => v.kind === 'tool' && v.name === 'command')
     expect(cmd).toMatchObject({ args: { command: 'ls -la' } })
     expect(cmd && 'output' in cmd ? String(cmd.output) : '').toMatch(/^Error: sandbox mode/)
+  })
+})
+
+describe('turn records and the item log (the trace reads them)', () => {
+  const TURN = (live.turns as OAITurn[])[0]
+
+  it('keeps the latest item list and each top-level turn, live from the stream', () => {
+    const started = fold(FRAMES.slice(0, turnEnd))
+    expect(started.turns.map((t) => [t.id, t.status])).toEqual([['turn_4', 'in_progress']])
+    const withItems = applyItems(started, ITEMS.slice(0, 4))
+    expect(withItems.log).toEqual(ITEMS.slice(0, 4))
+    const ended = fold(FRAMES.slice(turnEnd), withItems)
+    expect(ended.turns).toEqual([TURN])
+  })
+
+  it('takes turn records from GET /turns and never moves a finished turn back to running', () => {
+    const s = applyTurns(initialState(SID), [TURN])
+    expect(s.turns).toEqual([TURN])
+    // The replay from Last-Event-ID 0 starts with the turn's `created` frame.
+    const replayed = fold(FRAMES.slice(0, turnEnd), s)
+    expect(replayed.turns).toEqual([TURN])
+  })
+
+  it('ignores subagent turns', () => {
+    const child = { ...TURN, id: 'turn_child', subagent_id: 'child-1' }
+    expect(applyTurns(initialState(SID), [child]).turns).toEqual([])
+  })
+})
+
+describe('a tool call without output once its turn has ended', () => {
+  const callOnly = ITEMS.slice(0, ITEMS.findIndex((i) => i.id === 'item_fn_19') + 1)
+  const tool = (s: ConversationState) => s.items.find((v) => v.id === 'item_fn_19')
+  const ended = (status: 'completed' | 'failed' | 'cancelled'): typeof FRAMES => {
+    const frame = FRAMES[turnEnd]
+    if (frame.event.type !== 'agent.session.turn.completed') throw new Error('fixture shape')
+    const turn = { ...frame.event.turn, status }
+    return [{ ...frame, event: { ...frame.event, type: `agent.session.turn.${status}`, turn } as OAISessionEvent }]
+  }
+
+  it('keeps its spinner while the turn runs', () => {
+    expect(tool(applyItems(fold(FRAMES.slice(0, turnEnd)), callOnly))).toMatchObject({ status: 'running' })
+  })
+
+  it('is done with no output when the turn completes', () => {
+    const s = fold(ended('completed'), applyItems(fold(FRAMES.slice(0, turnEnd)), callOnly))
+    expect(tool(s)).toMatchObject({ status: 'done' })
+    expect(tool(s)).not.toHaveProperty('output')
+  })
+
+  it('is failed when the turn fails', () => {
+    expect(tool(fold(ended('failed'), applyItems(fold(FRAMES.slice(0, turnEnd)), callOnly)))).toMatchObject({ status: 'failed' })
+  })
+
+  it('is settled when the call is first seen after the turn ended (items refreshed late, or GET /turns)', () => {
+    expect(tool(applyItems(fold(FRAMES), callOnly))).toMatchObject({ status: 'done' })
+    const fromTurns = applyItems(applyTurns(initialState(SID), [{ ...(live.turns as OAITurn[])[0], status: 'failed' }]), callOnly)
+    expect(tool(fromTurns)).toMatchObject({ status: 'failed' })
+  })
+
+  it('still takes its output when the output arrives later', () => {
+    const s = applyItems(fold(ended('completed'), applyItems(fold(FRAMES.slice(0, turnEnd)), callOnly)), ITEMS)
+    expect(tool(s)).toMatchObject({ status: 'done' })
+    expect(tool(s)).toHaveProperty('output')
   })
 })
