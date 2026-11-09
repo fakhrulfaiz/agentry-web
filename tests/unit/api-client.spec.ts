@@ -42,6 +42,70 @@ describe('api client', () => {
     expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'DELETE' })
   })
 
+  it('calls the schedule routes through the BFF with the CSRF token', async () => {
+    const timing = { kind: 'daily' as const, daily: { time: '09:00:00.000', time_zone: 'UTC' } }
+    const schedule = {
+      id: 's1',
+      object: 'agent.schedule' as const,
+      title: 'T',
+      prompt: 'P',
+      timing,
+      status: 'active' as const,
+      next_run_at: null,
+      created_at: 'c',
+      updated_at: 'u',
+      revision: 'r1',
+      session_id: 'sesn_1',
+      running: false,
+      last_run: null,
+    }
+    fetchMock.mockImplementation(async () => Response.json(schedule))
+
+    await api.listSchedules({ status: 'active', limit: 20 })
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules?status=active&limit=20', method: 'GET' })
+
+    await api.createSchedule({ title: 'T', prompt: 'P', timing, agent: { model: 'm1' } })
+    expect(lastCall()).toMatchObject({
+      url: '/api/agentry/agents/schedules',
+      method: 'POST',
+      body: { title: 'T', prompt: 'P', timing, agent: { model: 'm1' } },
+    })
+
+    await api.getSchedule('s1')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1', method: 'GET' })
+
+    await api.updateSchedule('s1', { title: 'U', revision: 'r1' })
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1', method: 'POST', body: { title: 'U', revision: 'r1' } })
+
+    fetchMock.mockResolvedValue(Response.json({ id: 's1', object: 'agent.schedule.deleted', deleted: true }))
+    await api.deleteSchedule('s1')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1', method: 'DELETE' })
+
+    fetchMock.mockImplementation(async () => Response.json(schedule))
+    await api.pauseSchedule('s1')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1/pause', method: 'POST' })
+    await api.resumeSchedule('s1')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1/resume', method: 'POST' })
+    await api.runSchedule('s1')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1/run', method: 'POST' })
+
+    fetchMock.mockImplementation(async () => Response.json({ object: 'list', data: [], has_more: false, next_before: null }))
+    await api.listScheduleRuns('s1', { limit: 10, before: 'b' })
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/schedules/s1/runs?limit=10&before=b', method: 'GET' })
+
+    expect(lastCall().headers.get('x-agentry-csrf')).toBe(CSRF)
+    expect(lastCall().headers.get('authorization')).toBeNull()
+  })
+
+  it('maps a schedule conflict to a 409 ApiError', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ error: { code: 'schedule_conflict', message: 'The task changed elsewhere.' } }, { status: 409 }))
+    await expect(api.updateSchedule('s1', { title: 'U', revision: 'old' })).rejects.toMatchObject({
+      status: 409,
+      code: 'schedule_conflict',
+      message: 'The task changed elsewhere.',
+    })
+  })
+
   it('rename keeps the other metadata keys', async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Old', pinned: '1' } }))
     fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))

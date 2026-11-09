@@ -282,6 +282,76 @@ export interface CreateSessionParams {
   stream?: boolean
 }
 
+/**
+ * A task's timing, DSH's tagged union passed through unchanged (scheduled-tasks
+ * backend spec §4). `at` carries the UTC instant; the client always sends the
+ * IANA zone it shows for the other kinds. Mirrors the backend until its OpenAPI
+ * lands.
+ */
+export type ScheduleTiming =
+  | { kind: 'after'; after: { after_seconds: number } }
+  | { kind: 'at'; at: string }
+  | { kind: 'every'; every: { every_seconds: number } }
+  | { kind: 'daily'; daily: { time: string; time_zone: string } }
+  | { kind: 'weekly'; weekly: { time: string; time_zone: string; weekdays: number[] } }
+  | { kind: 'cron'; cron: { expression: string; time_zone: string } }
+  | { kind: 'rrule'; rrule: { rrule: string } }
+
+export type ScheduleStatus = 'active' | 'paused' | 'ended'
+
+/** One delivery of a scheduled task (receipt, not a completion). */
+export interface AgentScheduleRun {
+  scheduled_at: string
+  delivered_at: string
+  message_id: string
+  session_id: string
+}
+
+/** A scheduled agent task (`/v1/agents/schedules`). */
+export interface AgentSchedule {
+  id: string
+  object: 'agent.schedule'
+  title: string
+  prompt: string
+  timing: ScheduleTiming
+  status: ScheduleStatus
+  next_run_at: string | null
+  created_at: string
+  updated_at: string
+  revision: string
+  session_id: string
+  running: boolean
+  last_run: AgentScheduleRun | null
+  /** `chat` when the agent created it inside a conversation. */
+  source?: 'api' | 'chat'
+}
+
+/** Delivery history page (`GET …/schedules/{id}/runs`). */
+export interface ScheduleRunList {
+  object: 'list'
+  data: AgentScheduleRun[]
+  has_more: boolean
+  next_before: string | null
+}
+
+/** Body for `POST /v1/agents/schedules`. */
+export interface CreateScheduleParams {
+  title: string
+  prompt: string
+  timing: ScheduleTiming
+  session_id?: string
+  agent_id?: string
+  agent?: { model?: string; reasoning?: { effort?: ReasoningEffort }; instructions?: string }
+}
+
+/** Body for `POST /v1/agents/schedules/{id}`; `revision` is the record's `updated_at`. */
+export interface UpdateScheduleParams {
+  title?: string
+  prompt?: string
+  timing?: ScheduleTiming
+  revision: string
+}
+
 /** Output event written on the session SSE stream. */
 export type OAISessionEvent =
   | { type: 'agent.session.created'; event_id: string; session: OAIAgentSession }

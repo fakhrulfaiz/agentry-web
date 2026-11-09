@@ -5,6 +5,8 @@
  * `<meta name="agentry-csrf">`, in `x-agentry-csrf`.
  */
 import type {
+  AgentSchedule,
+  CreateScheduleParams,
   CreateSessionParams,
   OAIAgentSession,
   OAIInputEvent,
@@ -12,7 +14,10 @@ import type {
   OAISubagent,
   OAITurn,
   ReasoningEffort,
+  ScheduleRunList,
+  ScheduleStatus,
   StoredSessionItem,
+  UpdateScheduleParams,
 } from './types'
 
 export const CSRF_HEADER = 'x-agentry-csrf'
@@ -261,6 +266,55 @@ export const api = {
   async models(): Promise<string[]> {
     const body = await request<{ models: string[] }>('GET', '/api/models')
     return body.models
+  },
+
+  /** The user's scheduled tasks, in the backend's order (active by next run, then paused/ended newest first). */
+  listSchedules(q: { status?: ScheduleStatus; after?: string; limit?: number } = {}): Promise<OAIListResponse<AgentSchedule>> {
+    const params = new URLSearchParams()
+    if (q.status) params.set('status', q.status)
+    if (q.after) params.set('after', q.after)
+    if (q.limit !== undefined) params.set('limit', String(q.limit))
+    const query = params.size > 0 ? `?${params}` : ''
+    return request('GET', `${AGENTRY}/agents/schedules${query}`)
+  },
+
+  getSchedule(id: string): Promise<AgentSchedule> {
+    return request('GET', `${AGENTRY}/agents/schedules/${seg(id)}`)
+  },
+
+  /** Creates a task; the backend provisions its dedicated chat when `session_id` is absent. */
+  createSchedule(input: CreateScheduleParams): Promise<AgentSchedule> {
+    return request('POST', `${AGENTRY}/agents/schedules`, input)
+  },
+
+  /** Updates a task; `revision` guards against a concurrent edit (409 `schedule_conflict`). */
+  updateSchedule(id: string, patch: UpdateScheduleParams): Promise<AgentSchedule> {
+    return request('POST', `${AGENTRY}/agents/schedules/${seg(id)}`, patch)
+  },
+
+  deleteSchedule(id: string): Promise<{ id: string; object: 'agent.schedule.deleted'; deleted: true }> {
+    return request('DELETE', `${AGENTRY}/agents/schedules/${seg(id)}`)
+  },
+
+  pauseSchedule(id: string): Promise<AgentSchedule> {
+    return request('POST', `${AGENTRY}/agents/schedules/${seg(id)}/pause`)
+  },
+
+  resumeSchedule(id: string): Promise<AgentSchedule> {
+    return request('POST', `${AGENTRY}/agents/schedules/${seg(id)}/resume`)
+  },
+
+  runSchedule(id: string): Promise<AgentSchedule> {
+    return request('POST', `${AGENTRY}/agents/schedules/${seg(id)}/run`)
+  },
+
+  /** One page of a task's delivery history, newest first, older pages via `before`. */
+  listScheduleRuns(id: string, q: { limit?: number; before?: string } = {}): Promise<ScheduleRunList> {
+    const params = new URLSearchParams()
+    if (q.limit !== undefined) params.set('limit', String(q.limit))
+    if (q.before) params.set('before', q.before)
+    const query = params.size > 0 ? `?${params}` : ''
+    return request('GET', `${AGENTRY}/agents/schedules/${seg(id)}/runs${query}`)
   },
 
   /**

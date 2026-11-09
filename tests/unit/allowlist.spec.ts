@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isAllowed } from '@/server/allowlist'
 
 const ID = 'sesn_01HZX-abc_9'
+const SCHEDULE = 'sched_01HZX-abc_9'
 /** Subagent ids are Host session UUIDs. */
 const SUB = '7a75cb0f-e29e-45e7-8c42-fbed08549897'
 const SUBAGENT_ROUTES = [
@@ -24,6 +25,15 @@ describe('isAllowed', () => {
     ['POST', `/agents/sessions/${ID}/events`],
     ['GET', `/agents/sessions/${ID}/items`],
     ['GET', `/agents/sessions/${ID}/turns`],
+    ['GET', '/agents/schedules'],
+    ['POST', '/agents/schedules'],
+    ['GET', `/agents/schedules/${SCHEDULE}`],
+    ['POST', `/agents/schedules/${SCHEDULE}`],
+    ['DELETE', `/agents/schedules/${SCHEDULE}`],
+    ['POST', `/agents/schedules/${SCHEDULE}/pause`],
+    ['POST', `/agents/schedules/${SCHEDULE}/resume`],
+    ['POST', `/agents/schedules/${SCHEDULE}/run`],
+    ['GET', `/agents/schedules/${SCHEDULE}/runs`],
   ])('allows %s %s', (method, path) => {
     expect(isAllowed(method, path)).toBe(true)
   })
@@ -87,6 +97,29 @@ describe('isAllowed', () => {
     ]) {
       expect(isAllowed('GET', path), path).toBe(false)
     }
+  })
+
+  it('treats schedules as a reserved collection, never an agent id', () => {
+    expect(isAllowed('GET', '/agents/schedules')).toBe(true)
+    expect(isAllowed('POST', '/agents/schedules')).toBe(true)
+    expect(isAllowed('DELETE', '/agents/schedules')).toBe(false)
+  })
+
+  it('rejects other methods, traversal and bad ids on the schedule routes', () => {
+    for (const path of [
+      `/agents/schedules/${SCHEDULE}/other`,
+      `/agents/schedules/${SCHEDULE}/pause/extra`,
+      `/agents/schedules/a%2Fb`,
+      '/agents/schedules/..',
+      '/agents/schedules/../run',
+      '/agents/schedules//runs',
+    ]) {
+      expect(isAllowed('GET', path), path).toBe(false)
+      expect(isAllowed('POST', path), path).toBe(false)
+    }
+    expect(isAllowed('GET', `/agents/schedules/${SCHEDULE}/pause`)).toBe(false)
+    expect(isAllowed('POST', `/agents/schedules/${SCHEDULE}/runs`)).toBe(false)
+    expect(isAllowed('DELETE', `/agents/schedules/${SCHEDULE}/run`)).toBe(false)
   })
 
   it('rejects methods outside the allow-list', () => {
