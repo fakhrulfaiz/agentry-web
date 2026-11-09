@@ -13,7 +13,8 @@
  * `environment_connection` actions. Approval and question actions only ever
  * travel on ephemeral frames (backend Task 6, provisional), so only an
  * ephemeral status frame adds or removes them; a replayed durable frame never
- * drops an approval that the session snapshot reported.
+ * drops an approval that the session snapshot reported. Action views are kept
+ * at the end of `items`.
  */
 import type {
   OAIRequiredAction,
@@ -71,7 +72,20 @@ export function applyEvent(s: ConversationState, e: { id?: string; event: OAISes
     seen.add(e.id)
     next = { ...s, seen, lastEventId: e.id }
   }
-  return reduce(next, e.event, e.id === undefined)
+  return actionsLast(reduce(next, e.event, e.id === undefined))
+}
+
+/**
+ * Pending actions always render after the conversation: an approval taken from
+ * the session snapshot can arrive before the replayed history it belongs to.
+ */
+function actionsLast(s: ConversationState): ConversationState {
+  const firstAction = s.items.findIndex((v) => v.kind === 'action')
+  if (firstAction === -1 || s.items.slice(firstAction).every((v) => v.kind === 'action')) return s
+  return {
+    ...s,
+    items: [...s.items.filter((v) => v.kind !== 'action'), ...s.items.filter((v) => v.kind === 'action')],
+  }
 }
 
 /** Shows a just-sent message before the server echoes it; replaced by the server item with the same text. */
@@ -274,4 +288,11 @@ function upsert(items: MessageView[], view: MessageView): MessageView[] {
   const copy = items.slice()
   copy[index] = view
   return copy
+}
+
+/** Drops the latest optimistic message with this text (its send failed). */
+export function removeLocalUserMessage(s: ConversationState, text: string): ConversationState {
+  const index = s.items.findLastIndex((v) => v.kind === 'user' && v.id.startsWith(LOCAL_PREFIX) && v.text === text)
+  if (index === -1) return s
+  return { ...s, items: [...s.items.slice(0, index), ...s.items.slice(index + 1)] }
 }

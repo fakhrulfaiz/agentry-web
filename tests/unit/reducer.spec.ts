@@ -228,6 +228,13 @@ describe('conversation reducer', () => {
     expect(s.items.filter((v) => v.kind === 'user')).toEqual([{ kind: 'user', id: 'item_msg_3', text: 'Say hello' }])
   })
 
+  it('keeps pending actions after the conversation even when they arrive first', () => {
+    const approval: OAIRequiredAction = { type: 'approval', id: 'appr_7', kind: 'tool_approval', prompt: 'Approve', options: ['approve', 'deny'] }
+    let s = applyEvent(initialState(SID), { event: { type: 'agent.session.requires_action', event_id: 'snap', session: session('requires_action', [approval]) } })
+    s = fold(TWO_TURNS.frames.slice(0, 6), s)
+    expect(kinds(s)).toEqual(['user', 'action'])
+  })
+
   it('does not mutate the previous state', () => {
     const s = initialState(SID)
     const snapshot = structuredClone({ ...s, seen: [...s.seen] })
