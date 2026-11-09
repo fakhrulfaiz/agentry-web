@@ -2,14 +2,12 @@
 
 /**
  * Conversation sidebar: New chat, title search, the user's sessions (paged
- * newest first, grouped Today / Yesterday / Earlier), rename and delete, then
- * Settings and the user menu. Collapsing is remembered in `localStorage`;
+ * newest first: starred chats under Starred, the rest grouped Today /
+ * Yesterday / Earlier), star, rename and delete (shared with the chat title
+ * menu, see `session-actions`), then Settings and the user menu. Collapsing is remembered in `localStorage`;
  * below 768px AppShell moves the whole sidebar into a drawer.
  */
-import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Button } from '@astryxdesign/core/Button'
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
-import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav'
@@ -19,18 +17,18 @@ import { TextInput } from '@astryxdesign/core/TextInput'
 import { VStack } from '@astryxdesign/core/VStack'
 import { ChatBubbleLeftIcon, Cog6ToothIcon, MagnifyingGlassIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
 import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import { AgentryMark } from '@/ui/brand/Wordmark'
 import { groupSessions, sessionTitle } from './group'
+import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChanges, useStarToggle } from './session-actions'
 import { UserMenu, type ShellIdentity } from './UserMenu'
 
 export const SIDEBAR_COLLAPSED_KEY = 'agentry.sidebar.collapsed'
 export const PAGE_SIZE = 30
 
-/** Event other parts of the app dispatch on `window` when a session was created or renamed. */
-export const SESSIONS_CHANGED = 'agentry:sessions-changed'
+export { SESSIONS_CHANGED }
 
 type Session = Pick<OAIAgentSession, 'id' | 'created_at' | 'metadata'>
 
@@ -101,16 +99,23 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     }
   }, [])
 
-  // First page on mount; again when another part of the app created or renamed a chat.
+  // First page on mount.
   useEffect(() => {
     void load(null)
-    const reload = () => {
+  }, [load])
+
+  // A renamed, starred or deleted chat updates in place; any other change (a new chat) reloads the first page.
+  useSessionChanges((change) => {
+    if (change === null) {
       loadingRef.current = false
       void load(null)
+    } else if ('deleted' in change) {
+      setSessions((prev) => prev.filter((s) => s.id !== change.id))
+    } else {
+      setSessions((prev) => prev.map((s) => (s.id === change.id ? { ...s, metadata: change.metadata } : s)))
     }
-    window.addEventListener(SESSIONS_CHANGED, reload)
-    return () => window.removeEventListener(SESSIONS_CHANGED, reload)
-  }, [load])
+  })
+  const toggleStar = useStarToggle()
 
   // Opening a chat the list does not have yet (just created elsewhere): refresh the first page.
   const knownIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions])
@@ -144,13 +149,13 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     const q = query.trim().toLowerCase()
     return q ? sessions.filter((s) => sessionTitle(s).toLowerCase().includes(q)) : sessions
   }, [query, sessions])
-  const groups = groupSessions(visible, new Date())
-
-  const renamed = (id: string, title: string) =>
-    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, metadata: { ...s.metadata, title } } : s)))
+  const starred = visible.filter(isStarred)
+  const groups = groupSessions(
+    visible.filter((s) => !isStarred(s)),
+    new Date(),
+  )
 
   const removed = (id: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== id))
     if (id === currentId) router.push('/')
   }
 
@@ -166,6 +171,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
             label={`Options for ${sessionTitle(s)}`}
             size="sm"
             items={[
+              { label: isStarred(s) ? 'Unstar' : 'Star', onClick: () => void toggleStar(s) },
               { label: 'Rename', onClick: () => setRenaming(s) },
               { label: 'Delete', variant: 'destructive', onClick: () => setDeleting(s) },
             ]}
@@ -202,6 +208,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           </VStack>
         }
       >
+        {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
         {groups.today.length > 0 && <SideNavSection title="Today">{rows(groups.today)}</SideNavSection>}
         {groups.yesterday.length > 0 && <SideNavSection title="Yesterday">{rows(groups.yesterday)}</SideNavSection>}
         {groups.earlier.length > 0 && <SideNavSection title="Earlier">{rows(groups.earlier)}</SideNavSection>}
@@ -221,117 +228,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           {loading && <Spinner size="sm" />}
         </VStack>
       </SideNav>
-      <RenameDialog session={renaming} onClose={() => setRenaming(null)} onRenamed={renamed} />
+      <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog session={deleting} onClose={() => setDeleting(null)} onDeleted={removed} />
     </>
-  )
-}
-
-function RenameDialog({
-  session,
-  onClose,
-  onRenamed,
-}: {
-  session: Session | null
-  onClose(): void
-  onRenamed(id: string, title: string): void
-}) {
-  const [title, setTitle] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (session) {
-      setTitle(sessionTitle(session))
-      setError(null)
-    }
-  }, [session])
-
-  async function save(event: FormEvent) {
-    event.preventDefault()
-    if (!session || saving) return
-    const next = title.trim()
-    if (!next) {
-      setError('Enter a title.')
-      return
-    }
-    setSaving(true)
-    try {
-      await api.renameSession(session.id, next)
-      onRenamed(session.id, next)
-      onClose()
-    } catch (e) {
-      if (isSignedOut(e)) window.location.assign('/login')
-      setError(errorText(e))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog isOpen={session !== null} onOpenChange={(open) => !open && onClose()} purpose="form">
-      <DialogHeader title="Rename chat" />
-      <form onSubmit={save}>
-        <VStack gap={4}>
-          <TextInput
-            label="Title"
-            value={title}
-            onChange={(v) => {
-              setTitle(v)
-              setError(null)
-            }}
-            hasAutoFocus
-            status={error ? { type: 'error', message: error } : undefined}
-            statusVariant="detached"
-          />
-          <HStack gap={2} hAlign="end">
-            <Button label="Cancel" variant="ghost" onClick={onClose} />
-            <Button label="Save" variant="primary" type="submit" isLoading={saving} />
-          </HStack>
-        </VStack>
-      </form>
-    </Dialog>
-  )
-}
-
-function DeleteDialog({
-  session,
-  onClose,
-  onDeleted,
-}: {
-  session: Session | null
-  onClose(): void
-  onDeleted(id: string): void
-}) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => setError(null), [session])
-
-  async function remove() {
-    if (!session || busy) return
-    setBusy(true)
-    try {
-      await api.deleteSession(session.id)
-      onDeleted(session.id)
-      onClose()
-    } catch (e) {
-      if (isSignedOut(e)) window.location.assign('/login')
-      setError(errorText(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const title = session ? sessionTitle(session) : ''
-  return (
-    <AlertDialog
-      isOpen={session !== null}
-      onOpenChange={(open) => !open && onClose()}
-      title="Delete chat?"
-      description={error ?? `“${title}” and its history will be permanently deleted.`}
-      actionLabel="Delete"
-      onAction={remove}
-      isActionLoading={busy}
-    />
   )
 }

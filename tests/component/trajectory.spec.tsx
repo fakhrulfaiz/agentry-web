@@ -7,6 +7,12 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAITurn, StoredSessionItem } from '@/api/types'
 import { Conversation } from '@/ui/chat/Conversation'
+
+// The chat's title menu navigates home after a delete.
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
+}))
 import { buildTrajectory, type SubagentRun } from '@/ui/trajectory/build-trajectory'
 import { CHIP } from '@/ui/trajectory/labels'
 import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
@@ -150,6 +156,8 @@ describe('Conversation views', () => {
       scrolled.push(this)
     })
     const first = render(<Conversation sessionId={SID} />)
+    // The title is the chat's menu button.
+    expect(await screen.findByRole('button', { name: 'Node release' })).toHaveAttribute('aria-haspopup')
     await user.click(await screen.findByRole('button', { name: 'Trajectory' }))
     expect(window.localStorage.getItem(`agentry_view:${SID}`)).toBe('trajectory')
     expect(screen.queryByRole('textbox', { name: 'Message input' })).not.toBeInTheDocument()

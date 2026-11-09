@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, isSignedOut, titleFrom } from '@/api/client'
+import { api, ApiError, isSignedOut, mergeMetadata, titleFrom } from '@/api/client'
 
 const fetchMock = vi.fn<typeof fetch>()
 const CSRF = 'meta-token'
@@ -47,6 +47,28 @@ describe('api client', () => {
     fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))
     await api.renameSession('s1', 'New')
     expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'POST', body: { metadata: { title: 'New', pinned: '1' } } })
+  })
+
+  it('mergeMetadata sets string keys, removes null ones, and keeps the rest', () => {
+    expect(mergeMetadata({ title: 'T', starred: 'true', x: '1' }, { starred: null, title: 'U' })).toEqual({ title: 'U', x: '1' })
+    expect(mergeMetadata(null, { starred: 'true' })).toEqual({ starred: 'true' })
+    expect(mergeMetadata(undefined, { starred: null })).toEqual({})
+    const current = { title: 'T' }
+    mergeMetadata(current, { starred: 'true' })
+    expect(current).toEqual({ title: 'T' })
+  })
+
+  it('star and unstar merge into the current metadata (Agentry replaces the whole map)', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Plan', pinned: '1' } }))
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))
+    expect(await api.setStarred('s1', true)).toEqual({ title: 'Plan', pinned: '1', starred: 'true' })
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'POST', body: { metadata: { title: 'Plan', pinned: '1', starred: 'true' } } })
+    expect(lastCall().headers.get('x-agentry-csrf')).toBe(CSRF)
+
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Plan', starred: 'true' } }))
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))
+    await api.setStarred('s1', false)
+    expect(lastCall().body).toEqual({ metadata: { title: 'Plan' } })
   })
 
   it('items follows has_more pages', async () => {

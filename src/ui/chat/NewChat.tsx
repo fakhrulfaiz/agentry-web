@@ -13,7 +13,7 @@ import { api, ApiError, isSignedOut } from '@/api/client'
 import { goToLogin } from '@/chat/use-conversation'
 import { Wordmark } from '@/ui/brand/Wordmark'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
-import { SESSIONS_CHANGED } from '@/ui/shell/Sidebar'
+import { SESSIONS_CHANGED } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
 import { Composer, type EffortChoice } from './Composer'
 import { pickModel, readModelCookie } from './model-cookie'
@@ -60,7 +60,7 @@ export function NewChat() {
   const noModels = models !== null && models.length === 0 && !failure
   return (
     <VStack xstyle={styles.page}>
-      <TopBar title="New chat" />
+      <TopBar />
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={failure.retry} />}
       <Center axis="both" padding={6} minHeight="70%">
         <VStack gap={6} width="100%" maxWidth={760} hAlign="stretch">

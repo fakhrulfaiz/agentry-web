@@ -24,7 +24,7 @@ import type { OAIAgentSession } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
 import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
-import { sessionTitle } from '@/ui/shell/group'
+import { ChatTitleMenu } from '@/ui/shell/ChatTitleMenu'
 import { TopBar } from '@/ui/shell/TopBar'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
@@ -184,7 +184,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   return (
     <VStack xstyle={styles.page}>
       <TopBar
-        title={session ? sessionTitle(session) : 'Chat'}
+        title={session && !blank ? <ChatTitleMenu sessionId={session.id} metadata={session.metadata} /> : undefined}
         end={
           <HStack gap={2} vAlign="center">
             <ConnectionPill connection={connection} />

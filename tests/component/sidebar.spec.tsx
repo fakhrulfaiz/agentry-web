@@ -17,6 +17,7 @@ const apiMock = vi.hoisted(() => ({
   listSessions: vi.fn(),
   renameSession: vi.fn(),
   deleteSession: vi.fn(),
+  setStarred: vi.fn(),
   logout: vi.fn(),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({
@@ -31,9 +32,11 @@ const IDENTITY = { owner: 'u-1', roles: ['user'], displayName: 'Ada Lovelace' }
 const NOW_S = Math.floor(Date.now() / 1000)
 const DAY_S = 86_400
 
-function session(id: string, title: string, createdAt = NOW_S): OAIAgentSession {
-  return { id, created_at: createdAt, metadata: { title } } as unknown as OAIAgentSession
+function session(id: string, title: string, createdAt = NOW_S, extra: Record<string, string> = {}): OAIAgentSession {
+  return { id, created_at: createdAt, metadata: { title, ...extra } } as unknown as OAIAgentSession
 }
+const starred = (id: string, title: string, createdAt = NOW_S) => session(id, title, createdAt, { starred: 'true' })
+const group = (name: string) => screen.getByRole('group', { name })
 
 function page(data: OAIAgentSession[], hasMore = false): OAIListResponse<OAIAgentSession> {
   return { object: 'list', data, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null, has_more: hasMore }
@@ -198,6 +201,76 @@ describe('Sidebar', () => {
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
     expect(apiMock.deleteSession).not.toHaveBeenCalled()
     expect(screen.getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+  })
+
+  it('lists starred chats in a Starred section above the date groups, and not again under them', async () => {
+    apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch'), starred('s2', 'Fix the build'), starred('s3', 'Old notes', NOW_S - 10 * DAY_S)]))
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Plan the launch' })
+    const star = group('Starred')
+    expect(within(star).getAllByRole('link').map((a) => a.textContent)).toEqual(['Fix the build', 'Old notes'])
+    expect(within(group('Today')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Plan the launch'])
+    expect(screen.queryByRole('group', { name: 'Earlier' })).not.toBeInTheDocument()
+    // Starred comes first.
+    expect(star.compareDocumentPosition(group('Today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('Star moves a chat into Starred at once and broadcasts the change; Unstar moves it back', async () => {
+    apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch')]))
+    let resolve!: (m: Record<string, string>) => void
+    apiMock.setStarred.mockImplementation(() => new Promise((r) => (resolve = r)))
+    const heard: unknown[] = []
+    const listen = (e: Event) => heard.push((e as CustomEvent).detail)
+    window.addEventListener('agentry:sessions-changed', listen)
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Plan the launch' })
+    expect(screen.queryByRole('group', { name: 'Starred' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Options for Plan the launch' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Star' }))
+    // Optimistic: before the API answers.
+    expect(await within(group('Starred')).findByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+    expect(apiMock.setStarred).toHaveBeenCalledWith('s1', true)
+    expect(heard).toContainEqual({ id: 's1', metadata: { title: 'Plan the launch', starred: 'true' } })
+    await act(async () => resolve({ title: 'Plan the launch', starred: 'true' }))
+
+    apiMock.setStarred.mockResolvedValue({ title: 'Plan the launch' })
+    await user.click(screen.getByRole('button', { name: 'Options for Plan the launch' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Unstar' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Starred' })).not.toBeInTheDocument())
+    expect(within(group('Today')).getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+    expect(apiMock.setStarred).toHaveBeenLastCalledWith('s1', false)
+    window.removeEventListener('agentry:sessions-changed', listen)
+  })
+
+  it('a failed star rolls back and shows an error toast', async () => {
+    apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch')]))
+    apiMock.setStarred.mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Plan the launch' })
+    await user.click(screen.getByRole('button', { name: 'Options for Plan the launch' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Star' }))
+    expect(await screen.findByText('Could not star the chat. Try again.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Starred' })).not.toBeInTheDocument())
+    expect(within(group('Today')).getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+  })
+
+  it('applies a change another part of the app broadcasts, without reloading', async () => {
+    apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch'), session('s2', 'Fix the build')]))
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Plan the launch' })
+    const calls = apiMock.listSessions.mock.calls.length
+    act(() => {
+      window.dispatchEvent(new CustomEvent('agentry:sessions-changed', { detail: { id: 's1', metadata: { title: 'Renamed', starred: 'true' } } }))
+    })
+    expect(within(group('Starred')).getByRole('link', { name: 'Renamed' })).toBeInTheDocument()
+    act(() => {
+      window.dispatchEvent(new CustomEvent('agentry:sessions-changed', { detail: { id: 's2', deleted: true } }))
+    })
+    expect(screen.queryByRole('link', { name: 'Fix the build' })).not.toBeInTheDocument()
+    expect(apiMock.listSessions.mock.calls.length).toBe(calls)
   })
 
   it('remembers the collapsed state in localStorage', async () => {

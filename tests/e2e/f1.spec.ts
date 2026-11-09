@@ -202,6 +202,25 @@ test('a delegated subagent shows live status, then expands to its own activity',
   await expect(page.getByTestId('subagent-card')).toContainText('Done')
 })
 
+test('the chat title menu stars a chat; it stays under Starred after a reload', async ({ page }) => {
+  await signIn(page)
+  // A blank new chat has no title in its header.
+  await expect(page.locator('header').first()).toHaveText('')
+  await startChat(page, 'Keep this chat')
+  await expect(assistantMessages(page).last()).toContainText('You said: Keep this chat')
+
+  await page.getByRole('button', { name: 'Keep this chat', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Star' }).click()
+  const starred = page.getByRole('group', { name: 'Starred' })
+  await expect(starred.getByRole('link', { name: 'Keep this chat' })).toBeVisible()
+
+  await page.reload()
+  await expect(starred.getByRole('link', { name: 'Keep this chat' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Today' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Keep this chat', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Unstar' })).toBeVisible()
+})
+
 test('approval card: focus starts on Allow, and Allow resumes the turn', async ({ page }) => {
   await signIn(page)
   await startChat(page, 'Please approve the cleanup')

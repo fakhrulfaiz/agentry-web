@@ -92,6 +92,22 @@ function postEvents(id: string, events: OAIInputEvent[]): Promise<void> {
   return request<unknown>('POST', `${AGENTRY}/agents/sessions/${seg(id)}/events`, { events }).then(() => undefined)
 }
 
+/** Session metadata key that marks a starred chat (value `"true"`). */
+export const STARRED_KEY = 'starred'
+
+/** `current` with `patch` applied: a string sets a key, `null` removes it. Never mutates `current`. */
+export function mergeMetadata(
+  current: Record<string, string> | null | undefined,
+  patch: Record<string, string | null>,
+): Record<string, string> {
+  const next: Record<string, string> = { ...current }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete next[key]
+    else next[key] = value
+  }
+  return next
+}
+
 export function titleFrom(text: string): string {
   const line = text.trim().split(/\s+/).join(' ')
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
@@ -159,10 +175,25 @@ export const api = {
     ])
   },
 
-  /** Agentry replaces the whole metadata map, so the other keys are read first and kept. */
-  async renameSession(id: string, title: string): Promise<void> {
+  /**
+   * Changes some session metadata keys (a string sets one, `null` removes it)
+   * and returns the map saved. Agentry replaces the whole map on update, so
+   * the current one is read first and the other keys are kept.
+   */
+  async updateMetadata(id: string, patch: Record<string, string | null>): Promise<Record<string, string>> {
     const current = await api.getSession(id)
-    await request('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { metadata: { ...current.metadata, title } })
+    const metadata = mergeMetadata(current.metadata, patch)
+    await request('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { metadata })
+    return metadata
+  },
+
+  async renameSession(id: string, title: string): Promise<void> {
+    await api.updateMetadata(id, { title })
+  },
+
+  /** Stars (`metadata.starred = "true"`) or unstars (key removed) a chat; returns the map saved. */
+  setStarred(id: string, starred: boolean): Promise<Record<string, string>> {
+    return api.updateMetadata(id, { [STARRED_KEY]: starred ? 'true' : null })
   },
 
   async deleteSession(id: string): Promise<void> {
