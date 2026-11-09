@@ -129,10 +129,33 @@ describe('POST /api/auth/logout', () => {
     const { redirectTo } = (await res.json()) as { redirectTo: string }
     const url = new URL(redirectTo)
     expect(url.origin + url.pathname).toBe('http://kc.test/realms/agentry/protocol/openid-connect/logout')
-    expect(url.searchParams.get('id_token_hint')).toBe('id-token')
+    expect(url.searchParams.get('id_token_hint')).toBeNull()
+    expect(url.searchParams.get('client_id')).toBe('agentry-web')
     expect(url.searchParams.get('post_logout_redirect_uri')).toBe('http://web.test/login')
+    expect(redirectTo).not.toContain('id-token')
     expect(mockState.store.get(SESSION_COOKIE)).toBeUndefined()
     expect(mockState.store.get('authjs.session-token')).toBeUndefined()
+  })
+
+  it('builds post_logout_redirect_uri from the forwarded origin behind a proxy', async () => {
+    mockState.config = testConfig({
+      auth: 'keycloak',
+      keycloak: { issuer: 'http://kc.test/realms/agentry', clientId: 'agentry-web', clientSecret: 's' },
+    })
+    await signedIn({
+      credential: { kind: 'keycloak', accessToken: 'at', refreshToken: 'rt', idToken: 'id-token', expiresAt: Date.now() + 600_000 },
+      identity: { owner: 'sub', roles: [], displayName: 'Ada' },
+    })
+    const req = sameOriginRequest('http://10.0.0.5:3000/api/auth/logout', {
+      method: 'POST',
+      csrf: 'csrf-token',
+      headers: { origin: 'https://chat.example.com', 'x-forwarded-host': 'chat.example.com', 'x-forwarded-proto': 'https' },
+    })
+    const res = await logout(req)
+
+    expect(res.status).toBe(200)
+    const { redirectTo } = (await res.json()) as { redirectTo: string }
+    expect(new URL(redirectTo).searchParams.get('post_logout_redirect_uri')).toBe('https://chat.example.com/login')
   })
 
   it('requires the CSRF header', async () => {

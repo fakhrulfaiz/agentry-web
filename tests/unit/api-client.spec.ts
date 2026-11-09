@@ -75,8 +75,8 @@ describe('api client', () => {
   })
 
   it('logout returns redirectTo, and /login when the session is already gone', async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({ redirectTo: 'https://kc.test/logout?id_token_hint=x' }))
-    expect(await api.logout()).toBe('https://kc.test/logout?id_token_hint=x')
+    fetchMock.mockResolvedValueOnce(Response.json({ redirectTo: 'https://kc.test/logout?client_id=agentry-web' }))
+    expect(await api.logout()).toBe('https://kc.test/logout?client_id=agentry-web')
     expect(lastCall()).toMatchObject({ url: '/api/auth/logout', method: 'POST' })
     expect(lastCall().headers.get('x-agentry-csrf')).toBe(CSRF)
 

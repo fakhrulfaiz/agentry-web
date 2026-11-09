@@ -10,8 +10,8 @@ vi.mock('@/config/env', async () => {
   return { getConfig: () => h.mockState.config }
 })
 
-const { refreshIfNeeded, identityFromTokens } = await import('@/server/keycloak')
-const { requireCredential, UnauthorizedError } = await import('@/server/require-auth')
+const { refreshIfNeeded, identityFromTokens, resetRefreshes } = await import('@/server/keycloak')
+const { requireCredential, authFailure, AuthUnavailableError, UnauthorizedError } = await import('@/server/require-auth')
 const { getSession } = await import('@/server/session')
 
 const NOW = 1_800_000_000_000
@@ -32,13 +32,14 @@ beforeEach(() => {
   })
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
+  resetRefreshes()
 })
 afterEach(() => vi.unstubAllGlobals())
 
 describe('refreshIfNeeded', () => {
   it('leaves a fresh token alone', async () => {
     const fresh = { ...credential, expiresAt: NOW + 61_000 }
-    expect(await refreshIfNeeded(fresh, NOW)).toBe(fresh)
+    expect(await refreshIfNeeded(fresh, NOW)).toEqual({ status: 'ok', credential: fresh })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -48,7 +49,10 @@ describe('refreshIfNeeded', () => {
     )
     const result = await refreshIfNeeded({ ...credential, expiresAt: NOW + 60_000 }, NOW)
 
-    expect(result).toEqual({ kind: 'keycloak', accessToken: 'new-at', refreshToken: 'new-rt', idToken: 'new-id', expiresAt: NOW + 300_000 })
+    expect(result).toEqual({
+      status: 'ok',
+      credential: { kind: 'keycloak', accessToken: 'new-at', refreshToken: 'new-rt', idToken: 'new-id', expiresAt: NOW + 300_000 },
+    })
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe('http://kc.test/realms/agentry/protocol/openid-connect/token')
     const body = new URLSearchParams(String(init?.body))
@@ -63,17 +67,47 @@ describe('refreshIfNeeded', () => {
   it('keeps the old refresh and id tokens when Keycloak omits them', async () => {
     fetchMock.mockResolvedValue(Response.json({ access_token: 'new-at', expires_in: 60 }))
     const result = await refreshIfNeeded(credential, NOW)
-    expect(result).toMatchObject({ accessToken: 'new-at', refreshToken: 'old-rt', idToken: 'old-id' })
+    expect(result).toMatchObject({ status: 'ok', credential: { accessToken: 'new-at', refreshToken: 'old-rt', idToken: 'old-id' } })
   })
 
-  it('returns null on a 400 refresh', async () => {
-    fetchMock.mockResolvedValue(Response.json({ error: 'invalid_grant' }, { status: 400 }))
-    expect(await refreshIfNeeded(credential, NOW)).toBeNull()
+  it('is rejected on a 400 invalid_grant or a 401', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'invalid_grant' }, { status: 400 }))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'rejected' })
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unauthorized_client' }, { status: 401 }))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'rejected' })
   })
 
-  it('returns null when Keycloak is unreachable', async () => {
-    fetchMock.mockRejectedValue(new TypeError('fetch failed'))
-    expect(await refreshIfNeeded(credential, NOW)).toBeNull()
+  it('is unavailable when Keycloak is unreachable, failing or answers garbage', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'unavailable' })
+    fetchMock.mockResolvedValueOnce(new Response('bad gateway', { status: 502 }))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'unavailable' })
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'temporarily_unavailable' }, { status: 503 }))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'unavailable' })
+    fetchMock.mockResolvedValueOnce(new Response('<html>', { status: 200 }))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'unavailable' })
+  })
+
+  it('shares one token call between concurrent refreshes of the same refresh token', async () => {
+    let release!: (r: Response) => void
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (release = resolve)))
+    const calls = [refreshIfNeeded(credential, NOW), refreshIfNeeded(credential, NOW), refreshIfNeeded(credential, NOW)]
+    release(Response.json({ access_token: 'new-at', refresh_token: 'new-rt', expires_in: 300 }))
+    const results = await Promise.all(calls)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    for (const r of results) expect(r).toMatchObject({ status: 'ok', credential: { accessToken: 'new-at', refreshToken: 'new-rt' } })
+    // A late request still carrying the old refresh token reuses the result instead of spending it again.
+    expect(await refreshIfNeeded(credential, NOW + 1_000)).toMatchObject({ status: 'ok', credential: { accessToken: 'new-at' } })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not keep a failed refresh, so the next request tries again', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'))
+    expect(await refreshIfNeeded(credential, NOW)).toEqual({ status: 'unavailable' })
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: 'new-at', expires_in: 300 }))
+    expect(await refreshIfNeeded(credential, NOW)).toMatchObject({ status: 'ok' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -101,6 +135,52 @@ describe('requireCredential', () => {
     await expect(requireCredential()).rejects.toBeInstanceOf(UnauthorizedError)
     mockState.store = mockState.store.next()
     expect((await getSession()).credential).toBeUndefined()
+  })
+
+  it('keeps the session and throws AuthUnavailableError when Keycloak is down', async () => {
+    const session = await getSession()
+    session.credential = { ...credential, expiresAt: Date.now() - 1 }
+    session.csrf = 'c'
+    await session.save()
+    mockState.store = mockState.store.next()
+    fetchMock.mockResolvedValue(new Response('unavailable', { status: 503 }))
+
+    const error = await requireCredential().catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(AuthUnavailableError)
+    const res = authFailure(error)
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ error: 'auth_unavailable' })
+
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'))
+    await expect(requireCredential()).rejects.toBeInstanceOf(AuthUnavailableError)
+    mockState.store = mockState.store.next()
+    expect((await getSession()).credential).toMatchObject({ accessToken: 'old-at', refreshToken: 'old-rt' })
+  })
+
+  it('two parallel requests near expiry refresh once and both succeed under refresh-token rotation', async () => {
+    const session = await getSession()
+    session.credential = { ...credential, expiresAt: Date.now() - 1 }
+    await session.save()
+    const cookies = mockState.store.next()
+    // Keycloak with "Revoke Refresh Token": the first use of old-rt succeeds, any later use is invalid_grant.
+    let used = false
+    fetchMock.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 5))
+      if (used) return Response.json({ error: 'invalid_grant' }, { status: 400 })
+      used = true
+      return Response.json({ access_token: 'new-at', refresh_token: 'new-rt', expires_in: 300 })
+    })
+
+    // Two route handlers, each with its own request cookie store carrying the same session.
+    const run = async () => {
+      mockState.store = cookies.next()
+      return requireCredential()
+    }
+    const [a, b] = await Promise.all([run(), run()])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(a.authorization).toBe('Bearer new-at')
+    expect(b.authorization).toBe('Bearer new-at')
   })
 
   it('saves a refreshed token', async () => {

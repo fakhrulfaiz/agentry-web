@@ -1,7 +1,7 @@
 import { agentryHeaders, agentryUrl, jsonError } from '@/server/agentry'
 import { allowedPath } from '@/server/allowlist'
 import { checkCsrf } from '@/server/csrf'
-import { requireCredential, UnauthorizedError } from '@/server/require-auth'
+import { authFailure, requireCredential } from '@/server/require-auth'
 import { relay, signedOut } from '@/server/upstream'
 
 export const runtime = 'nodejs'
@@ -24,8 +24,7 @@ async function handle(req: Request): Promise<Response> {
   try {
     auth = await requireCredential()
   } catch (error) {
-    if (error instanceof UnauthorizedError) return signedOut()
-    throw error
+    return authFailure(error)
   }
   if (STATE_CHANGING.has(req.method) && !checkCsrf(req, auth.session)) return jsonError(403, 'forbidden')
 

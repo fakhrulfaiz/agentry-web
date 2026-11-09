@@ -1,6 +1,6 @@
 import { getConfig } from '@/config/env'
 import { agentryHeaders, agentryUrl, jsonError } from '@/server/agentry'
-import { requireCredential, UnauthorizedError } from '@/server/require-auth'
+import { authFailure, requireCredential } from '@/server/require-auth'
 import { signedOut } from '@/server/upstream'
 
 export const runtime = 'nodejs'
@@ -19,8 +19,7 @@ export async function GET(req: Request): Promise<Response> {
   try {
     auth = await requireCredential()
   } catch (error) {
-    if (error instanceof UnauthorizedError) return signedOut()
-    throw error
+    return authFailure(error)
   }
 
   const configured = getConfig().models
