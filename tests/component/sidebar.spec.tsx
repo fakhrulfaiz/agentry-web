@@ -152,7 +152,7 @@ describe('Sidebar', () => {
 
   it('rename updates the row', async () => {
     apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch')]))
-    apiMock.renameSession.mockResolvedValue(undefined)
+    apiMock.renameSession.mockResolvedValue({ title: 'Launch plan v2' })
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
     await screen.findByRole('link', { name: 'Plan the launch' })

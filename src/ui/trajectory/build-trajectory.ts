@@ -16,13 +16,15 @@
  *
  * Status: a tool call is completed or failed once its output arrives; without
  * output it is pending while its turn runs, and settles with the turn
- * (completed, or failed when the turn failed). Steps are pending while their
- * turn runs; the last step of a failed turn is failed.
+ * (completed, failed when the turn failed, cancelled when it was stopped).
+ * Steps are pending while their turn runs; the last step of a failed or
+ * cancelled turn takes that status.
  */
 import type { OAISubagent, OAITokenUsage, OAITurn, StoredSessionItem, TurnStatus } from '@/api/types'
+import { stripReasoning } from '@/chat/reducer'
 
 export type RecordKind = 'user' | 'assistant' | 'tool' | 'subtool'
-export type RecordStatus = 'pending' | 'completed' | 'failed'
+export type RecordStatus = 'pending' | 'completed' | 'failed' | 'cancelled'
 
 export interface TrajectoryRecord {
   /** Unique within the trajectory. */
@@ -181,7 +183,7 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
         const step = stepFor(item.id, turnId)
         const n = stepNumberOf(item.id)
         const prefix = n ? (reasoningText.get(`${turnId}:${n}`) ?? '') : ''
-        const own = prefix && text.startsWith(prefix) ? text.slice(prefix.length) : text
+        const own = stripReasoning(text, prefix)
         step.output = own
         if (own.trim()) {
           step.title = firstLine(plain(own))
@@ -233,8 +235,8 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
     const status = record.turnId ? scope.turnStatus(record.turnId) : undefined
     if (kind === 'user') record.status = 'completed'
     else if (record.status === 'pending' && status && TERMINAL.has(status)) {
-      const lastOfFailed = status === 'failed' && (kind === 'tool' || lastStep.get(record.turnId ?? '') === record)
-      record.status = lastOfFailed ? 'failed' : 'completed'
+      const last = kind === 'tool' || lastStep.get(record.turnId ?? '') === record
+      record.status = last && (status === 'failed' || status === 'cancelled') ? status : 'completed'
     }
     if (kind === 'assistant' && !record.title && record.thinking) record.title = firstLine(plain(record.thinking))
   }
@@ -244,7 +246,7 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
 function runStatus(run: SubagentRun): RecordStatus {
   const last = run.turns.at(-1)
   if (!last) return run.subagent.status === 'closed' ? 'completed' : 'pending'
-  if (last.status === 'failed') return 'failed'
+  if (last.status === 'failed' || last.status === 'cancelled') return last.status
   return TERMINAL.has(last.status) ? 'completed' : 'pending'
 }
 
@@ -366,6 +368,12 @@ export interface TimelineSpan {
   status: RecordStatus
 }
 
+/** A turn's status as a record status (pending until it ends). */
+export function turnRecordStatus(status: TurnStatus): RecordStatus {
+  if (status === 'failed' || status === 'cancelled') return status
+  return TERMINAL.has(status) ? 'completed' : 'pending'
+}
+
 /** The spans the overview draws: turns and subagent runs, from recorded timing only. */
 export function timelineSpans(t: Trajectory): TimelineSpan[] {
   const spans: TimelineSpan[] = []
@@ -376,7 +384,7 @@ export function timelineSpans(t: Trajectory): TimelineSpan[] {
       label: `Turn ${turn.index}`,
       start: turn.startedAt,
       ...(turn.endedAt !== undefined ? { end: turn.endedAt } : {}),
-      status: turn.status === 'failed' ? 'failed' : TERMINAL.has(turn.status) ? 'completed' : 'pending',
+      status: turnRecordStatus(turn.status),
     })
     for (const r of turn.records) {
       if (r.subagentId && r.startedAt !== undefined) {

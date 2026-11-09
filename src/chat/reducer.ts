@@ -31,7 +31,10 @@
  * reasoning is cut from the front of the message whenever both are known.
  *
  * Streaming: an assistant message streams from its first delta until its turn
- * ends; reasoning that arrives while its turn is open streams until then too.
+ * ends. A reasoning view streams ("Thinking…") only while it is the current
+ * step of an open turn: as soon as any later view of the same turn exists
+ * (other than its own step's message while that has no text of its own), it
+ * collapses to its summary (`settleReasoning`).
  *
  * Subagents: a child's activity never travels on the parent stream. The hook
  * reads `GET .../subagents` and each child's turns, and `applySubagents` makes
@@ -135,7 +138,7 @@ export function applyItems(s: ConversationState, items: StoredSessionItem[]): Co
   let next: ConversationState = { ...s, log: items }
   const top = items.filter((item) => !item.subagent_id)
   for (const item of top) next = applyItem(next, item, true)
-  return actionsLast(inLogOrder(next, top))
+  return settleReasoning(actionsLast(inLogOrder(next, top)))
 }
 
 /** Upserts top-level turn records (`GET .../turns`); subagent turns are skipped. */
@@ -235,7 +238,25 @@ export function applyEvent(s: ConversationState, e: { id?: string; event: OAISes
     seen.add(e.id)
     next = { ...s, seen, lastEventId: e.id }
   }
-  return actionsLast(reduce(next, e.event, e.id === undefined))
+  return settleReasoning(actionsLast(reduce(next, e.event, e.id === undefined)))
+}
+
+/**
+ * A reasoning view stops streaming once its step is over: a later view of the
+ * same turn exists that is not its own step's message still without text.
+ */
+function settleReasoning(s: ConversationState): ConversationState {
+  let items: MessageView[] | null = null
+  s.items.forEach((v, i) => {
+    if (v.kind !== 'reasoning' || !v.streaming) return
+    const turn = s.turnOf.get(v.id)
+    const own = messageIdOf(v.id)
+    const later = s.items.slice(i + 1).some((w) => s.turnOf.get(w.id) === turn && !(w.id === own && w.kind === 'assistant' && !w.text.trim()))
+    if (!later) return
+    items ??= s.items.slice()
+    items[i] = { ...v, streaming: false }
+  })
+  return items ? { ...s, items } : s
 }
 
 /**
@@ -423,7 +444,9 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
     }
     case 'reasoning': {
       const text = (item.summary ?? []).map((p) => p.text).join('')
-      const streaming = turn !== undefined && turn === s.openTurn
+      // A finished step never streams again; `settleReasoning` ends the current one.
+      const current = find(s.items, item.id)
+      const streaming = turn !== undefined && turn === s.openTurn && (current?.kind !== 'reasoning' || current.streaming)
       const next = place(s, { kind: 'reasoning', id: item.id, text, streaming }, turn)
       // The step's message may already show this reasoning as its text.
       const message = find(next.items, messageIdOf(item.id))
@@ -489,9 +512,23 @@ function reasoningIdOf(messageId: string): string {
 /** Upserts an assistant message without the reasoning of its step in front of its text. */
 function placeAssistant(s: ConversationState, view: AssistantView, turn: string | undefined): ConversationState {
   const reasoning = find(s.items, reasoningIdOf(view.id)) as ReasoningView | undefined
-  const prefix = reasoning?.kind === 'reasoning' ? reasoning.text : ''
-  const text = prefix && view.text.startsWith(prefix) ? view.text.slice(prefix.length) : view.text
+  const text = stripReasoning(view.text, reasoning?.kind === 'reasoning' ? reasoning.text : '')
   return place(s, text === view.text ? view : { ...view, text }, turn)
+}
+
+/**
+ * `text` without its step's `reasoning` in front. The backend repeats the
+ * reasoning at the start of the message with no separator, so the strip
+ * happens only on an exact leading match that ends at a boundary: the whole
+ * text, or a reasoning that ends with whitespace or sentence punctuation, or
+ * an answer that goes on after whitespace. A short reasoning ("Ok") never
+ * eats the start of a word of the answer ("Okay, …").
+ */
+export function stripReasoning(text: string, reasoning: string): string {
+  if (!reasoning || !text.startsWith(reasoning)) return text
+  const rest = text.slice(reasoning.length)
+  const boundary = rest === '' || /[\s.!?:;…)\]"'”’]$/.test(reasoning) || /^\s/.test(rest)
+  return boundary ? rest : text
 }
 
 function toolStatus(status: ToolCallStatus, inProgress: ToolView['status']): ToolView['status'] {

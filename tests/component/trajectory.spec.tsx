@@ -160,7 +160,9 @@ describe('Conversation views', () => {
     expect(await screen.findByRole('button', { name: 'Node release' })).toHaveAttribute('aria-haspopup')
     await user.click(await screen.findByRole('button', { name: 'Trajectory' }))
     expect(window.localStorage.getItem(`agentry_view:${SID}`)).toBe('trajectory')
-    expect(screen.queryByRole('textbox', { name: 'Message input' })).not.toBeInTheDocument()
+    // The chat stays mounted, hidden and inert behind the trajectory.
+    expect(screen.getByTestId('chat-pane')).toHaveAttribute('inert')
+    expect(screen.getByTestId('trajectory-pane')).not.toHaveAttribute('inert')
     first.unmount()
 
     // Reopened: the saved view comes back.
@@ -168,7 +170,26 @@ describe('Conversation views', () => {
     await user.click((await screen.findAllByTestId('trajectory-row'))[4]) // web_fetch
     await user.click(await screen.findByRole('button', { name: 'Show in chat' }))
     await waitFor(() => expect(scrolled.some((el) => el.getAttribute('data-item-id') === 'item_fn_27')).toBe(true))
-    expect(screen.getByRole('textbox', { name: 'Message input' })).toBeInTheDocument()
+    expect(screen.getByTestId('chat-pane')).not.toHaveAttribute('inert')
+    expect(screen.getByTestId('trajectory-pane')).toHaveAttribute('inert')
+    await act(async () => {})
+  })
+
+  it('keeps the composer draft (and the chat itself) across view switches', async () => {
+    const user = userEvent.setup()
+    render(<Conversation sessionId={SID} />)
+    const input = await screen.findByRole('textbox', { name: 'Message input' })
+    await user.click(input)
+    await user.keyboard('a long draft about Node')
+    const chatRow = screen.getAllByTestId('assistant-message').at(-1)
+    for (let i = 0; i < 2; i++) {
+      await user.click(await screen.findByRole('button', { name: 'Trajectory' }))
+      await user.click(screen.getByRole('button', { name: 'Chat' }))
+    }
+    // The same editor and rows: nothing was unmounted.
+    expect(screen.getByRole('textbox', { name: 'Message input' })).toBe(input)
+    expect(input).toHaveTextContent('a long draft about Node')
+    expect(screen.getAllByTestId('assistant-message').at(-1)).toBe(chatRow)
     await act(async () => {})
   })
 })

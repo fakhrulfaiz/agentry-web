@@ -76,7 +76,7 @@ describe('ChatTitleMenu', () => {
   })
 
   it('Rename opens the shared dialog and updates the title', async () => {
-    apiMock.renameSession.mockResolvedValue(undefined)
+    apiMock.renameSession.mockResolvedValue({ title: 'Launch plan v2' })
     const user = userEvent.setup()
     render(<ChatTitleMenu sessionId="s1" metadata={{ title: 'Plan the launch' }} />)
     const menu = await openMenu(user, 'Plan the launch')
@@ -87,6 +87,22 @@ describe('ChatTitleMenu', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(apiMock.renameSession).toHaveBeenCalledWith('s1', 'Launch plan v2')
     expect(await screen.findByRole('button', { name: 'Launch plan v2' })).toBeInTheDocument()
+  })
+
+  it('Rename announces the metadata just saved, so a star made meanwhile is kept', async () => {
+    // The dialog opened on an unstarred chat; the server's map has the star saved since.
+    apiMock.renameSession.mockResolvedValue({ title: 'Launch plan v2', starred: 'true' })
+    const user = userEvent.setup()
+    render(<ChatTitleMenu sessionId="s1" metadata={{ title: 'Plan the launch' }} />)
+    const menu = await openMenu(user, 'Plan the launch')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Rename' }))
+    const field = await screen.findByRole('textbox', { name: 'Title' })
+    await user.clear(field)
+    await user.type(field, 'Launch plan v2')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByRole('button', { name: 'Launch plan v2' })
+    const again = await openMenu(user, 'Launch plan v2')
+    expect(within(again).getByRole('menuitem', { name: 'Unstar' })).toBeInTheDocument()
   })
 
   it('Delete confirms, deletes and goes home', async () => {

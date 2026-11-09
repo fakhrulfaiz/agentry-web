@@ -29,6 +29,7 @@ export const STATUS: Record<RecordStatus, { label: string; color: 'green' | 'red
   pending: { label: 'Pending', color: 'gray' },
   completed: { label: 'Completed', color: 'green' },
   failed: { label: 'Failed', color: 'red' },
+  cancelled: { label: 'Cancelled', color: 'gray' },
 }
 
 /** The record's name: the tool name, `Step N`, or the kind. */

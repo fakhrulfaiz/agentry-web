@@ -2,7 +2,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAIAgentSession, OAIRequiredAction, OAISessionEvent, OAISubagent, OAITurn } from '@/api/types'
-import { ITEMS_POLL_MS, ITEMS_REFRESH_DELAY_MS, useConversation } from '@/chat/use-conversation'
+import { ITEMS_POLL_MAX_MS, ITEMS_POLL_MS, ITEMS_REFRESH_DELAY_MS, useConversation } from '@/chat/use-conversation'
 import approvalTurn from '../fixtures/approval-turn.json'
 import delegation from '../fixtures/live/subagent.json'
 import twoTurns from '../fixtures/two-turns.json'
@@ -398,9 +398,10 @@ describe('useConversation', () => {
       streams.push(() => streamResponse(sse(TWO.frames)))
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
-      // The replayed burst asks for one coalesced refresh; the reconnect itself loads nothing.
+      // The replayed burst asks for one coalesced refresh of the new items only; the reconnect itself loads nothing.
       await advance(ITEMS_REFRESH_DELAY_MS)
       expect(itemsCalls()).toHaveLength(2)
+      expect(String(itemsCalls()[1][0])).toContain(`after=${(TWO.items.at(-1) as { id: string }).id}`)
       await advance(1_000 - ITEMS_REFRESH_DELAY_MS)
       expect(streamCalls()).toHaveLength(2)
       expect(lastEventIds()).toEqual(['0', TWO.frames.at(-1)?.id])
@@ -441,8 +442,25 @@ describe('useConversation', () => {
       await flush()
       await advance(ITEMS_REFRESH_DELAY_MS)
       const start = itemsCalls().length
-      await advance(ITEMS_POLL_MS * 3)
-      expect(itemsCalls().length).toBeGreaterThanOrEqual(start + 3)
+      // The replay's refresh found nothing new, so the poll has backed off from 1.5s to 3s, then to 5s.
+      // Each poll reads only the items after the last one.
+      await advance(3_000 - 1)
+      expect(itemsCalls()).toHaveLength(start)
+      await advance(1)
+      expect(itemsCalls()).toHaveLength(start + 1)
+      expect(String(itemsCalls().at(-1)?.[0])).toContain(`after=${(TURN1_ITEMS.at(-1) as { id: string }).id}`)
+      await advance(ITEMS_POLL_MAX_MS - 1)
+      expect(itemsCalls()).toHaveLength(start + 1)
+      await advance(1)
+      expect(itemsCalls()).toHaveLength(start + 2)
+      await advance(ITEMS_POLL_MAX_MS)
+      expect(itemsCalls()).toHaveLength(start + 3)
+      // A new item resets the interval to 1.5s.
+      itemsResponse = () => itemsList(TWO.items)
+      await advance(ITEMS_POLL_MAX_MS)
+      expect(itemsCalls()).toHaveLength(start + 4)
+      await advance(ITEMS_POLL_MS)
+      expect(itemsCalls()).toHaveLength(start + 5)
       await act(async () => {
         live.push(TWO.frames.slice(-1)) // agent.session.idle
         await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
@@ -493,6 +511,51 @@ describe('useConversation', () => {
       const calls = fetchMock.mock.calls.length
       await advance(ITEMS_POLL_MS * 4)
       expect(fetchMock.mock.calls.length).toBe(calls)
+      unmount()
+    })
+
+    it('reads subagents one at a time, even when a refresh comes during the first read', async () => {
+      const child = (delegation as unknown as { items: unknown[]; frames: Array<{ id?: string; data: OAISessionEvent }>; subagents: Array<{ subagent: OAISubagent; turns: OAITurn[] }> })
+      const { subagent, turns } = child.subagents[0]
+      itemsResponse = () => itemsList(child.items)
+      subagentTurnsResponse = () => itemsList(turns)
+      let inFlight = 0
+      let most = 0
+      const base = fetchMock.getMockImplementation()!
+      fetchMock.mockImplementation(async (input, init) => {
+        if (String(input) !== `/api/agentry/agents/sessions/${SID}/subagents`) return base(input, init)
+        inFlight += 1
+        most = Math.max(most, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, 2_000))
+        inFlight -= 1
+        return itemsList([subagent])
+      })
+      // The replayed turn end (its turn record was not loaded) asks for a refresh while the first read is slow.
+      streams.push(() => streamResponse(sse(child.frames.map((f) => ({ ...(f.id !== undefined && { id: f.id }), event: f.data }))), true))
+      const { unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      await advance(ITEMS_REFRESH_DELAY_MS)
+      await advance(5_000)
+      const reads = fetchMock.mock.calls.filter(([url]) => String(url) === `/api/agentry/agents/sessions/${SID}/subagents`)
+      expect(reads.length).toBeGreaterThanOrEqual(2)
+      expect(most).toBe(1)
+      unmount()
+    })
+
+    it('opening a chat reads the items once: the replay of loaded items and ended turns refreshes nothing', async () => {
+      const turnRecords = TWO.frames.flatMap((f) => (f.event.type === 'agent.session.turn.completed' ? [f.event.turn] : []))
+      const base = fetchMock.getMockImplementation()!
+      fetchMock.mockImplementation(async (input, init) =>
+        String(input).startsWith(`/api/agentry/agents/sessions/${SID}/turns`) ? itemsList(turnRecords) : base(input, init),
+      )
+      itemsResponse = () => itemsList(TWO.items)
+      streams.push(() => streamResponse(sse(TWO.frames), true))
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      expect(result.current.loaded).toBe(false)
+      await flush()
+      expect(result.current.loaded).toBe(true)
+      await advance(ITEMS_REFRESH_DELAY_MS * 4)
+      expect(itemsCalls()).toHaveLength(1)
       unmount()
     })
 

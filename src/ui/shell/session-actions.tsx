@@ -112,8 +112,9 @@ export function RenameDialog({ session, onClose }: { session: SessionRef | null;
     }
     setSaving(true)
     try {
-      await api.renameSession(session.id, next)
-      announceSessions({ id: session.id, metadata: { ...session.metadata, title: next } })
+      // The map just saved: it has keys changed since the dialog opened (a star).
+      const metadata = await api.renameSession(session.id, next)
+      announceSessions({ id: session.id, metadata })
       onClose()
     } catch (e) {
       if (isSignedOut(e)) window.location.assign('/login')

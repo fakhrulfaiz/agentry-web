@@ -113,10 +113,10 @@ export function titleFrom(text: string): string {
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
 }
 
-/** Every row of a cursor-paged list, oldest first (follows `has_more`). */
-async function listAll<T extends { id: string }>(url: string): Promise<T[]> {
+/** Every row of a cursor-paged list, oldest first (follows `has_more`), or only the rows after `from`. */
+async function listAll<T extends { id: string }>(url: string, from?: string): Promise<T[]> {
   const all: T[] = []
-  let after: string | null = null
+  let after: string | null = from ?? null
   for (;;) {
     const params = new URLSearchParams({ limit: String(ITEMS_PAGE) })
     if (after) params.set('after', after)
@@ -187,8 +187,9 @@ export const api = {
     return metadata
   },
 
-  async renameSession(id: string, title: string): Promise<void> {
-    await api.updateMetadata(id, { title })
+  /** Sets the chat's title; returns the whole metadata map saved. */
+  renameSession(id: string, title: string): Promise<Record<string, string>> {
+    return api.updateMetadata(id, { title })
   },
 
   /** Stars (`metadata.starred = "true"`) or unstars (key removed) a chat; returns the map saved. */
@@ -200,9 +201,19 @@ export const api = {
     await request('DELETE', `${AGENTRY}/agents/sessions/${seg(id)}`)
   },
 
-  /** Every saved item, oldest first (follows `has_more`). */
-  items(id: string): Promise<StoredSessionItem[]> {
-    return listAll(`${AGENTRY}/agents/sessions/${seg(id)}/items`)
+  /**
+   * Every saved item, oldest first (follows `has_more`). With `after` (an item
+   * id), only the items saved after it: the log is append-only.
+   */
+  items(id: string, after?: string): Promise<StoredSessionItem[]> {
+    return listAll(`${AGENTRY}/agents/sessions/${seg(id)}/items`, after)
+  },
+
+  /** The `limit` newest turns of the session, oldest first (one request). */
+  async recentTurns(id: string, limit: number): Promise<OAITurn[]> {
+    const params = new URLSearchParams({ order: 'desc', limit: String(limit) })
+    const page = await request<OAIListResponse<OAITurn>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/turns?${params}`)
+    return page.data.slice().reverse()
   },
 
   /** Every turn of the session, oldest first (follows `has_more`). */

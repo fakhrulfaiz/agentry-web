@@ -6,8 +6,10 @@ import {
   recordsInInterval,
   searchRecords,
   timelineSpans,
+  turnRecordStatus,
   type SubagentRun,
 } from '@/ui/trajectory/build-trajectory'
+import { STATUS } from '@/ui/trajectory/labels'
 import delegation from '../fixtures/live/subagent.json'
 import live from '../fixtures/live/web-search.json'
 
@@ -70,6 +72,32 @@ describe('buildTrajectory on the recorded web-search turn', () => {
     expect(failed.turns[0].records.find((r) => r.kind === 'tool')?.status).toBe('failed')
     const done = buildTrajectory(TURNS, callOnly)
     expect(done.turns[0].records.find((r) => r.kind === 'tool')?.status).toBe('completed')
+  })
+
+  it('a cancelled turn shows Cancelled: its call without output and its last step, not Completed', () => {
+    const callOnly = ITEMS.slice(0, 4)
+    const cancelled = buildTrajectory([{ ...TURNS[0], status: 'cancelled' }], callOnly)
+    expect(turnRecordStatus(cancelled.turns[0].status)).toBe('cancelled')
+    expect(STATUS[turnRecordStatus('cancelled')].label).toBe('Cancelled')
+    expect(cancelled.turns[0].records.map((r) => [r.kind, r.status])).toEqual([
+      ['user', 'completed'],
+      ['assistant', 'cancelled'],
+      ['tool', 'cancelled'],
+    ])
+    expect(timelineSpans(cancelled)[0].status).toBe('cancelled')
+  })
+
+  it('the thinking is cut from the answer only on an exact leading match at a boundary', () => {
+    const step = (reasoning: string, message: string) => {
+      const items = [
+        { id: 'item_reason_5', type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }], status: 'completed', turn_id: 'turn_4' },
+        { id: 'item_msg_5', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: message }], status: 'completed', turn_id: 'turn_4' },
+      ] as StoredSessionItem[]
+      return buildTrajectory(TURNS, items).turns[0].records[0].output
+    }
+    expect(step('Let me check.', 'Let me check.It is v26.')).toBe('It is v26.')
+    // A backend that does not repeat the thinking: a short thought never eats the answer.
+    expect(step('Ok', 'Okay, the answer is 4.')).toBe('Okay, the answer is 4.')
   })
 
   it('items of a turn not loaded yet go to Between turns', () => {

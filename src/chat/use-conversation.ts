@@ -19,14 +19,19 @@
  *
  * Items during a turn: the backend stream carries assistant messages only, so
  * user messages, reasoning and tool calls arrive through `GET .../items`. The
- * items are refreshed shortly after each durable `item.done` or turn end
- * (coalesced, `ITEMS_REFRESH_DELAY_MS`) and every `ITEMS_POLL_MS` while the
- * session is in progress, so running tools show up before the next message.
- * The turn records (`GET .../turns`, for the trace) are read with them.
- * Subagents (`GET .../subagents`, each one's turns and items) are read with the items;
- * a subagent can outlive the turn that started it, so the poll also runs while
- * one is still working. A finished, closed subagent's turns and items are not read again.
- * A hidden tab does not poll; it refreshes when it becomes visible.
+ * saved log is append-only, so after the first full load only the items after
+ * the last known one are read (`after=<id>`). They are refreshed shortly after
+ * each durable `item.done` or turn end that is new (coalesced,
+ * `ITEMS_REFRESH_DELAY_MS`; the replay of items and turns already loaded asks
+ * for nothing), and polled while the session is in progress: every
+ * `ITEMS_POLL_MS`, backing off to `ITEMS_POLL_MAX_MS` while nothing changes,
+ * back to the start on any change. The newest turn records (`GET .../turns`,
+ * for the trace) are read with them.
+ * Subagents (`GET .../subagents`, each one's turns and items; one read at a
+ * time) are read with the items; a subagent can outlive the turn that started
+ * it, so the poll also runs while one is still working. A finished, closed
+ * subagent's turns and items are not read again. A hidden tab does not poll;
+ * it refreshes when it becomes visible. Polling stops once nothing runs.
  *
  * Reconnecting: when the stream ends or fails it is retried after 1s, doubling
  * to a 30s cap, always resending the last seen id. A connection that delivered
@@ -61,8 +66,13 @@ export const BACKOFF_CAP_MS = 30_000
 export const STABLE_CONNECTION_MS = 30_000
 /** How long the session snapshot may hold back opening the stream. */
 export const SNAPSHOT_WAIT_MS = 5_000
-/** Items poll interval while a turn runs. */
+/** Items poll interval while a turn runs; it backs off to `ITEMS_POLL_MAX_MS` while nothing changes. */
 export const ITEMS_POLL_MS = 1_500
+export const ITEMS_POLL_MAX_MS = 5_000
+/** The poll delays after 0, 1, 2… rounds without a change. */
+const POLL_STEPS_MS = [ITEMS_POLL_MS, 3_000, ITEMS_POLL_MAX_MS]
+/** How many of the newest turns a poll reads. */
+export const RECENT_TURNS = 5
 /** Delay that coalesces item refreshes asked for by a burst of events. */
 export const ITEMS_REFRESH_DELAY_MS = 250
 
@@ -132,6 +142,8 @@ export function useConversation(
   options: { onSignedOut?: () => void } = {},
 ): {
   state: ConversationState
+  /** False until the saved history has been read (or failed to load). */
+  loaded: boolean
   connection: Connection
   closedReason: ClosedReason | null
   send(text: string): Promise<void>
@@ -142,6 +154,7 @@ export function useConversation(
   // Optimistic until the first connection fails, so opening a chat does not flash "Reconnecting…".
   const [connection, setConnection] = useState<Connection>('live')
   const [closedReason, setClosedReason] = useState<ClosedReason | null>(null)
+  const [loaded, setLoaded] = useState(false)
   // A ref, so an inline callback does not restart the stream on every render.
   const signedOutRef = useRef(options.onSignedOut ?? goToLogin)
   useEffect(() => {
@@ -153,6 +166,7 @@ export function useConversation(
     dispatch({ type: 'reset', sessionId })
     setConnection('live')
     setClosedReason(null)
+    setLoaded(false)
     const abort = new AbortController()
     const { signal } = abort
     let lastId = '0'
@@ -165,9 +179,20 @@ export function useConversation(
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
     let refreshing = false
     let refreshAgain = false
-    // Subagents: whether one still works, and the turns of finished, closed ones.
+    // Polling: the pending poll and how many rounds in a row changed nothing.
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+    let quiet = 0
+    // The saved log as read so far, and the turns known to have ended.
+    let log: StoredSessionItem[] = []
+    let known = new Set<string>()
+    const endedTurns = new Set<string>()
+    let turnsSeen = ''
+    // Subagents: whether one still works, the turns of finished, closed ones, and the read in flight.
     let childrenRunning = false
+    let childrenSeen = ''
     const finishedChildren = new Map<string, { turns: OAITurn[]; items: StoredSessionItem[] }>()
+    let subagentsRead: Promise<boolean> | null = null
+    let subagentsAgain = false
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
@@ -185,7 +210,10 @@ export function useConversation(
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') return
       wake?.()
-      if (active || childrenRunning) scheduleRefresh()
+      if (active || childrenRunning) {
+        quiet = 0
+        scheduleRefresh()
+      }
     }
     document.addEventListener('visibilitychange', onVisibility)
 
@@ -196,6 +224,7 @@ export function useConversation(
         if (!signal.aborted && applied === requestedAt) {
           active = ACTIVE.has(session.status)
           dispatch({ type: 'event', event: snapshotEvent(session) })
+          schedulePoll()
         }
       } catch (error) {
         if (!signal.aborted && isSignedOut(error)) onSignedOut()
@@ -203,27 +232,49 @@ export function useConversation(
       }
     }
 
-    const loadItems = async (): Promise<boolean> => {
+    /**
+     * Reads the saved items (all of them when `full`, else only the new ones)
+     * and the turn records. Null when aborted or signed out; otherwise whether
+     * anything changed.
+     */
+    const loadItems = async (full: boolean): Promise<boolean | null> => {
+      let changed = false
       try {
         // Turn records (status, timing, usage) feed the trace; optional, so a failure is ignored.
-        const turns = api.turns(sessionId).catch(() => null)
-        const items = await api.items(sessionId)
-        if (!signal.aborted) dispatch({ type: 'items', items })
+        const turns = (full ? api.turns(sessionId) : api.recentTurns(sessionId, RECENT_TURNS)).catch(() => null)
+        const after = full ? undefined : log.at(-1)?.id
+        const fresh = await api.items(sessionId, after)
+        if (signal.aborted) return null
+        const added = full ? fresh : fresh.filter((item) => !known.has(item.id))
+        if (full || added.length > 0) {
+          log = full ? fresh : [...log, ...added]
+          known = new Set(log.map((item) => item.id))
+          changed = added.length > 0
+          dispatch({ type: 'items', items: log })
+        }
         const records = await turns
-        if (!signal.aborted && records) dispatch({ type: 'turns', turns: records })
+        if (!signal.aborted && records) {
+          for (const t of records) if (TERMINAL.has(t.status)) endedTurns.add(t.id)
+          const seen = JSON.stringify(records.map((t) => [t.id, t.status, t.completed_at, t.usage?.total_tokens]))
+          if (full || seen !== turnsSeen) {
+            changed ||= !full
+            dispatch({ type: 'turns', turns: records })
+          }
+          turnsSeen = seen
+        }
       } catch (error) {
-        if (signal.aborted) return false
+        if (signal.aborted) return null
         if (isSignedOut(error)) {
           setConnection('closed')
           onSignedOut()
-          return false
+          return null
         }
         // Any other failure: the stream replay still shows the assistant side.
       }
-      return !signal.aborted
+      return signal.aborted ? null : changed
     }
 
-    const loadSubagents = async () => {
+    const readSubagents = async (): Promise<boolean> => {
       try {
         const list = await api.subagents(sessionId)
         const children = await Promise.all(
@@ -232,7 +283,7 @@ export function useConversation(
             if (known) return { subagent, ...known }
             const [turns, items] = await Promise.all([
               api.subagentTurns(sessionId, subagent.id),
-              // The trajectory nests a subagent's own activity; optional.
+              // The trajectory and the card nest a subagent's own activity; optional.
               api.subagentItems(sessionId, subagent.id).catch(() => undefined),
             ])
             const run = items ? { turns, items } : { turns }
@@ -240,13 +291,41 @@ export function useConversation(
             return { subagent, ...run }
           }),
         )
-        if (signal.aborted) return
+        if (signal.aborted) return false
         childrenRunning = children.some(({ subagent, turns }) => subagent.status === 'active' && !TERMINAL.has(turns.at(-1)?.status ?? 'queued'))
+        const seen = JSON.stringify(children.map(({ subagent, turns, items }) => [subagent.id, subagent.status, turns.map((t) => [t.id, t.status, t.completed_at]), items?.length ?? -1]))
+        if (seen === childrenSeen) return false
+        childrenSeen = seen
         if (children.length > 0) dispatch({ type: 'subagents', children })
+        return true
       } catch (error) {
         if (!signal.aborted && isSignedOut(error)) onSignedOut()
         // Otherwise optional: the conversation works without subagent cards.
+        return false
       }
+    }
+
+    /** One subagent read at a time; a call during one reads again after it and shares its result. */
+    const loadSubagents = (): Promise<boolean> => {
+      if (subagentsRead) {
+        subagentsAgain = true
+        return subagentsRead
+      }
+      const read = (async () => {
+        let changed = false
+        try {
+          do {
+            subagentsAgain = false
+            changed = (await readSubagents()) || changed
+          } while (subagentsAgain && !signal.aborted)
+        } finally {
+          subagentsRead = null
+        }
+        schedulePoll()
+        return changed
+      })()
+      subagentsRead = read
+      return read
     }
 
     const refreshItems = async () => {
@@ -255,15 +334,22 @@ export function useConversation(
         return
       }
       refreshing = true
+      let changed = false
       try {
         do {
           refreshAgain = false
-          if (!(await loadItems())) return
-          await loadSubagents()
+          const items = await loadItems(false)
+          if (items === null) return
+          const children = await loadSubagents()
+          changed = changed || items || children
         } while (refreshAgain)
       } finally {
         refreshing = false
       }
+      quiet = changed ? 0 : quiet + 1
+      if (pollTimer !== null) clearTimeout(pollTimer)
+      pollTimer = null
+      schedulePoll()
     }
     const scheduleRefresh = () => {
       if (refreshTimer !== null || signal.aborted) return
@@ -272,17 +358,33 @@ export function useConversation(
         void refreshItems()
       }, ITEMS_REFRESH_DELAY_MS)
     }
-    const poll = setInterval(() => {
-      // A hidden tab does not poll; it refreshes when it comes back.
-      if ((active || childrenRunning) && document.visibilityState !== 'hidden') scheduleRefresh()
-    }, ITEMS_POLL_MS)
+    /** The next poll, while a turn or a subagent runs; later the longer nothing changed. */
+    function schedulePoll() {
+      if (pollTimer !== null || signal.aborted || !(active || childrenRunning)) return
+      pollTimer = setTimeout(() => {
+        pollTimer = null
+        // A hidden tab does not poll; it refreshes when it comes back. Nothing running: polling stops.
+        if (document.visibilityState === 'hidden' || !(active || childrenRunning)) return
+        void refreshItems()
+      }, POLL_STEPS_MS[Math.min(quiet, POLL_STEPS_MS.length - 1)])
+    }
     const track = (event: OAISessionEvent, durable: boolean) => {
-      if ('session' in event) active = ACTIVE.has(event.session.status)
-      if (durable && REFRESH_ON.has(event.type)) scheduleRefresh()
+      if ('session' in event) {
+        active = ACTIVE.has(event.session.status)
+        schedulePoll()
+      }
+      if (!durable || !REFRESH_ON.has(event.type)) return
+      // A replayed frame for an item or a turn end already loaded brings nothing new.
+      if ('item' in event && known.has(event.item.id)) return
+      if ('turn' in event && endedTurns.has(event.turn.id)) return
+      quiet = 0
+      scheduleRefresh()
     }
 
     const run = async () => {
-      if (!(await loadItems())) return
+      const history = await loadItems(true)
+      if (history === null) return
+      setLoaded(true)
       // Not awaited: subagent cards must not hold back the stream.
       void loadSubagents()
       while (!signal.aborted) {
@@ -342,7 +444,7 @@ export function useConversation(
 
     return () => {
       abort.abort()
-      clearInterval(poll)
+      if (pollTimer !== null) clearTimeout(pollTimer)
       if (refreshTimer !== null) clearTimeout(refreshTimer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
@@ -377,5 +479,5 @@ export function useConversation(
     [guard, sessionId],
   )
 
-  return { state, connection, closedReason, send, stop, answer }
+  return { state, loaded, connection, closedReason, send, stop, answer }
 }

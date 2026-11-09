@@ -2,9 +2,12 @@
 
 /**
  * A subagent the turn delegated to. Collapsed: its name (the delegating call's
- * description), status and duration. Expanded: the child's own items
- * (`GET .../subagents/{id}/items`), rendered with the same message, thinking
- * and tool views, reloaded every 2s while the child runs. Cards nest up to
+ * description), status and duration. Expanded: the child's own items,
+ * rendered with the same message, thinking and tool views. The items come
+ * from the conversation's own subagent reads (`SubagentItems`, which the hook
+ * keeps current while the child runs), so a card never polls by itself. A
+ * card whose items are not provided (a nested child) reads them once when
+ * expanded and again when its status changes. Cards nest up to
  * `MAX_SUBAGENT_DEPTH`; deeper ones do not expand.
  */
 import { Card } from '@astryxdesign/core/Card'
@@ -18,7 +21,7 @@ import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
 import { UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { api, ApiError } from '@/api/client'
 import type { StoredSessionItem } from '@/api/types'
 import { applyItems, initialState, type MessageView } from '@/chat/reducer'
@@ -27,7 +30,9 @@ import { Message } from './Message'
 type SubagentView = Extract<MessageView, { kind: 'subagent' }>
 
 export const MAX_SUBAGENT_DEPTH = 3
-const RELOAD_MS = 2_000
+
+/** Subagent id → its saved items, as the conversation last read them. */
+export const SubagentItems = createContext<ReadonlyMap<string, StoredSessionItem[]>>(new Map())
 
 const LABEL: Record<string, string> = {
   queued: 'Queued',
@@ -86,33 +91,32 @@ function Header({ view }: { view: SubagentView }) {
 }
 
 function Activity({ view, depth }: { view: SubagentView; depth: number }) {
-  const [views, setViews] = useState<MessageView[] | null>(null)
+  const provided = useContext(SubagentItems).get(view.subagentId)
+  const [fetched, setFetched] = useState<StoredSessionItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const running = view.status === 'in_progress' || view.status === 'queued'
 
   useEffect(() => {
+    if (provided) return
     let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const load = async () => {
-      try {
-        const items = await api.subagentItems(view.sessionId, view.subagentId)
+    api.subagentItems(view.sessionId, view.subagentId).then(
+      (items) => {
         if (cancelled) return
-        setViews(childViews(view.subagentId, items))
+        setFetched(items)
         setError(null)
-      } catch (e) {
+      },
+      (e: unknown) => {
         if (!cancelled) setError(e instanceof ApiError ? e.message : 'Could not load the subagent’s activity.')
-      }
-      if (!cancelled && running) timer = setTimeout(() => void load(), RELOAD_MS)
-    }
-    void load()
+      },
+    )
     return () => {
       cancelled = true
-      clearTimeout(timer)
     }
     // A status change (it finished) loads once more.
-  }, [view.sessionId, view.subagentId, view.status, running])
+  }, [provided, view.sessionId, view.subagentId, view.status])
 
-  if (error) return <Text type="supporting">{error}</Text>
+  const items = provided ?? fetched
+  const views = useMemo(() => (items ? childViews(view.subagentId, items) : null), [items, view.subagentId])
+  if (error && !views) return <Text type="supporting">{error}</Text>
   if (!views) return <Spinner size="sm" aria-label="Loading" />
   if (views.length === 0) return <Text type="supporting">No activity yet.</Text>
   return (

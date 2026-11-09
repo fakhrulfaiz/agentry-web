@@ -131,13 +131,34 @@ describe('reducer on a recorded backend turn', () => {
     expect(ofKind(ended, 'assistant').every((v) => !v.streaming)).toBe(true)
   })
 
-  it('reasoning that arrives during the turn is streaming (open) until the turn ends', () => {
+  it('reasoning streams only while it is the current step of the open turn', () => {
+    // Every step has moved on (a call, or the answer, follows each thought): none is still thinking.
     const open = applyItems(fold(FRAMES.slice(0, turnEnd)), ITEMS)
-    expect(ofKind(open, 'reasoning').every((v) => v.streaming)).toBe(true)
+    expect(open.openTurn).not.toBeNull()
+    expect(ofKind(open, 'reasoning').map((v) => v.streaming)).toEqual([false, false, false])
     const ended = applyEvent(open, FRAMES[turnEnd])
     expect(ofKind(ended, 'reasoning').every((v) => !v.streaming)).toBe(true)
     // Loaded from history: already finished.
     expect(ofKind(applyItems(initialState(SID), ITEMS), 'reasoning').every((v) => !v.streaming)).toBe(true)
+  })
+
+  it('multi-step: only the latest thought of the open turn streams; earlier ones collapse', () => {
+    // The stream is at step 2 (its message is done, it has no text of its own); items saved so far.
+    const step2Done = FRAMES.findIndex((f) => f.event.type === 'agent.session.turn.item.done' && (f.event as { item: { id: string } }).item.id === 'item_msg_26')
+    const upTo = (id: string) => ITEMS.slice(0, ITEMS.findIndex((it) => it.id === id) + 1)
+    let s = applyItems(fold(FRAMES.slice(0, step2Done + 1)), upTo('item_msg_26'))
+    const streaming = () => Object.fromEntries(ofKind(s, 'reasoning').map((v) => [v.id, v.streaming]))
+    expect(streaming()).toEqual({ item_reason_18: false, item_reason_26: true })
+    expect(s.items.find((v) => v.id === 'item_reason_26')).toMatchObject({ text: reasoningText('item_reason_26') })
+    // Step 2's call is saved: its thought is over.
+    s = applyItems(s, upTo('item_fn_27'))
+    expect(streaming()).toEqual({ item_reason_18: false, item_reason_26: false })
+    // Step 3 thinks: it streams alone, and the earlier ones stay collapsed through later refreshes.
+    s = applyItems(s, upTo('item_reason_32'))
+    expect(streaming()).toEqual({ item_reason_18: false, item_reason_26: false, item_reason_32: true })
+    // The answer starts (its message has text of its own): step 3 collapses too.
+    s = applyItems(s, ITEMS)
+    expect(streaming()).toEqual({ item_reason_18: false, item_reason_26: false, item_reason_32: false })
   })
 
   it('a step streamed as reasoning text loses it once the reasoning item arrives', () => {

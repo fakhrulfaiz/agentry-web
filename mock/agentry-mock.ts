@@ -500,6 +500,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 function list<T extends { id: string }>(rows: T[], url: URL): { object: 'list'; data: T[]; first_id: string | null; last_id: string | null; has_more: boolean } {
   const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit') ?? 20) || 20))
   const after = url.searchParams.get('after')
+  if (url.searchParams.get('order') === 'desc') rows = rows.slice().reverse()
   const start = after ? rows.findIndex((r) => r.id === after) + 1 : 0
   const data = rows.slice(start, start + limit)
   return { object: 'list', data, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null, has_more: start + limit < rows.length }

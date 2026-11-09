@@ -101,8 +101,10 @@ test('a web lookup shows thinking, tool cards and a streamed answer as it happen
   await signIn(page)
   await startChat(page, 'Look up the latest Node.js release on the web')
 
-  // Live, before the turn ends: running reasoning, then tool cards from the items refresh.
-  await expect(page.getByRole('button', { name: /Thinking…/ }).first()).toBeVisible()
+  // Live, before the turn ends: reasoning, then tool cards from the items refresh. A thought is
+  // open ("Thinking…") only while it is the latest step, so by the time the step's call is saved it shows as "Thought".
+  await expect(page.getByRole('button', { name: /^(Thinking…|Thought)/ }).first()).toBeVisible()
+  expect(await page.getByRole('button', { name: /Thinking…/ }).count()).toBeLessThanOrEqual(1)
   await expect(page.getByRole('button', { name: /web_search/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /web_fetch/ })).toBeVisible()
   // The answer streams in: seen while still busy, then complete.
@@ -164,7 +166,10 @@ test('the Trajectory view shows the turn, its tool rows and an inspector, and re
   }
   // Narrow: the details are a drawer; Show in chat goes back to the chat at that call.
   await page.getByRole('dialog', { name: 'Event details' }).getByRole('button', { name: 'Show in chat' }).click()
-  await expect(composer(page)).toBeVisible()
+  // The chat stayed mounted (its empty editor has no height of its own): the pane is shown and live again.
+  await expect(page.getByTestId('chat-pane')).toBeVisible()
+  await expect(page.getByTestId('chat-pane')).not.toHaveAttribute('inert')
+  await expect(composer(page)).toHaveCount(1)
   await expect(page.locator('[data-item-id]').filter({ has: page.getByRole('button', { name: /web_fetch/ }) })).toBeInViewport()
 
   // The chosen view is remembered for this chat.

@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAISubagent, OAITurn, StoredSessionItem } from '@/api/types'
 import { applyItems, applySubagents, initialState, type MessageView } from '@/chat/reducer'
 import { Message } from '@/ui/chat/Message'
-import { formatDuration, MAX_SUBAGENT_DEPTH } from '@/ui/chat/SubagentCard'
+import { formatDuration, MAX_SUBAGENT_DEPTH, SubagentItems } from '@/ui/chat/SubagentCard'
 import delegation from '../fixtures/live/subagent.json'
 
 interface RecordedChild { subagent: OAISubagent; turns: OAITurn[]; items: StoredSessionItem[] }
@@ -66,6 +66,35 @@ describe('SubagentCard', () => {
     expect(within(activity).getAllByTestId('assistant-message').at(-1)).toHaveTextContent(/couldn.t complete the requested commands/)
     // The child's prompt shows as the user message it received.
     expect(within(activity).getByText(/Your task: list the files/)).toBeInTheDocument()
+  })
+
+  it('expanded inside a conversation: shows the items the conversation read, and never polls by itself', async () => {
+    vi.useFakeTimers()
+    try {
+      const running = card([{ ...CHILD.turns[0], status: 'in_progress', completed_at: null }])
+      const shared = new Map([[CHILD.subagent.id, CHILD.items.slice(0, 2)]])
+      const { rerender } = render(
+        <SubagentItems.Provider value={shared}>
+          <Message view={running} answer={noAnswer} />
+        </SubagentItems.Provider>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: /List workspace files and count/ }))
+      expect(within(screen.getByTestId('subagent-activity')).getByText(/Your task: list the files/)).toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+      expect(fetchMock).not.toHaveBeenCalled()
+      // The conversation's next read shows up in the open card.
+      rerender(
+        <SubagentItems.Provider value={new Map([[CHILD.subagent.id, CHILD.items]])}>
+          <Message view={running} answer={noAnswer} />
+        </SubagentItems.Provider>,
+      )
+      expect(within(screen.getByTestId('subagent-activity')).getAllByTestId('assistant-message').at(-1)).toHaveTextContent(/couldn.t complete the requested commands/)
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it(`stops nesting at depth ${MAX_SUBAGENT_DEPTH}: the card there cannot expand`, () => {

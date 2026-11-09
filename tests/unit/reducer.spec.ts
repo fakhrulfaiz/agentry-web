@@ -5,6 +5,7 @@ import {
   applyItems,
   appendLocalUserMessage,
   initialState,
+  stripReasoning,
   type ConversationState,
   type MessageView,
 } from '@/chat/reducer'
@@ -278,5 +279,30 @@ describe('conversation reducer', () => {
     const snapshot = structuredClone(before)
     fold(TWO_TURNS.frames, before)
     expect(before).toEqual(snapshot)
+  })
+})
+
+describe('stripReasoning (the backend repeats a step\'s thinking in front of its message)', () => {
+  it('cuts an exact leading match that ends at a boundary', () => {
+    expect(stripReasoning('Let me check.It is v26.', 'Let me check.')).toBe('It is v26.')
+    expect(stripReasoning('Thinking it over\nThe answer', 'Thinking it over')).toBe('\nThe answer')
+    expect(stripReasoning('Same text', 'Same text')).toBe('')
+  })
+
+  it('never removes real answer text', () => {
+    // The thought is not followed by a boundary: it is the start of a word of the answer.
+    expect(stripReasoning('Okay, the answer is 4.', 'Ok')).toBe('Okay, the answer is 4.')
+    // Not a leading match.
+    expect(stripReasoning('The answer. Let me check.', 'Let me check.')).toBe('The answer. Let me check.')
+    expect(stripReasoning('Answer', '')).toBe('Answer')
+  })
+
+  it('applies to the chat: a message whose start only looks like its thought keeps its text', () => {
+    const items = [
+      { id: 'item_reason_5', type: 'reasoning', summary: [{ type: 'summary_text', text: 'Ok' }], status: 'completed', turn_id: 'turn_1' },
+      { id: 'item_msg_5', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Okay, the answer is 4.' }], status: 'completed', turn_id: 'turn_1' },
+    ] as StoredSessionItem[]
+    const s = applyItems(initialState(SID), items)
+    expect(s.items.find((v) => v.id === 'item_msg_5')).toMatchObject({ kind: 'assistant', text: 'Okay, the answer is 4.' })
   })
 })

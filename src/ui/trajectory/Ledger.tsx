@@ -20,7 +20,7 @@ import { colorVars, spacingVars } from '@astryxdesign/core/theme/tokens.stylex'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/20/solid'
 import * as stylex from '@stylexjs/stylex'
 import type { OAITokenUsage } from '@/api/types'
-import type { TrajectoryRecord, TrajectoryTurn } from './build-trajectory'
+import { turnRecordStatus, type TrajectoryRecord, type TrajectoryTurn } from './build-trajectory'
 import { EMPTY, formatSeconds, formatTokens } from './format'
 import { KindChip } from './KindChip'
 import { recordName, STATUS, SUB_LABEL } from './labels'
@@ -212,7 +212,7 @@ function TurnSection({ turn, props }: { turn: TrajectoryTurn; props: LedgerProps
   const cells = usageCells(turn.usage)
   const end = turn.endedAt ?? (turn.status === 'in_progress' || turn.status === 'queued' || turn.status === 'waiting' ? props.now : undefined)
   const time = end !== undefined ? formatSeconds(end - turn.startedAt) : EMPTY
-  const status = turn.status === 'failed' ? STATUS.failed : turn.status === 'completed' || turn.status === 'cancelled' ? STATUS.completed : STATUS.pending
+  const status = STATUS[turnRecordStatus(turn.status)]
   if (props.visible !== null && !turn.records.some((r) => props.visible?.has(r.id) || r.subcalls?.some((c) => props.visible?.has(c.id)))) return null
   return (
     <VStack as="section" aria-label={`Turn ${turn.index}`} data-testid="trajectory-turn">
