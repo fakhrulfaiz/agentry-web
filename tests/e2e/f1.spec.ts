@@ -136,6 +136,35 @@ test('a web lookup shows thinking, tool cards and a streamed answer as it happen
   await expect(assistantMessages(page)).toHaveCount(1)
 })
 
+test('a delegated subagent shows live status, then expands to its own activity', async ({ page }) => {
+  await signIn(page)
+  await startChat(page, 'Please delegate this to a subagent')
+  await expect(assistantMessages(page).last()).toContainText('I asked a researcher')
+  // The `subagent` tool card is there too; the subagent card is its own.
+  await expect(page.getByRole('button', { name: /subagent Research the question/ })).toBeVisible()
+  const header = page.getByTestId('subagent-card').getByRole('button', { name: /Research the question/ })
+  // The parent turn is over; the child still works and the card follows it.
+  await expect(header).toContainText('Working')
+  await expect(header).toContainText('Done', { timeout: 15_000 })
+  await expect(header).toContainText(/\d+s/)
+
+  await header.click()
+  const activity = page.getByTestId('subagent-activity')
+  await expect(activity.getByRole('button', { name: /glob/ })).toBeVisible()
+  await expect(activity.getByRole('button', { name: /^Thought/ })).toBeVisible()
+  await expect(activity.getByTestId('assistant-message').last()).toContainText('Found 2 Markdown files')
+
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect.poll(() => overflow(page), { message: `overflow at ${width}px` }).toEqual({ missing: false, outside: [], pageScrolls: false })
+  }
+
+  // Reopened: the card comes back from GET .../subagents, once.
+  await page.reload()
+  await expect(page.getByTestId('subagent-card')).toHaveCount(1)
+  await expect(page.getByTestId('subagent-card')).toContainText('Done')
+})
+
 test('approval card: focus starts on Allow, and Allow resumes the turn', async ({ page }) => {
   await signIn(page)
   await startChat(page, 'Please approve the cleanup')

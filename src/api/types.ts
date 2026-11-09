@@ -145,6 +145,20 @@ export interface OAITurn {
   usage?: OAITokenUsage | null
 }
 
+/**
+ * A subagent: a Host child session a turn delegated to (`GET .../subagents`).
+ * Its turns and items are on their own routes and never on the parent stream.
+ */
+export interface OAISubagent {
+  id: string
+  object: 'agent.session.subagent'
+  session_id: string
+  parent_session_id: string
+  status: 'active' | 'closed'
+  created_at: number
+  closed_at?: number
+}
+
 /** Text part on a message item. */
 export interface OAITextContentPart {
   type: 'input_text' | 'output_text'

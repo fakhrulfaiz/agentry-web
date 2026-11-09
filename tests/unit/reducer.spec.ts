@@ -219,12 +219,13 @@ describe('conversation reducer', () => {
     ])
   })
 
-  it('shows subagent turns as delegation cards with their status', () => {
+  it('a streamed subagent turn (not sent by the current backend) updates its card', () => {
     const child = { ...turn('in_progress'), id: 'turn_c', subagent_id: 'researcher' }
     let s = applyEvent(initialState(SID), { id: '1', event: { type: 'agent.session.turn.created', event_id: 'e1', session_id: SID, turn: child } })
-    expect(s.items).toEqual([{ kind: 'subagent', id: 'subagent:turn_c', name: 'researcher', status: 'in_progress' }])
-    s = applyEvent(s, { id: '2', event: { type: 'agent.session.turn.completed', event_id: 'e2', session_id: SID, turn_id: 'turn_c', turn: { ...child, status: 'completed' } } })
-    expect(s.items).toEqual([{ kind: 'subagent', id: 'subagent:turn_c', name: 'researcher', status: 'completed' }])
+    const card = { kind: 'subagent', id: 'subagent:researcher', sessionId: SID, subagentId: 'researcher', name: 'Subagent', startedAt: 1 }
+    expect(s.items).toEqual([{ ...card, status: 'in_progress', endedAt: undefined }])
+    s = applyEvent(s, { id: '2', event: { type: 'agent.session.turn.completed', event_id: 'e2', session_id: SID, turn_id: 'turn_c', turn: { ...child, status: 'completed', completed_at: 5 } } })
+    expect(s.items).toEqual([{ ...card, status: 'completed', endedAt: 5 }])
   })
 
   it('an optimistic user message is replaced by the server item with the same text', () => {

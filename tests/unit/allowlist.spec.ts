@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { isAllowed } from '@/server/allowlist'
 
 const ID = 'sesn_01HZX-abc_9'
+/** Subagent ids are Host session UUIDs. */
+const SUB = '7a75cb0f-e29e-45e7-8c42-fbed08549897'
+const SUBAGENT_ROUTES = [
+  `/agents/sessions/${ID}/subagents`,
+  `/agents/sessions/${ID}/subagents/${SUB}`,
+  `/agents/sessions/${ID}/subagents/${SUB}/items`,
+  `/agents/sessions/${ID}/subagents/${SUB}/turns`,
+]
 
 describe('isAllowed', () => {
   it.each([
@@ -57,6 +65,28 @@ describe('isAllowed', () => {
     expect(isAllowed('GET', '/agents/sessions')).toBe(true)
     expect(isAllowed('GET', '/agents/tools')).toBe(true)
     expect(isAllowed('POST', '/agents/tools')).toBe(false)
+  })
+
+  it.each(SUBAGENT_ROUTES)('allows GET %s (subagent activity) and no other method', (path) => {
+    expect(isAllowed('GET', path)).toBe(true)
+    for (const method of ['POST', 'DELETE', 'PUT', 'PATCH']) expect(isAllowed(method, path)).toBe(false)
+  })
+
+  it('rejects traversal and bad ids on the subagent routes', () => {
+    for (const path of [
+      `/agents/sessions/${ID}/subagents/..`,
+      `/agents/sessions/${ID}/subagents/../items`,
+      `/agents/sessions/${ID}/subagents/%2e%2e/items`,
+      `/agents/sessions/${ID}/subagents/a%2Fb/items`,
+      `/agents/sessions/${ID}/subagents/${SUB}/events`,
+      `/agents/sessions/${ID}/subagents/${SUB}/turns/turn_1`,
+      `/agents/sessions/${ID}/subagents/${SUB}/turns/turn_1/items`,
+      `/agents/sessions/${ID}/subagents/${SUB}/items/extra`,
+      `/agents/sessions/../subagents/${SUB}`,
+      `/agents/sessions/${ID}/subagents//items`,
+    ]) {
+      expect(isAllowed('GET', path), path).toBe(false)
+    }
   })
 
   it('rejects methods outside the allow-list', () => {

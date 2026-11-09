@@ -10,15 +10,18 @@
  * reasoning too. Function calls stay `in_progress`; the output item finishes them.
  */
 import { describe, expect, it } from 'vitest'
-import type { OAISessionEvent, StoredSessionItem } from '@/api/types'
+import type { OAISessionEvent, OAISubagent, OAITurn, StoredSessionItem } from '@/api/types'
 import {
   appendLocalUserMessage,
   applyEvent,
   applyItems,
+  applySubagents,
+  type SubagentActivity,
   initialState,
   type ConversationState,
   type MessageView,
 } from '@/chat/reducer'
+import delegation from '../fixtures/live/subagent.json'
 import live from '../fixtures/live/web-search.json'
 
 interface RecordedFrame {
@@ -154,5 +157,67 @@ describe('reducer on a recorded backend turn', () => {
     s = applyItems(s, ITEMS)
     expect(ofKind(s, 'user')).toEqual([{ kind: 'user', id: ITEMS[0].id, text: FIXTURE.prompt }])
     expect(ids(s)).toEqual(LOG_ORDER)
+  })
+})
+
+interface RecordedChild { subagent: OAISubagent; turns: OAITurn[]; items: StoredSessionItem[] }
+const DELEGATION = delegation as unknown as { session_id: string; frames: RecordedFrame[]; items: StoredSessionItem[]; subagents: RecordedChild[] }
+const CHILD = DELEGATION.subagents[0]
+const PARENT_FRAMES = DELEGATION.frames.map((f) => ({ ...(f.id !== undefined && { id: f.id }), event: f.data }))
+const spawnCall = DELEGATION.items.find((i) => i.type === 'function_call' && i.name === 'subagent')!
+const activity = (turns: OAITurn[], subagent: OAISubagent = CHILD.subagent): SubagentActivity[] => [{ subagent, turns }]
+
+describe('subagents on a recorded delegating turn', () => {
+  it('the fixture delegates: a subagent call whose output names the child', () => {
+    expect(DELEGATION.subagents).toHaveLength(1)
+    const out = DELEGATION.items.find((i) => i.type === 'function_call_output' && spawnCall.type === 'function_call' && i.call_id === spawnCall.call_id)
+    expect(out?.type === 'function_call_output' && out.output).toContain(CHILD.subagent.id)
+    // Child activity never travels on the parent stream.
+    for (const { data } of DELEGATION.frames) {
+      if ('turn' in data) expect(data.turn.subagent_id ?? null).toBeNull()
+      if ('item' in data) expect((data.item as StoredSessionItem).subagent_id).toBeUndefined()
+    }
+  })
+
+  it('makes a subagent view right after the call that started it, named by its description', () => {
+    const s = applySubagents(applyItems(initialState(DELEGATION.session_id), DELEGATION.items), activity(CHILD.turns))
+    const at = s.items.findIndex((v) => v.kind === 'subagent')
+    expect(s.items[at - 1]).toMatchObject({ kind: 'tool', id: spawnCall.id })
+    const turn = CHILD.turns[0]
+    expect(s.items[at]).toEqual({
+      kind: 'subagent',
+      id: `subagent:${CHILD.subagent.id}`,
+      sessionId: DELEGATION.session_id,
+      subagentId: CHILD.subagent.id,
+      name: 'List workspace files and count',
+      status: 'completed',
+      startedAt: turn.started_at,
+      endedAt: turn.completed_at,
+    })
+  })
+
+  it('updates the status live, in place, and keeps it through later item refreshes and replays', () => {
+    const running: OAITurn = { ...CHILD.turns[0], status: 'in_progress', completed_at: null }
+    const base = applyItems(initialState(DELEGATION.session_id), DELEGATION.items)
+    const live = applySubagents(base, activity([running], { ...CHILD.subagent, status: 'active', closed_at: undefined }))
+    const view = () => live.items.find((v) => v.kind === 'subagent')
+    expect(view()).toMatchObject({ status: 'in_progress', endedAt: undefined })
+    const done = applySubagents(live, activity(CHILD.turns))
+    expect(done.items.map((v) => v.id)).toEqual(live.items.map((v) => v.id))
+    expect(done.items.find((v) => v.kind === 'subagent')).toMatchObject({ status: 'completed', endedAt: CHILD.turns[0].completed_at })
+    const again = applyItems(PARENT_FRAMES.reduce(applyEvent, done), DELEGATION.items)
+    expect(again.items.map((v) => v.id)).toEqual(done.items.map((v) => v.id))
+  })
+
+  it('a subagent without turns yet is queued; the parent stream frames do not drop it', () => {
+    const s = applySubagents(applyItems(initialState(DELEGATION.session_id), DELEGATION.items.slice(0, 4)), activity([], { ...CHILD.subagent, status: 'active' }))
+    expect(s.items.find((v) => v.kind === 'subagent')).toMatchObject({ status: 'queued' })
+  })
+
+  it('a command output with no matching call finishes the command before it', () => {
+    const s = applyItems(initialState(CHILD.subagent.id), CHILD.items.map(({ subagent_id: _sid, ...item }) => item as StoredSessionItem))
+    const cmd = s.items.find((v) => v.kind === 'tool' && v.name === 'command')
+    expect(cmd).toMatchObject({ args: { command: 'ls -la' } })
+    expect(cmd && 'output' in cmd ? String(cmd.output) : '').toMatch(/^Error: sandbox mode/)
   })
 })

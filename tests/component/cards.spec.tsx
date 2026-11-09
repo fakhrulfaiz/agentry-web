@@ -166,12 +166,6 @@ describe('views', () => {
     expect(summarizeArgs({ queries: ['one', 'two'] })).toBe('one, two')
   })
 
-  it('renders a delegation card with the subagent name and status', () => {
-    render(<Message view={{ kind: 'subagent', id: 's1', name: 'researcher', status: 'completed' }} answer={noAnswer} />)
-    expect(screen.getByText('Delegated to researcher')).toBeInTheDocument()
-    expect(screen.getByText('Done')).toBeInTheDocument()
-  })
-
   it('renders a notice with Retry', async () => {
     const user = userEvent.setup()
     const onRetry = vi.fn()

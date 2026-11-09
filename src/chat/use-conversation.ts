@@ -22,6 +22,10 @@
  * items are refreshed shortly after each durable `item.done` or turn end
  * (coalesced, `ITEMS_REFRESH_DELAY_MS`) and every `ITEMS_POLL_MS` while the
  * session is in progress, so running tools show up before the next message.
+ * Subagents (`GET .../subagents` and each one's turns) are read with the items;
+ * a subagent can outlive the turn that started it, so the poll also runs while
+ * one is still working. A finished, closed subagent's turns are not read again.
+ * A hidden tab does not poll; it refreshes when it becomes visible.
  *
  * Reconnecting: when the stream ends or fails it is retried after 1s, doubling
  * to a 30s cap, always resending the last seen id. A connection that delivered
@@ -31,14 +35,16 @@
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { api, isSignedOut } from '@/api/client'
-import type { OAIAgentSession, OAISessionEvent, StoredSessionItem } from '@/api/types'
+import type { OAIAgentSession, OAISessionEvent, OAITurn, StoredSessionItem } from '@/api/types'
 import {
   appendLocalUserMessage,
   applyEvent,
   applyItems,
+  applySubagents,
   initialState,
   removeLocalUserMessage,
   type ConversationState,
+  type SubagentActivity,
 } from './reducer'
 import { readSse } from './sse'
 
@@ -59,6 +65,7 @@ export const ITEMS_POLL_MS = 1_500
 export const ITEMS_REFRESH_DELAY_MS = 250
 
 const ACTIVE = new Set(['in_progress', 'requires_action'])
+const TERMINAL = new Set<OAITurn['status']>(['completed', 'failed', 'cancelled'])
 const REFRESH_ON = new Set([
   'agent.session.turn.item.done',
   'agent.session.turn.completed',
@@ -70,6 +77,7 @@ type Action =
   | { type: 'reset'; sessionId: string }
   | { type: 'event'; id?: string; event: OAISessionEvent }
   | { type: 'items'; items: StoredSessionItem[] }
+  | { type: 'subagents'; children: SubagentActivity[] }
   | { type: 'local-user'; text: string }
   | { type: 'drop-local'; text: string }
 
@@ -81,6 +89,8 @@ function reducer(s: ConversationState, a: Action): ConversationState {
       return applyEvent(s, a.id === undefined ? { event: a.event } : { id: a.id, event: a.event })
     case 'items':
       return applyItems(s, a.items)
+    case 'subagents':
+      return applySubagents(s, a.children)
     case 'local-user':
       return appendLocalUserMessage(s, a.text)
     case 'drop-local':
@@ -150,6 +160,9 @@ export function useConversation(
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
     let refreshing = false
     let refreshAgain = false
+    // Subagents: whether one still works, and the turns of finished, closed ones.
+    let childrenRunning = false
+    const finishedChildren = new Map<string, OAITurn[]>()
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
@@ -165,7 +178,9 @@ export function useConversation(
       })
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') wake?.()
+      if (document.visibilityState !== 'visible') return
+      wake?.()
+      if (active || childrenRunning) scheduleRefresh()
     }
     document.addEventListener('visibilitychange', onVisibility)
 
@@ -199,6 +214,27 @@ export function useConversation(
       return !signal.aborted
     }
 
+    const loadSubagents = async () => {
+      try {
+        const list = await api.subagents(sessionId)
+        const children = await Promise.all(
+          list.map(async (subagent): Promise<SubagentActivity> => {
+            const known = finishedChildren.get(subagent.id)
+            if (known) return { subagent, turns: known }
+            const turns = await api.subagentTurns(sessionId, subagent.id)
+            if (subagent.status === 'closed' && turns.every((t) => TERMINAL.has(t.status))) finishedChildren.set(subagent.id, turns)
+            return { subagent, turns }
+          }),
+        )
+        if (signal.aborted) return
+        childrenRunning = children.some(({ subagent, turns }) => subagent.status === 'active' && !TERMINAL.has(turns.at(-1)?.status ?? 'queued'))
+        if (children.length > 0) dispatch({ type: 'subagents', children })
+      } catch (error) {
+        if (!signal.aborted && isSignedOut(error)) onSignedOut()
+        // Otherwise optional: the conversation works without subagent cards.
+      }
+    }
+
     const refreshItems = async () => {
       if (refreshing) {
         refreshAgain = true
@@ -209,6 +245,7 @@ export function useConversation(
         do {
           refreshAgain = false
           if (!(await loadItems())) return
+          await loadSubagents()
         } while (refreshAgain)
       } finally {
         refreshing = false
@@ -222,7 +259,8 @@ export function useConversation(
       }, ITEMS_REFRESH_DELAY_MS)
     }
     const poll = setInterval(() => {
-      if (active) scheduleRefresh()
+      // A hidden tab does not poll; it refreshes when it comes back.
+      if ((active || childrenRunning) && document.visibilityState !== 'hidden') scheduleRefresh()
     }, ITEMS_POLL_MS)
     const track = (event: OAISessionEvent, durable: boolean) => {
       if ('session' in event) active = ACTIVE.has(event.session.status)
@@ -231,6 +269,8 @@ export function useConversation(
 
     const run = async () => {
       if (!(await loadItems())) return
+      // Not awaited: subagent cards must not hold back the stream.
+      void loadSubagents()
       while (!signal.aborted) {
         let received = false
         let openedAt: number | null = null

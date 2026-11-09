@@ -4,6 +4,8 @@
  *   AGENTRY_API_URL=http://127.0.0.1:3080 AGENTRY_FIXTURE_KEY=... \
  *     node scripts/record-fixture.ts [name] [prompt]
  *
+ * `AGENTRY_FIXTURE_MULTI_AGENT=1` enables subagent delegation on the session's agent.
+ *
  * Creates a session with `stream: true`, keeps every SSE frame of the create
  * response verbatim (id, event, parsed data), then reads `GET .../items` and
  * `GET .../turns` (and, when the turn delegated, every subagent with its items
@@ -35,6 +37,8 @@ function required(name: string): string {
 const apiUrl = required('AGENTRY_API_URL').replace(/\/+$/, '')
 const key = required('AGENTRY_FIXTURE_KEY')
 const model = process.env.AGENTRY_FIXTURE_MODEL ?? 'deepseek-flash'
+/** `AGENTRY_FIXTURE_MULTI_AGENT=1` lets the agent delegate to subagents. */
+const multiAgent = process.env.AGENTRY_FIXTURE_MULTI_AGENT === '1'
 const name = process.argv[2] ?? 'web-search'
 const prompt = process.argv[3] ?? DEFAULT_PROMPT
 if (!/^[a-z0-9-]+$/.test(name)) throw new Error('fixture name must match [a-z0-9-]+')
@@ -71,7 +75,13 @@ async function readFrames(body: ReadableStream<Uint8Array>, stop: (frame: Frame)
   let buffer = ''
   let block: { id?: string; event?: string; data: string[] } = { data: [] }
   for (;;) {
-    const { value, done } = await reader.read()
+    let chunk: ReadableStreamReadResult<Uint8Array>
+    try {
+      chunk = await reader.read()
+    } catch {
+      return frames // aborted: the read window is over
+    }
+    const { value, done } = chunk
     if (done) return frames
     buffer += decoder.decode(value, { stream: true })
     let match: RegExpExecArray | null
@@ -118,7 +128,7 @@ async function main(): Promise<void> {
   const res = await fetch(`${apiUrl}/v1/agents/sessions`, {
     method: 'POST',
     headers: headers({ 'content-type': 'application/json', accept: 'text/event-stream' }),
-    body: JSON.stringify({ agent: { model }, input: prompt, metadata: { title: `fixture: ${name}` }, stream: true }),
+    body: JSON.stringify({ agent: { model, ...(multiAgent && { multi_agent: { enabled: true } }) }, input: prompt, metadata: { title: `fixture: ${name}` }, stream: true }),
   })
   if (!res.ok || !res.body) throw new Error(`POST /agents/sessions answered ${res.status}`)
 
@@ -136,6 +146,33 @@ async function main(): Promise<void> {
   if (!sessionId) throw new Error('no agent.session.created frame')
 
   const base = `/agents/sessions/${sessionId}`
+
+  if (multiAgent) {
+    // Subagents run on after the turn that started them, and their results may
+    // start a follow-up turn: wait until every child turn and the session are done.
+    const deadline = Date.now() + 240_000
+    let settled = 0
+    while (settled < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+      const session = (await getJson(base)) as { status: string }
+      let running = session.status === 'in_progress' || session.status === 'requires_action'
+      for (const child of (await list(`${base}/subagents`)) as Array<{ id: string }>) {
+        const turns = (await list(`${base}/subagents/${child.id}/turns`)) as Array<{ status: string }>
+        if (turns.some((t) => t.status === 'in_progress' || t.status === 'queued')) running = true
+      }
+      settled = running ? 0 : settled + 1
+    }
+    // The frames written since: replay after the last id for a short window.
+    const lastId = frames.findLast((f) => f.id !== undefined)?.id ?? '0'
+    const window = new AbortController()
+    const timer = setTimeout(() => window.abort(), 3_000)
+    const more = await fetch(`${apiUrl}/v1${base}/events?stream=true`, {
+      headers: headers({ accept: 'text/event-stream', 'last-event-id': lastId }),
+      signal: window.signal,
+    }).catch(() => undefined)
+    if (more?.ok && more.body) frames.push(...(await readFrames(more.body, () => false)))
+    clearTimeout(timer)
+  }
   const items = await list(`${base}/items`)
   const turns = await list(`${base}/turns`)
   const subagentList = await list(`${base}/subagents`).catch(() => [])

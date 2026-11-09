@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments'])
 
-type Segment = string | { id: 'agent' | 'session' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -12,8 +12,12 @@ interface Rule {
 
 const AGENT = { id: 'agent' } as const
 const SESSION = { id: 'session' } as const
+const SUBAGENT = { id: 'subagent' } as const
 
-/** F1's allow-list, relative to the upstream `/v1` prefix (spec §5). The SSE stream has its own route. */
+/**
+ * F1's allow-list, relative to the upstream `/v1` prefix (spec §5), plus the
+ * read-only subagent routes of F1.1. The SSE stream has its own route.
+ */
 const RULES: readonly Rule[] = [
   { methods: ['GET'], segments: ['agents'] },
   { methods: ['GET'], segments: ['agents', 'tools'] },
@@ -23,6 +27,10 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'events'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'items'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'turns'] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents'] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT, 'items'] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT, 'turns'] },
 ]
 
 function matches(rule: Segment, part: string): boolean {

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OAIAgentSession, OAIRequiredAction, OAISessionEvent } from '@/api/types'
+import type { OAIAgentSession, OAIRequiredAction, OAISessionEvent, OAISubagent, OAITurn } from '@/api/types'
 import { ITEMS_POLL_MS, ITEMS_REFRESH_DELAY_MS, useConversation } from '@/chat/use-conversation'
 import approvalTurn from '../fixtures/approval-turn.json'
+import delegation from '../fixtures/live/subagent.json'
 import twoTurns from '../fixtures/two-turns.json'
 
 interface Frame {
@@ -57,6 +58,9 @@ let session: OAIAgentSession
 /** How the `GET /agents/sessions/{id}` call answers; by default at once with `session`. */
 let sessionResponse: () => Response | Promise<Response>
 let itemsResponse: () => Response | Promise<Response>
+/** `GET .../subagents` and `GET .../subagents/{id}/turns`; 404 by default. */
+let subagentsResponse: (() => Response) | null
+let subagentTurnsResponse: (() => Response) | null
 const fetchMock = vi.fn<typeof fetch>()
 
 const itemsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith(`/api/agentry/agents/sessions/${SID}/items`))
@@ -73,10 +77,14 @@ beforeEach(() => {
   session = sessionResource('idle')
   sessionResponse = () => Response.json(session)
   itemsResponse = () => itemsList([])
+  subagentsResponse = null
+  subagentTurnsResponse = null
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input, init) => {
     const url = String(input)
     if (url.startsWith(`/api/agentry/agents/sessions/${SID}/items`)) return itemsResponse()
+    if (url === `/api/agentry/agents/sessions/${SID}/subagents` && subagentsResponse) return subagentsResponse()
+    if (/\/subagents\/[^/]+\/turns$/.test(url) && subagentTurnsResponse) return subagentTurnsResponse()
     if (url.endsWith('/stream')) return (streams.shift() ?? (() => streamResponse('', true)))()
     if (url === `/api/agentry/agents/sessions/${SID}` && (init?.method ?? 'GET') === 'GET') return sessionResponse()
     if (url === `/api/agentry/agents/sessions/${SID}/events`) return Response.json({})
@@ -427,6 +435,49 @@ describe('useConversation', () => {
       const idle = itemsCalls().length
       await advance(ITEMS_POLL_MS * 4)
       expect(itemsCalls()).toHaveLength(idle)
+      unmount()
+    })
+
+    it('does not poll items while the tab is hidden, and refreshes when it is shown again', async () => {
+      session = sessionResource('in_progress')
+      itemsResponse = () => itemsList(TURN1_ITEMS)
+      streams.push(pushableStream(TWO.frames.slice(0, TWO.historyThrough + 3)).response)
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      const { unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      await advance(ITEMS_REFRESH_DELAY_MS)
+      const hidden = itemsCalls().length
+      await advance(ITEMS_POLL_MS * 4)
+      expect(itemsCalls()).toHaveLength(hidden)
+      visibility.mockReturnValue('visible')
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'))
+        await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
+      })
+      expect(itemsCalls().length).toBeGreaterThan(hidden)
+      visibility.mockRestore()
+      unmount()
+    })
+
+    it('shows subagents with the history and polls while one works after its turn ended', async () => {
+      const child = (delegation as unknown as { items: unknown[]; subagents: Array<{ subagent: OAISubagent; turns: OAITurn[] }> })
+      const { subagent, turns } = child.subagents[0]
+      itemsResponse = () => itemsList(child.items)
+      let done = false
+      subagentsResponse = () => itemsList([done ? subagent : { ...subagent, status: 'active', closed_at: undefined }])
+      subagentTurnsResponse = () => itemsList(done ? turns : [{ ...turns[0], status: 'in_progress', completed_at: null }])
+      streams.push(() => streamResponse('', true)) // the parent is idle
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      const card = () => result.current.state.items.find((v) => v.kind === 'subagent')
+      expect(card()).toMatchObject({ subagentId: subagent.id, name: 'List workspace files and count', status: 'in_progress' })
+      done = true
+      await advance(ITEMS_POLL_MS + ITEMS_REFRESH_DELAY_MS)
+      expect(card()).toMatchObject({ status: 'completed', endedAt: turns[0].completed_at })
+      // Finished and closed: no more polling.
+      const calls = fetchMock.mock.calls.length
+      await advance(ITEMS_POLL_MS * 4)
+      expect(fetchMock.mock.calls.length).toBe(calls)
       unmount()
     })
 

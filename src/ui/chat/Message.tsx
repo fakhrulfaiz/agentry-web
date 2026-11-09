@@ -46,10 +46,13 @@ export function Message({
   view,
   answer,
   onRetry,
+  depth = 1,
 }: {
   view: MessageView
   answer(actionId: string, a: ActionAnswer): Promise<void>
   onRetry?: () => void
+  /** Subagent nesting: 1 in the conversation, one more inside each expanded subagent card. */
+  depth?: number
 }) {
   switch (view.kind) {
     case 'user':
@@ -83,7 +86,7 @@ export function Message({
     case 'subagent':
       return (
         <AssistantRow>
-          <SubagentCard view={view} />
+          <SubagentCard view={view} depth={depth} />
         </AssistantRow>
       )
     case 'notice':

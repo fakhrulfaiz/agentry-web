@@ -33,6 +33,11 @@
  * Streaming: an assistant message streams from its first delta until its turn
  * ends; reasoning that arrives while its turn is open streams until then too.
  *
+ * Subagents: a child's activity never travels on the parent stream. The hook
+ * reads `GET .../subagents` and each child's turns, and `applySubagents` makes
+ * one card per child, right after the `subagent` call whose output names it
+ * ("started subagent <id>"), named by that call's `description`.
+ *
  * Required actions: durable status frames own `function_call` and
  * `environment_connection` actions. Approval and question actions only ever
  * travel on ephemeral frames (backend Task 6, provisional), so only an
@@ -45,6 +50,7 @@ import type {
   OAISessionEvent,
   OAISessionItem,
   OAISessionStatusEvent,
+  OAISubagent,
   OAITurn,
   SessionStatus,
   StoredSessionItem,
@@ -56,7 +62,18 @@ export type MessageView =
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
   | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown }
-  | { kind: 'subagent'; id: string; name: string; status: string }
+  | {
+    kind: 'subagent'
+    id: string
+    /** The parent session (the one whose `/subagents/{subagentId}` routes hold the child). */
+    sessionId: string
+    subagentId: string
+    name: string
+    status: string
+    /** Unix seconds. */
+    startedAt?: number
+    endedAt?: number
+  }
   | { kind: 'action'; id: string; action: OAIRequiredAction }
   | { kind: 'notice'; id: string; level: 'failed' | 'interrupted' | 'cancelled'; message: string }
 
@@ -77,6 +94,13 @@ type ActionView = Extract<MessageView, { kind: 'action' }>
 type UserView = Extract<MessageView, { kind: 'user' }>
 type AssistantView = Extract<MessageView, { kind: 'assistant' }>
 type ReasoningView = Extract<MessageView, { kind: 'reasoning' }>
+type SubagentView = Extract<MessageView, { kind: 'subagent' }>
+
+/** One subagent with its turns, as the hook reads them. */
+export interface SubagentActivity {
+  subagent: OAISubagent
+  turns: OAITurn[]
+}
 
 const LOCAL_PREFIX = 'local:'
 
@@ -96,11 +120,29 @@ export function applyItems(s: ConversationState, items: StoredSessionItem[]): Co
   return actionsLast(inLogOrder(next, top))
 }
 
+/** Upserts one card per subagent with its live status and timing. */
+export function applySubagents(s: ConversationState, children: SubagentActivity[]): ConversationState {
+  let next = s
+  for (const { subagent, turns } of children) {
+    const last = turns.at(-1)
+    const status = last?.status ?? (subagent.status === 'closed' ? 'completed' : 'queued')
+    const terminal = status === 'completed' || status === 'failed' || status === 'cancelled'
+    const endedAt = terminal ? (last?.completed_at ?? subagent.closed_at ?? undefined) : undefined
+    next = placeSubagentView(next, subagent.id, {
+      status,
+      startedAt: turns[0]?.started_at ?? turns[0]?.created_at ?? subagent.created_at,
+      endedAt: endedAt ?? undefined,
+    })
+  }
+  return actionsLast(next)
+}
+
 /**
  * Sorts the views by the item log. A view backed by an item takes its log
  * position. Any other view (notice, delegation card, optimistic user message)
- * stays right after the view before it, except an assistant message the log
- * does not have yet (still streaming): it stays at the end of its turn.
+ * stays right after the view before it, except a subagent card (right after
+ * the call that started it) and an assistant message the log does not have
+ * yet (still streaming), which stays at the end of its turn.
  */
 function inLogOrder(s: ConversationState, items: StoredSessionItem[]): ConversationState {
   const order = new Map<string, number>()
@@ -112,6 +154,12 @@ function inLogOrder(s: ConversationState, items: StoredSessionItem[]): Conversat
   let anchor = -1
   const keyed = s.items.map((view, index) => {
     let key = order.get(view.id)
+    if (key === undefined && view.kind === 'subagent') {
+      // Right after the call that started it.
+      const spawn = s.items.find((v) => v.kind === 'tool' && typeof v.output === 'string' && v.output.includes(view.subagentId))
+      const at = spawn ? order.get(spawn.id) : undefined
+      if (at !== undefined) key = at + 1e-6
+    }
     if (key === undefined) {
       const turn = s.turnOf.get(view.id)
       const end = view.kind === 'assistant' && turn !== undefined ? turnEnd.get(turn) : undefined
@@ -261,11 +309,47 @@ function applyTurnEnd(s: ConversationState, turn: OAITurn): ConversationState {
   return next
 }
 
-/** A subagent turn carries no parent turn id; it belongs to the open top-level turn. */
+/** A turn event for a subagent (if a backend ever streams one) updates its card. */
 function placeSubagent(s: ConversationState, turn: OAITurn): ConversationState {
-  const id = `subagent:${turn.id}`
-  const parent = s.turnOf.get(id) ?? s.openTurn ?? undefined
-  return place(s, { kind: 'subagent', id, name: turn.subagent_id ?? 'subagent', status: turn.status }, parent)
+  const terminal = turn.status === 'completed' || turn.status === 'failed' || turn.status === 'cancelled'
+  return placeSubagentView(s, turn.subagent_id ?? turn.id, {
+    status: turn.status,
+    startedAt: turn.started_at ?? turn.created_at,
+    endedAt: terminal ? (turn.completed_at ?? undefined) : undefined,
+  })
+}
+
+const SUBAGENT_NAME = 'Subagent'
+
+/**
+ * Upserts the card of `subagentId`. A new card goes right after the call that
+ * started it (its output names the child), else at the end of the open turn.
+ */
+function placeSubagentView(
+  s: ConversationState,
+  subagentId: string,
+  update: Pick<SubagentView, 'status' | 'startedAt' | 'endedAt'>,
+): ConversationState {
+  const id = `subagent:${subagentId}`
+  const current = find(s.items, id)
+  const spawn = s.items.find((v): v is ToolView => v.kind === 'tool' && typeof v.output === 'string' && v.output.includes(subagentId))
+  const description = spawn && spawn.args && typeof spawn.args === 'object' ? (spawn.args as { description?: unknown }).description : undefined
+  const name = typeof description === 'string' && description ? description : current?.kind === 'subagent' ? current.name : SUBAGENT_NAME
+  const view: SubagentView = {
+    kind: 'subagent',
+    id,
+    sessionId: s.sessionId,
+    subagentId,
+    name,
+    status: update.status,
+    startedAt: update.startedAt ?? (current?.kind === 'subagent' ? current.startedAt : undefined),
+    endedAt: update.endedAt,
+  }
+  if (current || !spawn) return place(s, view, s.turnOf.get(id) ?? (spawn && s.turnOf.get(spawn.id)) ?? s.openTurn ?? undefined)
+  const at = s.items.indexOf(spawn) + 1
+  const turn = s.turnOf.get(spawn.id)
+  const turnOf = turn ? new Map(s.turnOf).set(id, turn) : s.turnOf
+  return { ...s, items: [...s.items.slice(0, at), view, ...s.items.slice(at)], turnOf }
 }
 
 function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, eventTurn?: string): ConversationState {
@@ -315,13 +399,17 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
         kind: 'tool',
         id: item.id,
         callId: item.id,
-        name: 'command',
+        name: COMMAND,
         args: item.cwd === undefined ? { command: item.command } : { command: item.command, cwd: item.cwd },
         status: toolStatus(item.status, 'running'),
         ...withOutput(item.output),
       }, turn)
     case 'function_call_output': {
-      const call = s.items.find((v): v is ToolView => v.kind === 'tool' && v.callId === item.call_id)
+      // A shell command's output carries a call id its `command_execution` item does not
+      // have: it finishes the latest command of its turn that has no output yet.
+      const call =
+        s.items.find((v): v is ToolView => v.kind === 'tool' && v.callId === item.call_id) ??
+        s.items.findLast((v): v is ToolView => v.kind === 'tool' && v.name === COMMAND && v.output === undefined && (!turn || s.turnOf.get(v.id) === turn))
       if (!call) return s
       const failed = item.status === 'failed' || item.status === 'incomplete' || Boolean(item.error)
       return place(s, { ...call, status: failed ? 'failed' : 'done', output: item.output }, turn)
@@ -331,6 +419,7 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
   }
 }
 
+const COMMAND = 'command'
 const REASONING_PREFIX = 'item_reason_'
 const MESSAGE_PREFIX = 'item_msg_'
 

@@ -6,7 +6,7 @@
  *
  * In-memory implementation of the routes the web app's allow-list forwards
  * (`/v1/agents`, `/v1/agents/tools`, `/v1/agents/{id}`, sessions create/list/
- * get/update/delete, events post, items, turns) plus the SSE stream
+ * get/update/delete, events post, items, turns, subagents with their items and turns) plus the SSE stream
  * `GET /v1/agents/sessions/{id}/events?stream=true`. Wire shapes follow the
  * backend's `src/history/projector.ts` (frame order, deterministic `evt_<session>_<n>`
  * ids). Any `Authorization: Bearer agk_…` is accepted as owner `mock`; anything
@@ -44,7 +44,9 @@
  *   - "web"                    → replays the recorded live turn (`tests/fixtures/live/web-search.json`):
  *                                 reasoning, `web_search` and `web_fetch` calls, and the streamed answer.
  *   - "tool"                   → a `search` function call that completes after 400 ms, then a reply.
- *   - "delegate" or "subagent" → a subagent turn ("researcher") that completes, then a reply.
+ *   - "delegate" or "subagent" → a `subagent` call ("Research the question") that starts a child, and a
+ *                                 reply. The child runs on after the turn: about 3 s, with a `glob` call,
+ *                                 then a final message, all under `GET .../subagents/{id}/…` only.
  *   - anything else            → a reasoning summary and a short streamed Markdown reply.
  * A message sent while a turn runs is recorded as steering; the running script continues.
  *
@@ -54,6 +56,7 @@
  *   - `POST /__mock/reset` forgets every session and drops streams.
  *   - `GET /health`.
  */
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type {
@@ -62,6 +65,7 @@ import type {
   OAIApprovalAction,
   OAISessionEvent,
   OAISessionItem,
+  OAISubagent,
   OAITurn,
   SessionStatus,
   StoredSessionItem,
@@ -90,10 +94,17 @@ interface MockSession {
   frames: Frame[]
   items: StoredSessionItem[]
   turns: OAITurn[]
+  subagents: MockChild[]
   clients: Set<ServerResponse>
   seq: number
   turn?: { turn: OAITurn; abort: AbortController }
   pending?: { action: OAIApprovalAction; resolve: (d: Decision) => void }
+}
+
+interface MockChild {
+  subagent: OAISubagent
+  turns: OAITurn[]
+  items: StoredSessionItem[]
 }
 
 class HttpError extends Error {
@@ -376,16 +387,46 @@ async function script(s: MockSession, turnId: string, text: string, signal: Abor
     return streamText(s, turnId, words('I searched and found **3 results**: alpha, beta and gamma.'), 40, signal)
   }
   if (t.includes('delegate') || t.includes('subagent')) {
-    const child: OAITurn = { ...newTurn(s), id: `turn_${s.id}_child${s.seq}`, subagent_id: 'researcher' }
-    emit(s, { type: 'agent.session.turn.created', session_id: s.id, turn: child })
-    await wait(500, signal)
-    const done: OAITurn = { ...child, status: 'completed', completed_at: now() }
-    emit(s, { type: 'agent.session.turn.completed', session_id: s.id, turn_id: child.id, turn: done })
-    return streamText(s, turnId, words('The researcher finished: everything checks out.'), 40, signal)
+    const childId = randomUUID()
+    await functionCall(s, turnId, 'subagent', { description: 'Research the question', prompt: `Research this: ${text}` }, async () => {
+      void runChild(s, childId, text)
+      return { output: `started subagent ${childId}` }
+    })
+    return streamText(s, turnId, words('I asked a researcher; it will report back.'), 40, signal)
   }
   const reasoning = 'The user sent a message; reply briefly with a little Markdown.'
   const reply = `Hello from the **mock** Agentry API.\n\nYou said: _${text.replace(/[_*`]/g, '')}_\n\n- streamed\n- in chunks\n\n\`\`\`ts\nconst ok = true\n\`\`\`\n`
   return streamText(s, turnId, words(reply), 40, signal, reasoning)
+}
+
+/**
+ * A subagent, as the backend shows one: a child with its own turns and items
+ * (each item carries `subagent_id`), never on the parent stream. It outlives
+ * the parent turn that started it.
+ */
+async function runChild(s: MockSession, childId: string, text: string): Promise<void> {
+  const never = new AbortController().signal
+  const child: MockChild = {
+    subagent: { id: childId, object: 'agent.session.subagent', session_id: childId, parent_session_id: s.id, status: 'active', created_at: now() },
+    turns: [],
+    items: [],
+  }
+  s.subagents.push(child)
+  const turn: OAITurn = { ...newTurn(s), id: `turn_${randomUUID().replaceAll('-', '')}`, session_id: childId, subagent_id: childId }
+  child.turns.push(turn)
+  const add = (item: OAISessionItem) => child.items.push({ ...item, subagent_id: childId })
+  add({ id: 'item_msg_1', type: 'message', role: 'user', content: [{ type: 'input_text', text: `Research this: ${text}` }], status: 'completed', turn_id: turn.id })
+  await wait(800, never)
+  add({ id: 'item_reason_2', type: 'reasoning', summary: [{ type: 'summary_text', text: 'Look for relevant files first.' }], status: 'completed', turn_id: turn.id })
+  add({ id: 'item_msg_2', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Look for relevant files first.I will look around.' }], status: 'completed', turn_id: turn.id })
+  add({ id: 'item_fn_3', type: 'function_call', name: 'glob', call_id: 'call_child_1', arguments: { pattern: '**/*.md' }, status: 'in_progress', turn_id: turn.id })
+  await wait(1_000, never)
+  add({ id: 'item_fn_out_4', type: 'function_call_output', call_id: 'call_child_1', output: 'README.md\nCHANGELOG.md', status: 'completed', turn_id: turn.id })
+  await wait(1_000, never)
+  add({ id: 'item_msg_5', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Found **2** Markdown files: README.md and CHANGELOG.md.' }], status: 'completed', turn_id: turn.id })
+  turn.status = 'completed'
+  turn.completed_at = now()
+  child.subagent = { ...child.subagent, status: 'closed', closed_at: now() }
 }
 
 function newTurn(s: MockSession): OAITurn {
@@ -529,6 +570,7 @@ function createSession(body: Record<string, unknown>): MockSession {
     frames: [],
     items: [],
     turns: [],
+    subagents: [],
     clients: new Set(),
     seq: 0,
   }
@@ -603,7 +645,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   const parts = path.split('/').slice(2) // after "/v1"
-  const [a, b, c, d] = parts
+  const [a, b, c, d, e, f] = parts
   if (a !== 'agents') throw new HttpError(404, 'not_found', `No route ${method} ${path}`)
 
   if (parts.length === 1 && method === 'GET') return send(res, 200, list(SAVED_AGENTS, url))
@@ -647,6 +689,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     if (parts.length === 4 && d === 'items' && method === 'GET') return send(res, 200, list(s.items, url))
     if (parts.length === 4 && d === 'turns' && method === 'GET') return send(res, 200, list(s.turns, url))
+    if (d === 'subagents' && method === 'GET') {
+      if (parts.length === 4) return send(res, 200, list(s.subagents.map((x) => x.subagent), url))
+      const child = s.subagents.find((x) => x.subagent.id === e)
+      if (!child) throw new HttpError(404, 'resource_not_found', 'subagent not found')
+      if (parts.length === 5) return send(res, 200, child.subagent)
+      if (parts.length === 6 && f === 'items') return send(res, 200, list(child.items, url))
+      if (parts.length === 6 && f === 'turns') return send(res, 200, list(child.turns, url))
+    }
   }
   throw new HttpError(404, 'not_found', `No route ${method} ${path}`)
 }

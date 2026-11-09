@@ -9,6 +9,8 @@ import type {
   OAIAgentSession,
   OAIInputEvent,
   OAIListResponse,
+  OAISubagent,
+  OAITurn,
   StoredSessionItem,
 } from './types'
 
@@ -94,6 +96,20 @@ export function titleFrom(text: string): string {
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
 }
 
+/** Every row of a cursor-paged list, oldest first (follows `has_more`). */
+async function listAll<T extends { id: string }>(url: string): Promise<T[]> {
+  const all: T[] = []
+  let after: string | null = null
+  for (;;) {
+    const params = new URLSearchParams({ limit: String(ITEMS_PAGE) })
+    if (after) params.set('after', after)
+    const page: OAIListResponse<T> = await request('GET', `${url}?${params}`)
+    all.push(...page.data)
+    if (!page.has_more || !page.last_id || page.last_id === after) return all
+    after = page.last_id
+  }
+}
+
 export const api = {
   listSessions(q: { after?: string; limit?: number } = {}): Promise<OAIListResponse<OAIAgentSession>> {
     const params = new URLSearchParams()
@@ -153,17 +169,25 @@ export const api = {
   },
 
   /** Every saved item, oldest first (follows `has_more`). */
-  async items(id: string): Promise<StoredSessionItem[]> {
-    const all: StoredSessionItem[] = []
-    let after: string | null = null
-    for (;;) {
-      const params = new URLSearchParams({ limit: String(ITEMS_PAGE) })
-      if (after) params.set('after', after)
-      const page: OAIListResponse<StoredSessionItem> = await request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/items?${params}`)
-      all.push(...page.data)
-      if (!page.has_more || !page.last_id || page.last_id === after) return all
-      after = page.last_id
-    }
+  items(id: string): Promise<StoredSessionItem[]> {
+    return listAll(`${AGENTRY}/agents/sessions/${seg(id)}/items`)
+  },
+
+  /** The subagents this session's turns delegated to. */
+  async subagents(id: string): Promise<OAISubagent[]> {
+    const page = await request<OAIListResponse<OAISubagent>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/subagents`)
+    return page.data
+  },
+
+  /** One subagent's turns (its status and timing). */
+  async subagentTurns(id: string, subagentId: string): Promise<OAITurn[]> {
+    const page = await request<OAIListResponse<OAITurn>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/subagents/${seg(subagentId)}/turns`)
+    return page.data
+  },
+
+  /** Every item a subagent saved, oldest first (each carries `subagent_id`). */
+  subagentItems(id: string, subagentId: string): Promise<StoredSessionItem[]> {
+    return listAll(`${AGENTRY}/agents/sessions/${seg(id)}/subagents/${seg(subagentId)}/items`)
   },
 
   /** Offered models: the configured list first, then the models of the user's saved agents. */
