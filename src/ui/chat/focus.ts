@@ -18,9 +18,9 @@ export function focusFirstControl(root: HTMLElement | null): void {
   root?.querySelector<HTMLElement>(FOCUSABLE)?.focus()
 }
 
-/** Focuses the text editor inside `root` (a composer), else its first control. */
-export function focusEditor(root: HTMLElement | null): void {
+/** Focuses the editable text editor inside `root` (a composer); false when there is none yet. */
+export function focusEditor(root: HTMLElement | null): boolean {
   const editor = root?.querySelector<HTMLElement>('[contenteditable="true"], textarea:not([disabled])')
-  if (editor) editor.focus()
-  else focusFirstControl(root)
+  editor?.focus()
+  return Boolean(editor)
 }

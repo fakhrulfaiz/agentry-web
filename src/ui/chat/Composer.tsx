@@ -128,12 +128,10 @@ export function Composer({
   // No upload endpoint yet, so this stays empty and the drawer hidden.
   const attachments: string[] = []
 
+  // Focus goes to the editor once it is editable (a new chat's waits for the models), never to a button.
   useEffect(() => {
-    if (!sending && refocus.current) {
-      refocus.current = false
-      focusEditor(root.current)
-    }
-  }, [sending])
+    if (!sending && !isDisabled && refocus.current && focusEditor(root.current)) refocus.current = false
+  }, [sending, isDisabled])
 
   const slash = useMemo<ChatComposerTrigger | null>(() => {
     if (commands.length === 0) return null

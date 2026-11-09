@@ -88,6 +88,16 @@ describe('Composer', () => {
     expect(screen.getByText('Model not found')).toBeInTheDocument()
   })
 })
+describe('Composer focus', () => {
+  it('autofocus waits for the editor to be enabled and never lands on the attach button', async () => {
+    const { rerender } = render(<Composer onSend={vi.fn(async () => {})} autoFocus isDisabled />)
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: 'Attach files' })).not.toHaveFocus()
+    rerender(<Composer onSend={vi.fn(async () => {})} autoFocus />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message input' })).toHaveFocus())
+  })
+})
+
 describe('Composer footer and header', () => {
   const live = (over: Partial<ComposerSettings> = {}): ComposerSettings => ({
     models: ['mock-model', 'mock-large'],
