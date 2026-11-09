@@ -38,6 +38,8 @@ function sessionResource(status: OAIAgentSession['status'], required_actions: OA
 
 let streams: Array<() => Response>
 let session: OAIAgentSession
+/** How the `GET /agents/sessions/{id}` call answers; by default at once with `session`. */
+let sessionResponse: () => Response | Promise<Response>
 let itemsResponse: () => Response | Promise<Response>
 const fetchMock = vi.fn<typeof fetch>()
 
@@ -53,13 +55,14 @@ beforeEach(() => {
   document.head.innerHTML = `<meta name="agentry-csrf" content="${CSRF}">`
   streams = []
   session = sessionResource('idle')
+  sessionResponse = () => Response.json(session)
   itemsResponse = () => itemsList([])
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input, init) => {
     const url = String(input)
     if (url.startsWith(`/api/agentry/agents/sessions/${SID}/items`)) return itemsResponse()
     if (url.endsWith('/stream')) return (streams.shift() ?? (() => streamResponse('', true)))()
-    if (url === `/api/agentry/agents/sessions/${SID}` && (init?.method ?? 'GET') === 'GET') return Response.json(session)
+    if (url === `/api/agentry/agents/sessions/${SID}` && (init?.method ?? 'GET') === 'GET') return sessionResponse()
     if (url === `/api/agentry/agents/sessions/${SID}/events`) return Response.json({})
     return Response.json({ error: 'not_found' }, { status: 404 })
   })
@@ -209,6 +212,79 @@ describe('useConversation', () => {
     expect(result.current.connection).toBe('closed')
     await advance(60_000)
     expect(streamCalls()).toHaveLength(1)
+    unmount()
+  })
+
+  it('a 403 or 404 on the stream closes it with a reason instead of retrying', async () => {
+    for (const [status, reason] of [[403, 'forbidden'], [404, 'not_found']] as const) {
+      fetchMock.mockClear()
+      streams = [() => Response.json({ error: 'nope' }, { status })]
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      expect(result.current.connection).toBe('closed')
+      expect(result.current.closedReason).toBe(reason)
+      await advance(60_000)
+      expect(streamCalls()).toHaveLength(1)
+      unmount()
+    }
+  })
+
+  it('applies the snapshot before opening the stream', async () => {
+    const approval: OAIRequiredAction = { type: 'approval', id: 'appr_1', kind: 'tool_approval', prompt: 'Approve', options: ['approve', 'deny'] }
+    session = sessionResource('requires_action', [approval])
+    sessionResponse = () => new Promise((resolve) => setTimeout(() => resolve(Response.json(session)), 1_000))
+    streams.push(() => streamResponse('', true))
+
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    expect(streamCalls()).toHaveLength(0)
+    await advance(1_000)
+    expect(streamCalls()).toHaveLength(1)
+    expect(result.current.state.items.map((v) => v.kind)).toEqual(['action'])
+    unmount()
+  })
+
+  it('ignores a slow snapshot once newer stream events have arrived', async () => {
+    const approval: OAIRequiredAction = { type: 'approval', id: 'appr_1', kind: 'tool_approval', prompt: 'Approve', options: ['approve', 'deny'] }
+    // The snapshot was taken while the approval was pending, but answers only after 8s.
+    const stale = sessionResource('requires_action', [approval])
+    sessionResponse = () => new Promise((resolve) => setTimeout(() => resolve(Response.json(stale)), 8_000))
+    // Meanwhile the stream (opened after the 5s wait) reports the approval resolved and the session idle.
+    const resolved: Frame = { event: { type: 'agent.session.idle', event_id: 'e_live', session: sessionResource('idle') } as OAISessionEvent }
+    streams.push(() => streamResponse(sse([resolved]), true))
+
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    await advance(5_000)
+    expect(streamCalls()).toHaveLength(1)
+    expect(result.current.state.status).toBe('idle')
+    await advance(3_000)
+    expect(result.current.state.status).toBe('idle')
+    expect(result.current.state.items.filter((v) => v.kind === 'action')).toEqual([])
+    unmount()
+  })
+
+  it('resets the backoff after a connection that stayed up 30s without events', async () => {
+    streams.push(() => streamResponse(''))
+    streams.push(() => streamResponse(''))
+    // Opens fine, carries no events, and drops after 30s.
+    streams.push(() => {
+      const body = new ReadableStream<Uint8Array>({ start: (c) => void setTimeout(() => c.close(), 30_000) })
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    })
+    streams.push(() => streamResponse(''))
+
+    const { unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    await advance(1_000)
+    await advance(2_000)
+    expect(streamCalls()).toHaveLength(3)
+    await advance(30_000)
+    // Without the reset this would wait 4s.
+    await advance(999)
+    expect(streamCalls()).toHaveLength(3)
+    await advance(1)
+    expect(streamCalls()).toHaveLength(4)
     unmount()
   })
 

