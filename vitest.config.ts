@@ -15,6 +15,8 @@ export default defineConfig({
   test: {
     // Node by default; DOM tests opt in per file with `// @vitest-environment jsdom`.
     environment: 'node',
+    // Our stylex.create() calls are not compiled under Vitest; see the stub.
+    setupFiles: ['tests/stubs/stylex-setup.ts'],
     include: ['tests/unit/**/*.spec.ts', 'tests/component/**/*.spec.tsx'],
   },
 })

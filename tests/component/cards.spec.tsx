@@ -1,0 +1,291 @@
+// @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest'
+import '../helpers/dom'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { OAIApprovalAction } from '@/api/types'
+import type { MessageView } from '@/chat/reducer'
+import { Composer } from '@/ui/chat/Composer'
+import { ConnectionPill } from '@/ui/chat/ConnectionPill'
+import { Message } from '@/ui/chat/Message'
+import { summarizeArgs } from '@/ui/chat/ToolCard'
+import { ErrorBanner } from '@/ui/errors/ErrorBanner'
+
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+const noAnswer = vi.fn(async () => {})
+const isDisabled = (el: HTMLElement) => el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true'
+
+function deferred() {
+  let resolve!: () => void
+  let reject!: (e: unknown) => void
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+const approval: OAIApprovalAction = {
+  type: 'approval',
+  id: 'appr_1',
+  kind: 'tool_approval',
+  prompt: 'Allow delete_files to remove /tmp/mock?',
+  options: ['approve', 'deny'],
+  tool_name: 'delete_files',
+  call_id: 'call_1',
+}
+
+const question: OAIApprovalAction = {
+  type: 'approval',
+  id: 'appr_q',
+  kind: 'user_question',
+  prompt: 'Which color do you prefer?',
+  options: ['Red', 'Blue'],
+  questions: [{ id: 'q1', question: 'Which color do you prefer?', options: [{ label: 'Red' }, { label: 'Blue' }] }],
+}
+
+describe('views', () => {
+  it('renders a user message as a bubble with its text', () => {
+    render(<Message view={{ kind: 'user', id: 'u1', text: 'Hello\nthere' }} answer={noAnswer} />)
+    expect(screen.getByText(/Hello\s+there/)).toBeInTheDocument()
+  })
+
+  it('renders assistant Markdown, polite live region while streaming', () => {
+    const view: MessageView = { kind: 'assistant', id: 'a1', text: 'Some **bold** text', streaming: true }
+    const { rerender } = render(<Message view={view} answer={noAnswer} />)
+    expect(screen.getByTestId('assistant-message')).toHaveAttribute('aria-live', 'polite')
+    rerender(<Message view={{ ...view, streaming: false }} answer={noAnswer} />)
+    expect(screen.getByTestId('assistant-message')).not.toHaveAttribute('aria-live')
+    expect(screen.getByText('bold').tagName).toBe('STRONG')
+  })
+
+  it('renders code blocks with a copy button and never parses raw HTML', () => {
+    const text = 'Run:\n\n```bash\necho hi\n```\n\n<img src=x onerror=alert(1)>'
+    const { container } = render(<Message view={{ kind: 'assistant', id: 'a1', text, streaming: false }} answer={noAnswer} />)
+    expect(container.querySelector('pre')).toHaveTextContent('echo hi')
+    expect(screen.getByRole('button', { name: /copy/i })).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('typesets math', () => {
+    const { container } = render(<Message view={{ kind: 'assistant', id: 'a1', text: 'Energy $E=mc^2$.', streaming: false }} answer={noAnswer} />)
+    expect(container.querySelector('.katex')).not.toBeNull()
+  })
+
+  it('renders reasoning collapsed under "Thinking"', async () => {
+    const user = userEvent.setup()
+    render(<Message view={{ kind: 'reasoning', id: 'r1', text: 'Considering the options' }} answer={noAnswer} />)
+    const trigger = screen.getByRole('button', { name: /Thinking/ })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Considering the options')).toBeVisible()
+  })
+
+  it('renders a tool card with name, argument summary and status, and expands to the full input and output', async () => {
+    const user = userEvent.setup()
+    const args = { query: 'weather in Kuala Lumpur', limit: 5 }
+    const view: MessageView = { kind: 'tool', id: 't1', callId: 'c1', name: 'search', args, status: 'done', output: '3 results: alpha, beta, gamma' }
+    render(<Message view={view} answer={noAnswer} />)
+    expect(screen.getByText('search')).toBeInTheDocument()
+    expect(screen.getByText('weather in Kuala Lumpur')).toBeInTheDocument()
+    expect(screen.queryByText('3 results: alpha, beta, gamma')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /search/ }))
+    expect(await screen.findByText('3 results: alpha, beta, gamma')).toBeInTheDocument()
+    expect(document.body).toHaveTextContent('"limit": 5')
+  })
+
+  it('summarizes long or structured arguments', () => {
+    expect(summarizeArgs({ path: '/tmp/x' })).toBe('/tmp/x')
+    expect(summarizeArgs('{"n":1}')).toBe('{"n":1}')
+    expect(summarizeArgs({ text: 'a'.repeat(100) })).toHaveLength(60)
+  })
+
+  it('renders a delegation card with the subagent name and status', () => {
+    render(<Message view={{ kind: 'subagent', id: 's1', name: 'researcher', status: 'completed' }} answer={noAnswer} />)
+    expect(screen.getByText('Delegated to researcher')).toBeInTheDocument()
+    expect(screen.getByText('Done')).toBeInTheDocument()
+  })
+
+  it('renders a notice with Retry', async () => {
+    const user = userEvent.setup()
+    const onRetry = vi.fn()
+    render(
+      <Message view={{ kind: 'notice', id: 'n1', level: 'failed', message: 'Mock failure: the model is unavailable' }} answer={noAnswer} onRetry={onRetry} />,
+    )
+    expect(screen.getByText('The turn failed')).toBeInTheDocument()
+    expect(screen.getByText('Mock failure: the model is unavailable')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('shows "Reconnecting…" only while reconnecting', () => {
+    const { rerender } = render(<ConnectionPill connection="live" />)
+    expect(screen.queryByText('Reconnecting…')).not.toBeInTheDocument()
+    rerender(<ConnectionPill connection="reconnecting" />)
+    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…')
+  })
+
+  it('error banner retries', async () => {
+    const user = userEvent.setup()
+    const onRetry = vi.fn()
+    render(<ErrorBanner message="store_unavailable" onRetry={onRetry} />)
+    expect(screen.getByText('Agentry is temporarily unavailable')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+})
+
+describe('ApprovalCard', () => {
+  it('Allow answers approve, and focus starts on Allow', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    render(<Message view={{ kind: 'action', id: 'action:appr_1', action: approval }} answer={answer} />)
+    expect(screen.getByText('Allow delete_files to remove /tmp/mock?')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Allow' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Allow' }))
+    expect(answer).toHaveBeenCalledWith('appr_1', { decision: 'approve' })
+  })
+
+  it('Deny answers deny', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    render(<Message view={{ kind: 'action', id: 'action:appr_1', action: approval }} answer={answer} />)
+    await user.click(screen.getByRole('button', { name: 'Deny' }))
+    expect(answer).toHaveBeenCalledWith('appr_1', { decision: 'deny' })
+  })
+
+  it('shows the error when the answer fails', async () => {
+    const user = userEvent.setup()
+    const { ApiError } = await import('@/api/client')
+    const answer = vi.fn(async () => {
+      throw new ApiError(404, 'approval_not_found', 'This approval is no longer pending')
+    })
+    render(<Message view={{ kind: 'action', id: 'action:appr_1', action: approval }} answer={answer} />)
+    await user.click(screen.getByRole('button', { name: 'Allow' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This approval is no longer pending')
+  })
+})
+
+describe('QuestionCard', () => {
+  it('answers with a chosen option, and focus starts on the first option', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    render(<Message view={{ kind: 'action', id: 'action:appr_q', action: question }} answer={answer} />)
+    const red = screen.getByRole('radio', { name: 'Red' })
+    expect(red).toHaveFocus()
+    expect(isDisabled(screen.getByRole('button', { name: 'Send answer' }))).toBe(true)
+    await user.click(red)
+    await user.click(screen.getByRole('button', { name: 'Send answer' }))
+    expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'answer', payload: { selected: ['Red'] } })
+  })
+
+  it('answers with free text', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    render(<Message view={{ kind: 'action', id: 'action:appr_q', action: question }} answer={answer} />)
+    await user.type(screen.getByRole('textbox', { name: 'Or type your own answer' }), 'Green')
+    await user.click(screen.getByRole('button', { name: 'Send answer' }))
+    expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'answer', payload: { selected: [], custom: 'Green' } })
+  })
+
+  it('works with a free-text-only question and Enter submits', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    const freeText: OAIApprovalAction = { ...question, options: [], questions: undefined, prompt: 'What is the project name?' }
+    render(<Message view={{ kind: 'action', id: 'action:appr_q', action: freeText }} answer={answer} />)
+    expect(screen.getByText('What is the project name?')).toBeInTheDocument()
+    const field = screen.getByRole('textbox', { name: 'Your answer' })
+    expect(field).toHaveFocus()
+    await user.type(field, 'Agentry{Enter}')
+    expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'answer', payload: { selected: [], custom: 'Agentry' } })
+  })
+
+  it('Skip declines', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    render(<Message view={{ kind: 'action', id: 'action:appr_q', action: question }} answer={answer} />)
+    await user.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'deny' })
+  })
+})
+
+describe('Composer', () => {
+  const input = () => screen.getByRole('textbox', { name: 'Message input' })
+
+  it('Enter sends, Shift+Enter inserts a newline', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn(async () => {})
+    render(<Composer onSend={onSend} />)
+    await user.click(input())
+    await user.keyboard('first line{Shift>}{Enter}{/Shift}second line')
+    expect(onSend).not.toHaveBeenCalled()
+    await user.keyboard('{Enter}')
+    expect(onSend).toHaveBeenCalledWith('first line\nsecond line')
+    await waitFor(() => expect(input()).toHaveTextContent(''))
+  })
+
+  it('does not send an empty message', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn(async () => {})
+    render(<Composer onSend={onSend} />)
+    await user.click(input())
+    await user.keyboard('   {Enter}')
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('disables the input while sending, then moves focus back to it', async () => {
+    const user = userEvent.setup()
+    const pending = deferred()
+    const onSend = vi.fn(() => pending.promise)
+    render(<Composer onSend={onSend} />)
+    await user.click(input())
+    await user.keyboard('hello{Enter}')
+    await waitFor(() => expect(input()).toHaveAttribute('contenteditable', 'false'))
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await act(async () => pending.resolve())
+    await waitFor(() => expect(input()).toHaveAttribute('contenteditable', 'true'))
+    await waitFor(() => expect(input()).toHaveFocus())
+  })
+
+  it('keeps the text when the send fails', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn(async () => {
+      throw new Error('nope')
+    })
+    render(<Composer onSend={onSend} />)
+    await user.click(input())
+    await user.keyboard('keep me{Enter}')
+    await waitFor(() => expect(input()).toHaveAttribute('contenteditable', 'true'))
+    expect(input()).toHaveTextContent('keep me')
+  })
+
+  it('shows Stop while a turn runs', async () => {
+    const user = userEvent.setup()
+    const onStop = vi.fn()
+    const { rerender } = render(<Composer onSend={vi.fn(async () => {})} onStop={onStop} />)
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    rerender(<Composer onSend={vi.fn(async () => {})} onStop={onStop} isRunning />)
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(onStop).toHaveBeenCalledOnce()
+  })
+
+  it('shows an inline error status', () => {
+    render(<Composer onSend={vi.fn(async () => {})} status={{ type: 'error', message: 'Model not found' }} />)
+    expect(screen.getByText('Model not found')).toBeInTheDocument()
+  })
+})
+
+describe('action cards inside the list', () => {
+  it('only the approval card is a group with its own controls', () => {
+    render(<Message view={{ kind: 'action', id: 'action:appr_1', action: approval }} answer={noAnswer} />)
+    const group = screen.getByRole('group', { name: 'Approval needed' })
+    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Allow', 'Deny'])
+  })
+})
