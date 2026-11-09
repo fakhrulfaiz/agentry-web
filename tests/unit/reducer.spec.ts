@@ -16,8 +16,11 @@ interface Frame {
   event: OAISessionEvent
 }
 
-const TWO_TURNS = twoTurns as unknown as { sessionId: string; historyThrough: number; frames: Frame[] }
-const APPROVAL = approvalTurn as unknown as { sessionId: string; frames: Frame[] }
+// Both fixtures follow the real backend: the stream has assistant messages only; the rest is in `items`.
+const TWO_TURNS = twoTurns as unknown as { sessionId: string; historyThrough: number; frames: Frame[]; items: StoredSessionItem[] }
+const APPROVAL = approvalTurn as unknown as { sessionId: string; frames: Frame[]; items: StoredSessionItem[] }
+/** Turn 1's items: the user message, its reasoning and the reply. */
+const TURN1_ITEMS = TWO_TURNS.items.slice(0, 3)
 const SID = TWO_TURNS.sessionId
 
 function fold(frames: Frame[], s: ConversationState = initialState(SID)): ConversationState {
@@ -49,12 +52,15 @@ describe('conversation reducer', () => {
     expect(mid.status).toBe('in_progress')
 
     const done = fold(frames)
-    expect(done.items.filter((v) => v.kind === 'assistant')).toEqual([
+    expect(done.items).toEqual([{ kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false }])
+    expect(done.status).toBe('idle')
+    // The items refresh adds what the stream does not carry, and cuts the repeated reasoning.
+    const refreshed = applyItems(done, TURN1_ITEMS)
+    expect(refreshed.items).toEqual([
+      { kind: 'user', id: 'item_msg_3', text: 'Say hello' },
+      { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.', streaming: false },
       { kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false },
     ])
-    expect(kinds(done)).toEqual(['user', 'reasoning', 'assistant'])
-    expect(done.items[1]).toEqual({ kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.' })
-    expect(done.status).toBe('idle')
     expect(done.lastEventId).toBe(String(TWO_TURNS.historyThrough))
   })
 
@@ -69,13 +75,13 @@ describe('conversation reducer', () => {
   })
 
   it('moves a tool call from running to done with its output', () => {
-    const frames = TWO_TURNS.frames
-    const call = frames.findIndex((f) => f.event.type === 'agent.session.turn.item.added' && f.event.item.type === 'function_call')
-    const running = fold(frames.slice(0, call + 1))
+    const items = TWO_TURNS.items
+    const call = items.findIndex((i) => i.type === 'function_call')
+    const running = applyItems(initialState(SID), items.slice(0, call + 1))
     expect(running.items.at(-1)).toEqual({
       kind: 'tool', id: 'item_fn_8', callId: 'call_1', name: 'search', args: { query: 'docs' }, status: 'running',
     })
-    const done = fold(frames.slice(0, call + 2))
+    const done = applyItems(running, items.slice(0, call + 2))
     expect(done.items.at(-1)).toEqual({
       kind: 'tool', id: 'item_fn_8', callId: 'call_1', name: 'search', args: { query: 'docs' }, status: 'done', output: '3 results',
     })
@@ -109,7 +115,7 @@ describe('conversation reducer', () => {
     expect(answered.items.some((v) => v.kind === 'action')).toBe(false)
     expect(answered.status).toBe('in_progress')
 
-    const end = fold(frames)
+    const end = applyItems(fold(frames), APPROVAL.items)
     expect(kinds(end)).toEqual(['user', 'tool', 'assistant'])
     expect(end.status).toBe('idle')
   })
@@ -150,16 +156,16 @@ describe('conversation reducer', () => {
     expect(resumed.items).toEqual(once.items)
   })
 
-  it('history via applyItems followed by live events equals the live-only fold', () => {
-    const { frames, historyThrough } = TWO_TURNS
-    const items: StoredSessionItem[] = frames
-      .slice(0, historyThrough)
-      .flatMap((f) => (f.event.type === 'agent.session.turn.item.done' ? [f.event.item] : []))
-    const live = fold(frames)
-    const history = fold(frames.slice(historyThrough), applyItems(initialState(SID), items))
+  it('history, live events and an items refresh agree with a live-only fold plus the refresh', () => {
+    const { frames, historyThrough, items } = TWO_TURNS
+    const live = applyItems(fold(frames), items)
+    const history = applyItems(fold(frames.slice(historyThrough), applyItems(initialState(SID), TURN1_ITEMS)), items)
+    const reopened = fold(frames, applyItems(initialState(SID), items))
     expect(history.items).toEqual(live.items)
+    expect(reopened.items).toEqual(live.items)
     expect(history.status).toEqual(live.status)
     expect(history.lastEventId).toEqual(live.lastEventId)
+    expect(kinds(live)).toEqual(['user', 'reasoning', 'assistant', 'user', 'tool', 'assistant'])
   })
 
   it('applyItems maps function call outputs, skips subagent items and does not touch event ids', () => {
@@ -224,21 +230,20 @@ describe('conversation reducer', () => {
   it('an optimistic user message is replaced by the server item with the same text', () => {
     let s = appendLocalUserMessage(initialState(SID), 'Say hello')
     expect(s.items).toEqual([{ kind: 'user', id: 'local:1', text: 'Say hello' }])
-    s = fold(TWO_TURNS.frames.slice(0, 6), s)
+    s = applyItems(fold(TWO_TURNS.frames.slice(0, 6), s), TWO_TURNS.items.slice(0, 1))
     expect(s.items.filter((v) => v.kind === 'user')).toEqual([{ kind: 'user', id: 'item_msg_3', text: 'Say hello' }])
   })
 
   it('keeps pending actions after the conversation even when they arrive first', () => {
     const approval: OAIRequiredAction = { type: 'approval', id: 'appr_7', kind: 'tool_approval', prompt: 'Approve', options: ['approve', 'deny'] }
     let s = applyEvent(initialState(SID), { event: { type: 'agent.session.requires_action', event_id: 'snap', session: session('requires_action', [approval]) } })
-    s = fold(TWO_TURNS.frames.slice(0, 6), s)
+    s = applyItems(fold(TWO_TURNS.frames.slice(0, 4), s), TWO_TURNS.items.slice(0, 1))
     expect(kinds(s)).toEqual(['user', 'action'])
   })
 
   it('replaying a message the items already show never doubles its text, even mid-replay', () => {
     const { frames, historyThrough } = TWO_TURNS
-    const items = frames.slice(0, historyThrough).flatMap((f) => (f.event.type === 'agent.session.turn.item.done' ? [f.event.item] : []))
-    const loaded = applyItems(initialState(SID), items)
+    const loaded = applyItems(initialState(SID), TURN1_ITEMS)
     const lastDelta = frames.slice(0, historyThrough).findLastIndex((f) => f.event.type === 'agent.session.turn.output_text.delta')
     const mid = fold(frames.slice(0, lastDelta + 1), loaded)
     expect(mid.items).toEqual(loaded.items)
@@ -258,9 +263,11 @@ describe('conversation reducer', () => {
   })
 
   it('a reply after a steering message follows it', () => {
-    let s = fold(TWO_TURNS.frames.slice(0, 6)) // turn_2 open, its user message shown
+    let s = applyItems(fold(TWO_TURNS.frames.slice(0, 4)), TWO_TURNS.items.slice(0, 1)) // turn_2 open, its user message shown
     s = appendLocalUserMessage(s, 'actually, be brief')
-    s = fold(TWO_TURNS.frames.slice(6, TWO_TURNS.historyThrough), s)
+    s = fold(TWO_TURNS.frames.slice(4, TWO_TURNS.historyThrough), s)
+    expect(s.items.map((v) => v.id)).toEqual(['item_msg_3', 'local:1', 'item_msg_4'])
+    s = applyItems(s, TURN1_ITEMS)
     expect(s.items.map((v) => v.id)).toEqual(['item_msg_3', 'local:1', 'item_reason_4', 'item_msg_4'])
   })
 

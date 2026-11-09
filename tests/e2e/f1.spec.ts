@@ -79,6 +79,63 @@ test('reopening a chat shows the full history once: user, tool and assistant', a
   await expect(assistantMessages(page)).toHaveText(/^I searched and found 3 results: alpha, beta and gamma\.$/)
 })
 
+/** Elements in the conversation that stick out of its column, and whether the page scrolls sideways. */
+async function overflow(page: Page) {
+  return page.evaluate(() => {
+    const log = document.querySelector('[role="log"]')
+    if (!log) return { missing: true, outside: [] as string[], pageScrolls: false }
+    const column = log.getBoundingClientRect()
+    const outside: string[] = []
+    for (const el of Array.from(log.querySelectorAll('*'))) {
+      const r = el.getBoundingClientRect()
+      if (r.width <= 1 || r.height <= 1) continue // visually hidden helpers
+      if (r.left < column.left - 1 || r.right > column.right + 1) outside.push(`${el.tagName}.${(el.className || '').toString().slice(0, 40)} ${Math.round(r.left)}-${Math.round(r.right)}`)
+    }
+    const root = document.scrollingElement ?? document.documentElement
+    return { missing: false, outside, pageScrolls: root.scrollWidth > root.clientWidth }
+  })
+}
+
+test('a web lookup shows thinking, tool cards and a streamed answer as it happens, in the column', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await signIn(page)
+  await startChat(page, 'Look up the latest Node.js release on the web')
+
+  // Live, before the turn ends: running reasoning, then tool cards from the items refresh.
+  await expect(page.getByRole('button', { name: /Thinking…/ }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /web_search/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /web_fetch/ })).toBeVisible()
+  // The answer streams in: seen while still busy, then complete.
+  await expect(page.locator('[data-testid="assistant-message"][aria-busy="true"]').filter({ hasText: 'The latest stable Node.js release' })).toBeVisible()
+  await expect(assistantMessages(page).last()).toContainText('pre-release alpha')
+
+  // Done: reasoning collapses to one line each; it is never shown as the answer.
+  await expect(page.getByRole('button', { name: /Thinking…/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Thought/ })).toHaveCount(3)
+  await expect(assistantMessages(page)).toHaveCount(1)
+  await expect(assistantMessages(page)).not.toContainText('Let me')
+
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect.poll(() => overflow(page), { message: `overflow at ${width}px` }).toEqual({ missing: false, outside: [], pageScrolls: false })
+    const header = page.getByTestId('reasoning-header').first()
+    const label = header.getByText('Thought', { exact: true })
+    // One line: the label is no taller than the header row.
+    const [lb, hb] = [await label.boundingBox(), await header.boundingBox()]
+    expect(lb && hb && lb.height <= hb.height + 1 && lb.height < 30).toBe(true)
+  }
+
+  // Reopened from history: the same, once.
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.reload()
+  await expect(assistantMessages(page).last()).toContainText('v26.13.0')
+  await page.waitForTimeout(1000) // let the replay settle
+  await expect(page.getByRole('button', { name: /^Thought/ })).toHaveCount(3)
+  await expect(page.getByRole('button', { name: /web_search/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /web_fetch/ })).toHaveCount(1)
+  await expect(assistantMessages(page)).toHaveCount(1)
+})
+
 test('approval card: focus starts on Allow, and Allow resumes the turn', async ({ page }) => {
   await signIn(page)
   await startChat(page, 'Please approve the cleanup')

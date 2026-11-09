@@ -15,11 +15,15 @@
  * SSE replay: `Last-Event-ID: n` writes every frame with id > n, then continues
  * live (a non-numeric id replays everything). Without the header the stream
  * starts with one id-less status snapshot. Approval/question frames are id-less
- * (ephemeral) and never replayed, as in backend Task 6 (provisional). Unlike the
- * backend at 4307e21, the mock also emits `item.added`/`item.done` for user
- * messages and function calls, so the conversation renders them live.
- * `GET .../items` returns the same items with the same ids and `turn_id`s as the
- * stream's item frames, so the client's items-then-replay load (R14) collapses them.
+ * (ephemeral) and never replayed, as in backend Task 6 (provisional).
+ *
+ * Like the real backend (recorded in `tests/fixtures/live/web-search.json`),
+ * the stream carries status, turn, and assistant-message frames only. User
+ * messages, reasoning, function calls and their outputs are saved to
+ * `GET .../items` only (function calls stay `in_progress`; the output item
+ * finishes them), and a saved assistant message repeats its step's reasoning in
+ * front of its text. Message ids match between the stream and the items, so
+ * the client's items-then-replay load (R14) collapses them.
  *
  * Scripted turns: the reply is chosen by keywords in the user's message
  * (case-insensitive, first match wins):
@@ -37,6 +41,8 @@
  *   - "slow"                   → streams about 60 words, one every 500 ms (~30 s): use it to
  *                                 test Stop (`agent.session.input.cancel` → `turn.cancelled`,
  *                                 notice "Stopped") and reconnect.
+ *   - "web"                    → replays the recorded live turn (`tests/fixtures/live/web-search.json`):
+ *                                 reasoning, `web_search` and `web_fetch` calls, and the streamed answer.
  *   - "tool"                   → a `search` function call that completes after 400 ms, then a reply.
  *   - "delegate" or "subagent" → a subagent turn ("researcher") that completes, then a reply.
  *   - anything else            → a reasoning summary and a short streamed Markdown reply.
@@ -48,6 +54,7 @@
  *   - `POST /__mock/reset` forgets every session and drops streams.
  *   - `GET /health`.
  */
+import { readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type {
   OAIAgent,
@@ -159,15 +166,10 @@ function setOverlay(s: MockSession): void {
   emitEphemeral(s, { type: statusFrame(s.status), session: resource(s, true) })
 }
 
-function itemEvents(s: MockSession, turnId: string, item: OAISessionItem): void {
-  s.items.push(item)
-  emit(s, { type: 'agent.session.turn.item.added', session_id: s.id, turn_id: turnId, item })
-  emit(s, { type: 'agent.session.turn.item.done', session_id: s.id, turn_id: turnId, item })
-}
-
+/** User messages are saved only; the backend stream never carries them. */
 function userMessage(s: MockSession, turnId: string, text: string): void {
   s.seq += 1
-  itemEvents(s, turnId, { id: `item_msg_${s.seq}`, type: 'message', role: 'user', content: [{ type: 'input_text', text }], status: 'completed', turn_id: turnId })
+  s.items.push({ id: `item_msg_${s.seq}`, type: 'message', role: 'user', content: [{ type: 'input_text', text }], status: 'completed', turn_id: turnId })
 }
 
 // ---------- scripted turns ----------
@@ -187,9 +189,15 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-async function streamText(s: MockSession, turnId: string, chunks: string[], everyMs: number, signal: AbortSignal): Promise<void> {
+/**
+ * Streams an assistant message. Its `reasoning`, if any, is saved with it as
+ * `item_reason_N` (items only), and the saved message repeats it in front of
+ * the text, as the backend does.
+ */
+async function streamText(s: MockSession, turnId: string, chunks: string[], everyMs: number, signal: AbortSignal, reasoning?: string): Promise<void> {
   s.seq += 1
   const id = `item_msg_${s.seq}`
+  const seq = s.seq
   const base = { session_id: s.id, turn_id: turnId }
   emit(s, { type: 'agent.session.turn.item.added', ...base, item: { id, type: 'message', role: 'assistant', content: [], status: 'in_progress', turn_id: turnId } })
   let text = ''
@@ -202,7 +210,10 @@ async function streamText(s: MockSession, turnId: string, chunks: string[], ever
   } finally {
     // A cancelled reply is saved with the text streamed so far.
     const item: OAISessionItem = { id, type: 'message', role: 'assistant', content: [{ type: 'output_text', text }], status: 'completed', turn_id: turnId }
-    s.items.push(item)
+    if (reasoning) {
+      s.items.push({ id: `item_reason_${seq}`, type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }], status: 'completed', turn_id: turnId })
+    }
+    s.items.push({ ...item, content: [{ type: 'output_text', text: (reasoning ?? '') + text }] })
     emit(s, { type: 'agent.session.turn.output_text.done', item_id: id, output_index: 0, content_index: 0, ...base, text })
     emit(s, { type: 'agent.session.turn.item.done', ...base, item })
   }
@@ -220,8 +231,7 @@ async function functionCall(
   s.seq += 1
   const callId = `call_${s.seq}`
   const call: OAISessionItem = { id: `item_fn_${s.seq}`, type: 'function_call', name, call_id: callId, arguments: args, status: 'in_progress', turn_id: turnId }
-  s.items.push(call)
-  emit(s, { type: 'agent.session.turn.item.added', session_id: s.id, turn_id: turnId, item: call })
+  s.items.push(call) // saved only, and left `in_progress`, as the backend does
   const { output, failed } = await run()
   s.seq += 1
   const out: OAISessionItem = {
@@ -234,7 +244,70 @@ async function functionCall(
     ...(failed ? { error: output } : {}),
   }
   s.items.push(out)
-  emit(s, { type: 'agent.session.turn.item.done', session_id: s.id, turn_id: turnId, item: out })
+}
+
+// ---------- the recorded live turn ----------
+
+interface Recording {
+  session_id: string
+  frames: Array<{ id?: string; data: OAISessionEvent }>
+  items: OAISessionItem[]
+  turns: OAITurn[]
+}
+
+let recording: Recording | undefined
+function loadRecording(): Recording {
+  recording ??= JSON.parse(readFileSync(new URL('../tests/fixtures/live/web-search.json', import.meta.url), 'utf8')) as Recording
+  return recording
+}
+
+/**
+ * Replays the recorded turn in this session: its items are saved in log order
+ * (a call stays running for a moment before its output), and each assistant
+ * message's recorded frames are emitted with a short pause per delta. Ids are
+ * shifted past this session's sequence; session and turn ids are swapped in.
+ */
+async function replayRecording(s: MockSession, turnId: string, signal: AbortSignal): Promise<void> {
+  const rec = loadRecording()
+  const recTurn = rec.turns[0]?.id ?? ''
+  const offset = s.seq
+  let top = 0
+  const rewrite = <T>(value: T): T =>
+    JSON.parse(
+      JSON.stringify(value)
+        .replaceAll(rec.session_id, s.id)
+        .replaceAll(`"${recTurn}"`, `"${turnId}"`)
+        .replace(/\b(item_(?:msg|reason|fn_out|fn)_)(\d+)\b/g, (_, prefix: string, n: string) => {
+          top = Math.max(top, Number(n))
+          return `${prefix}${Number(n) + offset}`
+        }),
+    ) as T
+  const framesOf = (itemId: string) =>
+    rec.frames.filter(({ data }) => ('item_id' in data && data.item_id === itemId) || ('item' in data && data.item.id === itemId))
+  let reasoning: OAISessionItem | undefined
+  for (const recorded of rec.items.slice(1)) {
+    // The user message is already saved by startTurn.
+    const item = rewrite(recorded)
+    if (item.type === 'reasoning') {
+      reasoning = item
+    } else if (item.type === 'message') {
+      for (const frame of framesOf(recorded.id)) {
+        const { event_id: _id, ...body } = rewrite(frame.data)
+        if (body.type === 'agent.session.turn.output_text.delta') await wait(60, signal)
+        if (body.type === 'agent.session.turn.item.done') {
+          // Saved when the step commits, together with its reasoning.
+          if (reasoning) s.items.push(reasoning)
+          reasoning = undefined
+          s.items.push(item)
+        }
+        emit(s, body as WireBody)
+      }
+    } else {
+      s.items.push(item)
+      await wait(item.type === 'function_call' ? 900 : 300, signal)
+    }
+  }
+  s.seq = offset + top
 }
 
 function ask(s: MockSession, action: OAIApprovalAction, signal: AbortSignal): Promise<Decision> {
@@ -294,6 +367,7 @@ async function script(s: MockSession, turnId: string, text: string, signal: Abor
     const long = Array.from({ length: 60 }, (_, i) => `word${i + 1} `)
     return streamText(s, turnId, long, 500, signal)
   }
+  if (t.includes('web')) return replayRecording(s, turnId, signal)
   if (t.includes('tool')) {
     await functionCall(s, turnId, 'search', { query: text.slice(0, 40) }, async () => {
       await wait(400, signal)
@@ -309,16 +383,9 @@ async function script(s: MockSession, turnId: string, text: string, signal: Abor
     emit(s, { type: 'agent.session.turn.completed', session_id: s.id, turn_id: child.id, turn: done })
     return streamText(s, turnId, words('The researcher finished: everything checks out.'), 40, signal)
   }
-  s.seq += 1
-  itemEvents(s, turnId, {
-    id: `item_reason_${s.seq}`,
-    type: 'reasoning',
-    summary: [{ type: 'summary_text', text: 'The user sent a message; reply briefly with a little Markdown.' }],
-    status: 'completed',
-    turn_id: turnId,
-  })
+  const reasoning = 'The user sent a message; reply briefly with a little Markdown.'
   const reply = `Hello from the **mock** Agentry API.\n\nYou said: _${text.replace(/[_*`]/g, '')}_\n\n- streamed\n- in chunks\n\n\`\`\`ts\nconst ok = true\n\`\`\`\n`
-  return streamText(s, turnId, words(reply), 40, signal)
+  return streamText(s, turnId, words(reply), 40, signal, reasoning)
 }
 
 function newTurn(s: MockSession): OAITurn {

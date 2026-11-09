@@ -4,13 +4,14 @@ import '../helpers/dom'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { OAIApprovalAction } from '@/api/types'
-import type { MessageView } from '@/chat/reducer'
+import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
+import { applyItems, initialState, type MessageView } from '@/chat/reducer'
 import { Composer } from '@/ui/chat/Composer'
 import { ConnectionPill } from '@/ui/chat/ConnectionPill'
 import { Message } from '@/ui/chat/Message'
 import { summarizeArgs } from '@/ui/chat/ToolCard'
 import { ErrorBanner } from '@/ui/errors/ErrorBanner'
+import live from '../fixtures/live/web-search.json'
 
 afterEach(() => {
   cleanup()
@@ -92,14 +93,56 @@ describe('views', () => {
     expect(container.querySelector('.katex')).not.toBeNull()
   })
 
-  it('renders reasoning collapsed under "Thinking"', async () => {
+  it('renders finished reasoning collapsed to one line, expandable', async () => {
     const user = userEvent.setup()
-    render(<Message view={{ kind: 'reasoning', id: 'r1', text: 'Considering the options' }} answer={noAnswer} />)
-    const trigger = screen.getByRole('button', { name: /Thinking/ })
+    render(<Message view={{ kind: 'reasoning', id: 'r1', text: 'Considering the options\nand more', streaming: false }} answer={noAnswer} />)
+    const trigger = screen.getByRole('button', { name: /Thought/ })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger).toHaveTextContent('Considering the options')
+    expect(trigger).not.toHaveTextContent('and more')
     await user.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('Considering the options')).toBeVisible()
+    expect(screen.getByText(/Considering the options\s+and more/)).toBeVisible()
+  })
+
+  it('keeps streaming reasoning open under "Thinking…" and collapses it when it ends', () => {
+    const view: MessageView = { kind: 'reasoning', id: 'r1', text: 'Looking things up', streaming: true }
+    const { rerender } = render(<Message view={view} answer={noAnswer} />)
+    expect(screen.getByRole('button', { name: /Thinking…/ })).toHaveAttribute('aria-expanded', 'true')
+    rerender(<Message view={{ ...view, streaming: false }} answer={noAnswer} />)
+    expect(screen.getByRole('button', { name: /Thought/ })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('gives the reasoning label its own fixed slot and the summary the fill slot (the label never wraps)', () => {
+    const text = `${'A long first line of reasoning that goes on '.repeat(10)}\nsecond line`
+    render(<Message view={{ kind: 'reasoning', id: 'r1', text, streaming: false }} answer={noAnswer} />)
+    const header = screen.getByTestId('reasoning-header')
+    const [label, summary] = Array.from(header.children) as HTMLElement[]
+    expect(header.children).toHaveLength(2)
+    expect(label).toHaveTextContent(/^Thought$/)
+    expect(label).not.toHaveAttribute('data-size', 'fill')
+    expect(summary).toHaveAttribute('data-size', 'fill')
+    expect(summary).toHaveTextContent(/^A long first line/)
+    expect(summary).not.toHaveTextContent('second line')
+  })
+
+  it('renders nothing for an empty assistant message', () => {
+    const { container } = render(<Message view={{ kind: 'assistant', id: 'a1', text: '', streaming: false }} answer={noAnswer} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('renders the recorded web_search call as a tool card with its queries and a capped output', async () => {
+    const user = userEvent.setup()
+    const s = applyItems(initialState('s'), (live as unknown as { items: StoredSessionItem[] }).items)
+    const tools = s.items.filter((v) => v.kind === 'tool')
+    render(<>{tools.map((v) => <Message key={v.id} view={v} answer={noAnswer} />)}</>)
+    expect(screen.getByText('web_search')).toBeInTheDocument()
+    expect(screen.getByText('web_fetch')).toBeInTheDocument()
+    expect(screen.getByText(/^latest stable Node\.js release version/)).toBeInTheDocument()
+    expect(screen.getByText('https://nodejs.org/dist/index.json')).toBeInTheDocument()
+    expect(screen.queryAllByRole('status', { name: /running/i })).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: /web_fetch/ }))
+    expect(document.body).toHaveTextContent(/more characters\)/)
   })
 
   it('renders a tool card with name, argument summary and status, and expands to the full input and output', async () => {
@@ -120,6 +163,7 @@ describe('views', () => {
     expect(summarizeArgs({ path: '/tmp/x' })).toBe('/tmp/x')
     expect(summarizeArgs('{"n":1}')).toBe('{"n":1}')
     expect(summarizeArgs({ text: 'a'.repeat(100) })).toHaveLength(60)
+    expect(summarizeArgs({ queries: ['one', 'two'] })).toBe('one, two')
   })
 
   it('renders a delegation card with the subagent name and status', () => {

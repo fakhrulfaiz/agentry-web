@@ -2,7 +2,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAIAgentSession, OAIRequiredAction, OAISessionEvent } from '@/api/types'
-import { useConversation } from '@/chat/use-conversation'
+import { ITEMS_POLL_MS, ITEMS_REFRESH_DELAY_MS, useConversation } from '@/chat/use-conversation'
 import approvalTurn from '../fixtures/approval-turn.json'
 import twoTurns from '../fixtures/two-turns.json'
 
@@ -11,7 +11,8 @@ interface Frame {
   event: OAISessionEvent
 }
 
-const FRAMES = (approvalTurn as unknown as { frames: Frame[] }).frames
+const APPROVAL = approvalTurn as unknown as { frames: Frame[]; items: unknown[] }
+const FRAMES = APPROVAL.frames
 const SID = 'sess_fixture'
 const CSRF = 'csrf-from-meta'
 const encoder = new TextEncoder()
@@ -29,6 +30,21 @@ function streamResponse(text: string, open = false): Response {
     },
   })
   return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+}
+
+/** An open stream that starts with `initial`; `push` delivers more frames. */
+function pushableStream(initial: Frame[]): { response: () => Response; push(frames: Frame[]): void } {
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c
+      c.enqueue(encoder.encode(sse(initial)))
+    },
+  })
+  return {
+    response: () => new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    push: (frames) => controller.enqueue(encoder.encode(sse(frames))),
+  }
 }
 
 function sessionResource(status: OAIAgentSession['status'], required_actions: OAIRequiredAction[] = []): OAIAgentSession {
@@ -76,7 +92,8 @@ afterEach(() => {
 
 describe('useConversation', () => {
   it('replays the stream from Last-Event-ID 0 and applies the session snapshot', async () => {
-    const replay = FRAMES.filter((f) => f.id !== undefined).slice(0, 7) // through the function_call item
+    const replay = FRAMES.filter((f) => f.id !== undefined).slice(0, 4) // the turn has started
+    itemsResponse = () => itemsList(APPROVAL.items.slice(0, 2)) // the user message and the pending call
     const approval: OAIRequiredAction = { type: 'approval', id: 'appr_1', kind: 'tool_approval', prompt: 'Approve bash_rm', options: ['approve', 'deny'] }
     session = sessionResource('requires_action', [approval])
     streams.push(() => streamResponse(sse(replay), true))
@@ -300,18 +317,9 @@ describe('useConversation', () => {
   })
 
   describe('history before replay (R14)', () => {
-    const TWO = twoTurns as unknown as { historyThrough: number; frames: Frame[] }
-    const isUserOrTool = (f: Frame) =>
-      (f.event.type === 'agent.session.turn.item.added' || f.event.type === 'agent.session.turn.item.done') &&
-      ((f.event.item.type === 'message' && f.event.item.role === 'user') || f.event.item.type === 'function_call' || f.event.item.type === 'function_call_output' || f.event.item.type === 'reasoning')
-    /** Saved items as `GET /items` returns them: every item, in order, once. */
-    const savedItems = (frames: Frame[]) => {
-      const byId = new Map<string, unknown>()
-      for (const f of frames) {
-        if (f.event.type === 'agent.session.turn.item.added' || f.event.type === 'agent.session.turn.item.done') byId.set(f.event.item.id, f.event.item)
-      }
-      return [...byId.values()]
-    }
+    // Shaped like the real backend: the stream has assistant messages only, `items` has the rest.
+    const TWO = twoTurns as unknown as { historyThrough: number; frames: Frame[]; items: unknown[] }
+    const TURN1_ITEMS = TWO.items.slice(0, 3)
 
     it('fetches items before opening the stream', async () => {
       let release!: () => void
@@ -333,27 +341,26 @@ describe('useConversation', () => {
 
     it('a replay covering an item already loaded gives exactly one bubble', async () => {
       const turn1 = TWO.frames.slice(0, TWO.historyThrough)
-      itemsResponse = () => itemsList(savedItems(turn1))
+      itemsResponse = () => itemsList(TURN1_ITEMS)
       streams.push(() => streamResponse(sse(turn1), true))
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
       expect(result.current.state.items).toEqual([
         { kind: 'user', id: 'item_msg_3', text: 'Say hello' },
-        { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.' },
+        { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.', streaming: false },
         { kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false },
       ])
       unmount()
     })
 
     it('a reopened chat shows user, tool and assistant items when the stream carries only assistant frames', async () => {
-      itemsResponse = () => itemsList(savedItems(TWO.frames))
-      // The backend stream has no user, reasoning or tool item frames.
-      streams.push(() => streamResponse(sse(TWO.frames.filter((f) => !isUserOrTool(f))), true))
+      itemsResponse = () => itemsList(TWO.items)
+      streams.push(() => streamResponse(sse(TWO.frames), true))
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
       expect(result.current.state.items).toEqual([
         { kind: 'user', id: 'item_msg_3', text: 'Say hello' },
-        { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.' },
+        { kind: 'reasoning', id: 'item_reason_4', text: 'The user wants a greeting.', streaming: false },
         { kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false },
         { kind: 'user', id: 'item_msg_7', text: 'Search the docs' },
         { kind: 'tool', id: 'item_fn_8', callId: 'call_1', name: 'search', args: { query: 'docs' }, status: 'done', output: '3 results' },
@@ -364,15 +371,62 @@ describe('useConversation', () => {
     })
 
     it('reconnects resume from the last id without reloading items', async () => {
-      itemsResponse = () => itemsList(savedItems(TWO.frames))
+      itemsResponse = () => itemsList(TWO.items)
       streams.push(() => streamResponse(sse(TWO.frames)))
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
-      await advance(1_000)
+      // The replayed burst asks for one coalesced refresh; the reconnect itself loads nothing.
+      await advance(ITEMS_REFRESH_DELAY_MS)
+      expect(itemsCalls()).toHaveLength(2)
+      await advance(1_000 - ITEMS_REFRESH_DELAY_MS)
       expect(streamCalls()).toHaveLength(2)
       expect(lastEventIds()).toEqual(['0', TWO.frames.at(-1)?.id])
-      expect(itemsCalls()).toHaveLength(1)
+      await advance(5_000)
+      expect(itemsCalls()).toHaveLength(2)
       expect(result.current.state.items.filter((v) => v.kind === 'assistant')).toHaveLength(2)
+      unmount()
+    })
+
+    it('refreshes items after an assistant message is done, so tool calls and reasoning appear live', async () => {
+      const turn2 = TWO.frames.slice(TWO.historyThrough)
+      const doneAt = turn2.findIndex((f) => f.event.type === 'agent.session.turn.item.done')
+      let saved: unknown[] = TURN1_ITEMS
+      itemsResponse = () => itemsList(saved)
+      const live = pushableStream([...TWO.frames.slice(0, TWO.historyThrough), ...turn2.slice(0, doneAt)])
+      streams.push(live.response)
+      const { result, unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      await advance(ITEMS_REFRESH_DELAY_MS)
+      expect(result.current.state.items.map((v) => v.kind)).toEqual(['user', 'reasoning', 'assistant', 'assistant'])
+      // The reply is saved together with the user message, the call and its output.
+      saved = TWO.items
+      await act(async () => {
+        live.push([turn2[doneAt]])
+        await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
+      })
+      expect(result.current.state.items.map((v) => v.kind)).toEqual(['user', 'reasoning', 'assistant', 'user', 'tool', 'assistant'])
+      unmount()
+    })
+
+    it('polls items while the session is in progress and stops once it is idle', async () => {
+      const running = TWO.frames.slice(0, TWO.historyThrough + 3) // turn 2 has started
+      session = sessionResource('in_progress')
+      itemsResponse = () => itemsList(TURN1_ITEMS)
+      const live = pushableStream(running)
+      streams.push(live.response)
+      const { unmount } = renderHook(() => useConversation(SID))
+      await flush()
+      await advance(ITEMS_REFRESH_DELAY_MS)
+      const start = itemsCalls().length
+      await advance(ITEMS_POLL_MS * 3)
+      expect(itemsCalls().length).toBeGreaterThanOrEqual(start + 3)
+      await act(async () => {
+        live.push(TWO.frames.slice(-1)) // agent.session.idle
+        await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
+      })
+      const idle = itemsCalls().length
+      await advance(ITEMS_POLL_MS * 4)
+      expect(itemsCalls()).toHaveLength(idle)
       unmount()
     })
 

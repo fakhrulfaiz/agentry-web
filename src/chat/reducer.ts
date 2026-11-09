@@ -21,6 +21,18 @@
  * an old turn lands inside that turn, not at the bottom. Views without a turn
  * are appended.
  *
+ * What the backend really streams (fixture `tests/fixtures/live/web-search.json`):
+ * status, turn, and assistant-message frames only. User messages, reasoning,
+ * function calls and their outputs exist only in `GET /items`, so the hook
+ * refreshes the items during a turn and `applyItems` merges them in log order
+ * around the streamed messages. A saved assistant message repeats its step's
+ * reasoning in front of its own text (`item_reason_N` then `item_msg_N`, same
+ * N), and a step without text streams that reasoning as its text: the
+ * reasoning is cut from the front of the message whenever both are known.
+ *
+ * Streaming: an assistant message streams from its first delta until its turn
+ * ends; reasoning that arrives while its turn is open streams until then too.
+ *
  * Required actions: durable status frames own `function_call` and
  * `environment_connection` actions. Approval and question actions only ever
  * travel on ephemeral frames (backend Task 6, provisional), so only an
@@ -42,7 +54,7 @@ import type {
 export type MessageView =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
-  | { kind: 'reasoning'; id: string; text: string }
+  | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
   | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown }
   | { kind: 'subagent'; id: string; name: string; status: string }
   | { kind: 'action'; id: string; action: OAIRequiredAction }
@@ -63,6 +75,8 @@ export interface ConversationState {
 type ToolView = Extract<MessageView, { kind: 'tool' }>
 type ActionView = Extract<MessageView, { kind: 'action' }>
 type UserView = Extract<MessageView, { kind: 'user' }>
+type AssistantView = Extract<MessageView, { kind: 'assistant' }>
+type ReasoningView = Extract<MessageView, { kind: 'reasoning' }>
 
 const LOCAL_PREFIX = 'local:'
 
@@ -70,14 +84,45 @@ export function initialState(sessionId: string): ConversationState {
   return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null }
 }
 
-/** Folds saved items (`GET .../items`, oldest first). Subagent items are skipped; event ids are untouched. */
+/**
+ * Folds saved items (`GET .../items`, oldest first; the whole list, or the
+ * part saved so far). Subagent items are skipped; event ids are untouched.
+ * Afterwards the views follow the log order (see `inLogOrder`).
+ */
 export function applyItems(s: ConversationState, items: StoredSessionItem[]): ConversationState {
   let next = s
-  for (const item of items) {
-    if (item.subagent_id) continue
-    next = applyItem(next, item, true)
-  }
-  return actionsLast(next)
+  const top = items.filter((item) => !item.subagent_id)
+  for (const item of top) next = applyItem(next, item, true)
+  return actionsLast(inLogOrder(next, top))
+}
+
+/**
+ * Sorts the views by the item log. A view backed by an item takes its log
+ * position. Any other view (notice, delegation card, optimistic user message)
+ * stays right after the view before it, except an assistant message the log
+ * does not have yet (still streaming): it stays at the end of its turn.
+ */
+function inLogOrder(s: ConversationState, items: StoredSessionItem[]): ConversationState {
+  const order = new Map<string, number>()
+  const turnEnd = new Map<string, number>()
+  items.forEach((item, i) => {
+    if (item.type !== 'function_call_output') order.set(item.id, i)
+    if (item.turn_id) turnEnd.set(item.turn_id, i)
+  })
+  let anchor = -1
+  const keyed = s.items.map((view, index) => {
+    let key = order.get(view.id)
+    if (key === undefined) {
+      const turn = s.turnOf.get(view.id)
+      const end = view.kind === 'assistant' && turn !== undefined ? turnEnd.get(turn) : undefined
+      key = Math.max(anchor, end ?? -Infinity) + 1e-6
+    }
+    anchor = key
+    return { view, key, index }
+  })
+  keyed.sort((a, b) => a.key - b.key || a.index - b.index)
+  if (keyed.every((k, i) => k.index === i)) return s
+  return { ...s, items: keyed.map((k) => k.view) }
 }
 
 /** Folds one wire event. `id` is the SSE `id:` line; omit it for ephemeral events. */
@@ -152,12 +197,12 @@ function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean
       const current = find(s.items, event.item_id)
       if (current?.kind === 'assistant' && !current.streaming) return s // replay of a finished message
       const text = (current?.kind === 'assistant' ? current.text : '') + event.delta
-      return place(s, { kind: 'assistant', id: event.item_id, text, streaming: true }, event.turn_id)
+      return placeAssistant(s, { kind: 'assistant', id: event.item_id, text, streaming: true }, event.turn_id)
     }
     case 'agent.session.turn.output_text.done': {
       const current = find(s.items, event.item_id)
       const streaming = current?.kind === 'assistant' ? current.streaming : true
-      return place(s, { kind: 'assistant', id: event.item_id, text: event.text, streaming }, event.turn_id)
+      return placeAssistant(s, { kind: 'assistant', id: event.item_id, text: event.text, streaming }, event.turn_id)
     }
     case 'error':
       return place(s, { kind: 'notice', id: `notice:${event.event_id}`, level: 'failed', message: event.error.message }, undefined)
@@ -200,7 +245,7 @@ function applyTurnEnd(s: ConversationState, turn: OAITurn): ConversationState {
   let next: ConversationState = {
     ...s,
     openTurn: s.openTurn === turn.id ? null : s.openTurn,
-    items: s.items.map((v) => (v.kind === 'assistant' && v.streaming ? { ...v, streaming: false } : v)),
+    items: s.items.map((v) => ((v.kind === 'assistant' || v.kind === 'reasoning') && v.streaming ? { ...v, streaming: false } : v)),
   }
   if (turn.status === 'failed') {
     next = place(next, { kind: 'notice', id: `notice:${turn.id}`, level: 'failed', message: turn.error?.message ?? 'The turn failed' }, turn.id)
@@ -232,12 +277,20 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
       const current = find(s.items, item.id)
       if (!done && current?.kind === 'assistant') {
         // `item.added` for a message we already show (streamed, or loaded from items): keep it as is.
-        return current.streaming || !text ? s : place(s, { ...current, text }, turn)
+        return current.streaming || !text ? s : placeAssistant(s, { ...current, text }, turn)
       }
-      return place(s, { kind: 'assistant', id: item.id, text, streaming: !done && item.status === 'in_progress' }, turn)
+      // A message streams until its turn ends, even once it is saved.
+      const streaming = current?.kind === 'assistant' && current.streaming ? true : !done && item.status === 'in_progress'
+      return placeAssistant(s, { kind: 'assistant', id: item.id, text, streaming }, turn)
     }
-    case 'reasoning':
-      return place(s, { kind: 'reasoning', id: item.id, text: (item.summary ?? []).map((p) => p.text).join('') }, turn)
+    case 'reasoning': {
+      const text = (item.summary ?? []).map((p) => p.text).join('')
+      const streaming = turn !== undefined && turn === s.openTurn
+      const next = place(s, { kind: 'reasoning', id: item.id, text, streaming }, turn)
+      // The step's message may already show this reasoning as its text.
+      const message = find(next.items, messageIdOf(item.id))
+      return message?.kind === 'assistant' ? placeAssistant(next, message, next.turnOf.get(message.id)) : next
+    }
     case 'function_call':
       return placeTool(s, {
         kind: 'tool',
@@ -276,6 +329,26 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
     default:
       return s
   }
+}
+
+const REASONING_PREFIX = 'item_reason_'
+const MESSAGE_PREFIX = 'item_msg_'
+
+/** The message of the same step: `item_reason_N` ↔ `item_msg_N` (backend `src/items.ts`). */
+function messageIdOf(reasoningId: string): string {
+  return reasoningId.startsWith(REASONING_PREFIX) ? MESSAGE_PREFIX + reasoningId.slice(REASONING_PREFIX.length) : ''
+}
+
+function reasoningIdOf(messageId: string): string {
+  return messageId.startsWith(MESSAGE_PREFIX) ? REASONING_PREFIX + messageId.slice(MESSAGE_PREFIX.length) : ''
+}
+
+/** Upserts an assistant message without the reasoning of its step in front of its text. */
+function placeAssistant(s: ConversationState, view: AssistantView, turn: string | undefined): ConversationState {
+  const reasoning = find(s.items, reasoningIdOf(view.id)) as ReasoningView | undefined
+  const prefix = reasoning?.kind === 'reasoning' ? reasoning.text : ''
+  const text = prefix && view.text.startsWith(prefix) ? view.text.slice(prefix.length) : view.text
+  return place(s, text === view.text ? view : { ...view, text }, turn)
 }
 
 function toolStatus(status: ToolCallStatus, inProgress: ToolView['status']): ToolView['status'] {

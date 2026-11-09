@@ -17,6 +17,12 @@
  * no stream event arrived since it was requested, so it never overwrites a
  * newer status or approval.
  *
+ * Items during a turn: the backend stream carries assistant messages only, so
+ * user messages, reasoning and tool calls arrive through `GET .../items`. The
+ * items are refreshed shortly after each durable `item.done` or turn end
+ * (coalesced, `ITEMS_REFRESH_DELAY_MS`) and every `ITEMS_POLL_MS` while the
+ * session is in progress, so running tools show up before the next message.
+ *
  * Reconnecting: when the stream ends or fails it is retried after 1s, doubling
  * to a 30s cap, always resending the last seen id. A connection that delivered
  * an event, or stayed open for `STABLE_CONNECTION_MS`, resets the delay. A
@@ -47,6 +53,18 @@ export const BACKOFF_CAP_MS = 30_000
 export const STABLE_CONNECTION_MS = 30_000
 /** How long the session snapshot may hold back opening the stream. */
 export const SNAPSHOT_WAIT_MS = 5_000
+/** Items poll interval while a turn runs. */
+export const ITEMS_POLL_MS = 1_500
+/** Delay that coalesces item refreshes asked for by a burst of events. */
+export const ITEMS_REFRESH_DELAY_MS = 250
+
+const ACTIVE = new Set(['in_progress', 'requires_action'])
+const REFRESH_ON = new Set([
+  'agent.session.turn.item.done',
+  'agent.session.turn.completed',
+  'agent.session.turn.failed',
+  'agent.session.turn.cancelled',
+])
 
 type Action =
   | { type: 'reset'; sessionId: string }
@@ -127,6 +145,11 @@ export function useConversation(
     // Counts stream events applied, so a late snapshot can tell it is stale.
     let applied = 0
     let wake: (() => void) | null = null
+    // Items refresh: whether a turn runs, the pending delayed refresh, and one fetch in flight at a time.
+    let active = false
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+    let refreshing = false
+    let refreshAgain = false
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
@@ -150,7 +173,10 @@ export function useConversation(
       const requestedAt = applied
       try {
         const session = await api.getSession(sessionId)
-        if (!signal.aborted && applied === requestedAt) dispatch({ type: 'event', event: snapshotEvent(session) })
+        if (!signal.aborted && applied === requestedAt) {
+          active = ACTIVE.has(session.status)
+          dispatch({ type: 'event', event: snapshotEvent(session) })
+        }
       } catch (error) {
         if (!signal.aborted && isSignedOut(error)) onSignedOut()
         // Otherwise the stream (and its replay) still drives the view.
@@ -171,6 +197,36 @@ export function useConversation(
         // Any other failure: the stream replay still shows the assistant side.
       }
       return !signal.aborted
+    }
+
+    const refreshItems = async () => {
+      if (refreshing) {
+        refreshAgain = true
+        return
+      }
+      refreshing = true
+      try {
+        do {
+          refreshAgain = false
+          if (!(await loadItems())) return
+        } while (refreshAgain)
+      } finally {
+        refreshing = false
+      }
+    }
+    const scheduleRefresh = () => {
+      if (refreshTimer !== null || signal.aborted) return
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null
+        void refreshItems()
+      }, ITEMS_REFRESH_DELAY_MS)
+    }
+    const poll = setInterval(() => {
+      if (active) scheduleRefresh()
+    }, ITEMS_POLL_MS)
+    const track = (event: OAISessionEvent, durable: boolean) => {
+      if ('session' in event) active = ACTIVE.has(event.session.status)
+      if (durable && REFRESH_ON.has(event.type)) scheduleRefresh()
     }
 
     const run = async () => {
@@ -212,6 +268,7 @@ export function useConversation(
               applied += 1
               if (message.id !== undefined) lastId = message.id
               dispatch({ type: 'event', ...(message.id !== undefined && { id: message.id }), event })
+              track(event, message.id !== undefined)
             }
           } else {
             await res.body?.cancel()
@@ -231,6 +288,8 @@ export function useConversation(
 
     return () => {
       abort.abort()
+      clearInterval(poll)
+      if (refreshTimer !== null) clearTimeout(refreshTimer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [sessionId, onSignedOut])

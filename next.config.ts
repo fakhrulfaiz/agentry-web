@@ -28,6 +28,8 @@ const csp = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // The e2e run builds into its own directory, so it can run beside a `next dev` on `.next`.
+  distDir: process.env.AGENTRY_WEB_DIST_DIR || '.next',
   async headers() {
     return [
       {

@@ -1,6 +1,7 @@
 {
+  "note": "Synthetic, shaped like the real backend (see tests/fixtures/live/web-search.json): the stream carries status, turn and assistant-message frames only; user messages, reasoning, function calls and outputs exist only in `items` (GET /items, log order). A saved assistant message repeats its step's reasoning in front of its text.",
   "sessionId": "sess_fixture",
-  "historyThrough": 16,
+  "historyThrough": 12,
   "frames": [
     {
       "id": "1",
@@ -117,16 +118,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_2",
         "item": {
-          "id": "item_msg_3",
+          "id": "item_msg_4",
           "type": "message",
-          "role": "user",
-          "content": [
-            {
-              "type": "input_text",
-              "text": "Say hello"
-            }
-          ],
-          "status": "completed",
+          "role": "assistant",
+          "content": [],
+          "status": "in_progress",
           "turn_id": "turn_2"
         },
         "event_id": "evt_sess_fixture_5"
@@ -135,87 +131,6 @@
     {
       "id": "6",
       "event": {
-        "type": "agent.session.turn.item.done",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_2",
-        "item": {
-          "id": "item_msg_3",
-          "type": "message",
-          "role": "user",
-          "content": [
-            {
-              "type": "input_text",
-              "text": "Say hello"
-            }
-          ],
-          "status": "completed",
-          "turn_id": "turn_2"
-        },
-        "event_id": "evt_sess_fixture_6"
-      }
-    },
-    {
-      "id": "7",
-      "event": {
-        "type": "agent.session.turn.item.added",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_2",
-        "item": {
-          "id": "item_reason_4",
-          "type": "reasoning",
-          "summary": [
-            {
-              "type": "summary_text",
-              "text": "The user wants a greeting."
-            }
-          ],
-          "status": "completed",
-          "turn_id": "turn_2"
-        },
-        "event_id": "evt_sess_fixture_7"
-      }
-    },
-    {
-      "id": "8",
-      "event": {
-        "type": "agent.session.turn.item.done",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_2",
-        "item": {
-          "id": "item_reason_4",
-          "type": "reasoning",
-          "summary": [
-            {
-              "type": "summary_text",
-              "text": "The user wants a greeting."
-            }
-          ],
-          "status": "completed",
-          "turn_id": "turn_2"
-        },
-        "event_id": "evt_sess_fixture_8"
-      }
-    },
-    {
-      "id": "9",
-      "event": {
-        "type": "agent.session.turn.item.added",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_2",
-        "item": {
-          "id": "item_msg_4",
-          "type": "message",
-          "role": "assistant",
-          "content": [],
-          "status": "in_progress",
-          "turn_id": "turn_2"
-        },
-        "event_id": "evt_sess_fixture_9"
-      }
-    },
-    {
-      "id": "10",
-      "event": {
         "type": "agent.session.turn.output_text.delta",
         "item_id": "item_msg_4",
         "output_index": 0,
@@ -223,11 +138,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_2",
         "delta": "Hello",
-        "event_id": "evt_sess_fixture_10"
+        "event_id": "evt_sess_fixture_6"
       }
     },
     {
-      "id": "11",
+      "id": "7",
       "event": {
         "type": "agent.session.turn.output_text.delta",
         "item_id": "item_msg_4",
@@ -236,11 +151,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_2",
         "delta": ", world",
-        "event_id": "evt_sess_fixture_11"
+        "event_id": "evt_sess_fixture_7"
       }
     },
     {
-      "id": "12",
+      "id": "8",
       "event": {
         "type": "agent.session.turn.output_text.delta",
         "item_id": "item_msg_4",
@@ -249,11 +164,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_2",
         "delta": "!",
-        "event_id": "evt_sess_fixture_12"
+        "event_id": "evt_sess_fixture_8"
       }
     },
     {
-      "id": "13",
+      "id": "9",
       "event": {
         "type": "agent.session.turn.output_text.done",
         "item_id": "item_msg_4",
@@ -262,11 +177,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_2",
         "text": "Hello, world!",
-        "event_id": "evt_sess_fixture_13"
+        "event_id": "evt_sess_fixture_9"
       }
     },
     {
-      "id": "14",
+      "id": "10",
       "event": {
         "type": "agent.session.turn.item.done",
         "session_id": "sess_fixture",
@@ -284,11 +199,11 @@
           "status": "completed",
           "turn_id": "turn_2"
         },
-        "event_id": "evt_sess_fixture_14"
+        "event_id": "evt_sess_fixture_10"
       }
     },
     {
-      "id": "15",
+      "id": "11",
       "event": {
         "type": "agent.session.turn.completed",
         "session_id": "sess_fixture",
@@ -306,11 +221,11 @@
           "error": null,
           "usage": null
         },
-        "event_id": "evt_sess_fixture_15"
+        "event_id": "evt_sess_fixture_11"
       }
     },
     {
-      "id": "16",
+      "id": "12",
       "event": {
         "type": "agent.session.idle",
         "session": {
@@ -339,11 +254,11 @@
           "required_actions": [],
           "usage": null
         },
-        "event_id": "evt_sess_fixture_16"
+        "event_id": "evt_sess_fixture_12"
       }
     },
     {
-      "id": "17",
+      "id": "13",
       "event": {
         "type": "agent.session.in_progress",
         "session": {
@@ -372,11 +287,11 @@
           "required_actions": [],
           "usage": null
         },
-        "event_id": "evt_sess_fixture_17"
+        "event_id": "evt_sess_fixture_13"
       }
     },
     {
-      "id": "18",
+      "id": "14",
       "event": {
         "type": "agent.session.turn.created",
         "session_id": "sess_fixture",
@@ -393,11 +308,11 @@
           "error": null,
           "usage": null
         },
-        "event_id": "evt_sess_fixture_18"
+        "event_id": "evt_sess_fixture_14"
       }
     },
     {
-      "id": "19",
+      "id": "15",
       "event": {
         "type": "agent.session.turn.in_progress",
         "session_id": "sess_fixture",
@@ -414,92 +329,11 @@
           "error": null,
           "usage": null
         },
-        "event_id": "evt_sess_fixture_19"
+        "event_id": "evt_sess_fixture_15"
       }
     },
     {
-      "id": "20",
-      "event": {
-        "type": "agent.session.turn.item.added",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_6",
-        "item": {
-          "id": "item_msg_7",
-          "type": "message",
-          "role": "user",
-          "content": [
-            {
-              "type": "input_text",
-              "text": "Search the docs"
-            }
-          ],
-          "status": "completed",
-          "turn_id": "turn_6"
-        },
-        "event_id": "evt_sess_fixture_20"
-      }
-    },
-    {
-      "id": "21",
-      "event": {
-        "type": "agent.session.turn.item.done",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_6",
-        "item": {
-          "id": "item_msg_7",
-          "type": "message",
-          "role": "user",
-          "content": [
-            {
-              "type": "input_text",
-              "text": "Search the docs"
-            }
-          ],
-          "status": "completed",
-          "turn_id": "turn_6"
-        },
-        "event_id": "evt_sess_fixture_21"
-      }
-    },
-    {
-      "id": "22",
-      "event": {
-        "type": "agent.session.turn.item.added",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_6",
-        "item": {
-          "id": "item_fn_8",
-          "type": "function_call",
-          "name": "search",
-          "call_id": "call_1",
-          "arguments": {
-            "query": "docs"
-          },
-          "status": "in_progress",
-          "turn_id": "turn_6"
-        },
-        "event_id": "evt_sess_fixture_22"
-      }
-    },
-    {
-      "id": "23",
-      "event": {
-        "type": "agent.session.turn.item.done",
-        "session_id": "sess_fixture",
-        "turn_id": "turn_6",
-        "item": {
-          "id": "item_fn_out_9",
-          "type": "function_call_output",
-          "call_id": "call_1",
-          "output": "3 results",
-          "status": "completed",
-          "turn_id": "turn_6"
-        },
-        "event_id": "evt_sess_fixture_23"
-      }
-    },
-    {
-      "id": "24",
+      "id": "16",
       "event": {
         "type": "agent.session.turn.item.added",
         "session_id": "sess_fixture",
@@ -512,11 +346,11 @@
           "status": "in_progress",
           "turn_id": "turn_6"
         },
-        "event_id": "evt_sess_fixture_24"
+        "event_id": "evt_sess_fixture_16"
       }
     },
     {
-      "id": "25",
+      "id": "17",
       "event": {
         "type": "agent.session.turn.output_text.delta",
         "item_id": "item_msg_10",
@@ -525,11 +359,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_6",
         "delta": "Found ",
-        "event_id": "evt_sess_fixture_25"
+        "event_id": "evt_sess_fixture_17"
       }
     },
     {
-      "id": "26",
+      "id": "18",
       "event": {
         "type": "agent.session.turn.output_text.delta",
         "item_id": "item_msg_10",
@@ -538,11 +372,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_6",
         "delta": "3 results.",
-        "event_id": "evt_sess_fixture_26"
+        "event_id": "evt_sess_fixture_18"
       }
     },
     {
-      "id": "27",
+      "id": "19",
       "event": {
         "type": "agent.session.turn.output_text.done",
         "item_id": "item_msg_10",
@@ -551,11 +385,11 @@
         "session_id": "sess_fixture",
         "turn_id": "turn_6",
         "text": "Found 3 results.",
-        "event_id": "evt_sess_fixture_27"
+        "event_id": "evt_sess_fixture_19"
       }
     },
     {
-      "id": "28",
+      "id": "20",
       "event": {
         "type": "agent.session.turn.item.done",
         "session_id": "sess_fixture",
@@ -573,11 +407,11 @@
           "status": "completed",
           "turn_id": "turn_6"
         },
-        "event_id": "evt_sess_fixture_28"
+        "event_id": "evt_sess_fixture_20"
       }
     },
     {
-      "id": "29",
+      "id": "21",
       "event": {
         "type": "agent.session.turn.completed",
         "session_id": "sess_fixture",
@@ -595,11 +429,11 @@
           "error": null,
           "usage": null
         },
-        "event_id": "evt_sess_fixture_29"
+        "event_id": "evt_sess_fixture_21"
       }
     },
     {
-      "id": "30",
+      "id": "22",
       "event": {
         "type": "agent.session.idle",
         "session": {
@@ -628,8 +462,93 @@
           "required_actions": [],
           "usage": null
         },
-        "event_id": "evt_sess_fixture_30"
+        "event_id": "evt_sess_fixture_22"
       }
+    }
+  ],
+  "items": [
+    {
+      "id": "item_msg_3",
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Say hello"
+        }
+      ],
+      "status": "completed",
+      "turn_id": "turn_2"
+    },
+    {
+      "id": "item_reason_4",
+      "type": "reasoning",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "The user wants a greeting."
+        }
+      ],
+      "status": "completed",
+      "turn_id": "turn_2"
+    },
+    {
+      "id": "item_msg_4",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The user wants a greeting.Hello, world!"
+        }
+      ],
+      "status": "completed",
+      "turn_id": "turn_2"
+    },
+    {
+      "id": "item_msg_7",
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Search the docs"
+        }
+      ],
+      "status": "completed",
+      "turn_id": "turn_6"
+    },
+    {
+      "id": "item_fn_8",
+      "type": "function_call",
+      "name": "search",
+      "call_id": "call_1",
+      "arguments": {
+        "query": "docs"
+      },
+      "status": "in_progress",
+      "turn_id": "turn_6"
+    },
+    {
+      "id": "item_fn_out_9",
+      "type": "function_call_output",
+      "call_id": "call_1",
+      "output": "3 results",
+      "status": "completed",
+      "turn_id": "turn_6"
+    },
+    {
+      "id": "item_msg_10",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Found 3 results."
+        }
+      ],
+      "status": "completed",
+      "turn_id": "turn_6"
     }
   ]
 }

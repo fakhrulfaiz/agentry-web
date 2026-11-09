@@ -9,6 +9,8 @@ import type { MessageView } from '@/chat/reducer'
 type ToolView = Extract<MessageView, { kind: 'tool' }>
 
 const SUMMARY_MAX = 60
+/** Longest output shown in the card; a fetched page can be far longer. */
+export const OUTPUT_MAX = 20_000
 
 /** Pretty JSON for objects; strings that hold JSON are parsed first. */
 export function formatValue(value: unknown): string {
@@ -22,7 +24,7 @@ export function formatValue(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value)
 }
 
-/** A one-line hint of the arguments: the first string value, else compact JSON, cut to 60 characters. */
+/** A one-line hint of the arguments: the first string value, else the first list of strings, else compact JSON; cut to 60 characters. */
 export function summarizeArgs(args: unknown): string {
   let source: unknown = args
   if (typeof args === 'string') {
@@ -34,8 +36,10 @@ export function summarizeArgs(args: unknown): string {
   }
   let text: string
   if (source && typeof source === 'object' && !Array.isArray(source)) {
-    const first = Object.values(source as Record<string, unknown>).find((v) => typeof v === 'string')
-    text = typeof first === 'string' ? first : JSON.stringify(source)
+    const values = Object.values(source as Record<string, unknown>)
+    const first = values.find((v) => typeof v === 'string')
+    const list = values.find((v): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string'))
+    text = typeof first === 'string' ? first : list ? list.join(', ') : JSON.stringify(source)
   } else {
     text = typeof source === 'string' ? source : (JSON.stringify(source) ?? '')
   }
@@ -47,7 +51,8 @@ const STATUS = { running: 'running', done: 'complete', failed: 'error' } as cons
 
 /** A tool call: name, short argument summary and status; expands to the full input and output. */
 export function ToolCard({ view }: { view: ToolView }) {
-  const output = view.output === undefined ? null : formatValue(view.output)
+  const full = view.output === undefined ? null : formatValue(view.output)
+  const output = full !== null && full.length > OUTPUT_MAX ? `${full.slice(0, OUTPUT_MAX)}\n… (${full.length - OUTPUT_MAX} more characters)` : full
   return (
     <ChatToolCalls
       calls={[

@@ -61,6 +61,8 @@ export function Message({
         </ChatMessage>
       )
     case 'assistant':
+      // A step that was only reasoning (or only tool calls) leaves an empty message: show nothing.
+      if (!view.text) return null
       return (
         <AssistantRow>
           <AssistantText text={view.text} streaming={view.streaming} />
@@ -69,7 +71,7 @@ export function Message({
     case 'reasoning':
       return (
         <AssistantRow>
-          <ReasoningBlock text={view.text} />
+          <ReasoningBlock text={view.text} streaming={view.streaming} />
         </AssistantRow>
       )
     case 'tool':

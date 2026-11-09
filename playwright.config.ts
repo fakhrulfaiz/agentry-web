@@ -40,6 +40,8 @@ export default defineConfig({
         AGENTRY_API_URL: MOCK_URL,
         AGENTRY_WEB_SESSION_SECRET: 'e2e-session-secret-0123456789abcdef-0123',
         AGENTRY_WEB_MODELS: 'mock-model,mock-large',
+        // Its own build directory: `next dev` refuses to share `.next` with another dev server.
+        AGENTRY_WEB_DIST_DIR: '.next-e2e',
       },
     },
   ],
