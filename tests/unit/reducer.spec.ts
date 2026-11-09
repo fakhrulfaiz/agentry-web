@@ -264,6 +264,21 @@ describe('conversation reducer', () => {
     expect(s.items.map((v) => v.id)).toEqual(['u1', 'a1', 'notice:turn_a', 'u2', 'notice:turn_b'])
   })
 
+  it('a failed turn whose user message arrives after the notice (sent from elsewhere) keeps the notice last', () => {
+    // Live: a message posted from another tab fails at once; the stream's turn.failed comes before the items refresh.
+    const items: StoredSessionItem[] = [
+      { id: 'u1', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'one' }], status: 'completed', turn_id: 'turn_a' },
+      { id: 'a1', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }], status: 'completed', turn_id: 'turn_a' },
+    ]
+    let s = applyItems(initialState(SID), items)
+    s = applyEvent(s, { id: '1', event: { type: 'agent.session.turn.failed', event_id: 'e1', session_id: SID, turn_id: 'turn_b', turn: { ...turn('failed', { code: 'x', message: 'bad model' }), id: 'turn_b' } } })
+    s = applyItems(s, [
+      ...items,
+      { id: 'u2', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'two' }], status: 'completed', turn_id: 'turn_b' },
+    ])
+    expect(s.items.map((v) => v.id)).toEqual(['u1', 'a1', 'u2', 'notice:turn_b'])
+  })
+
   it('a reply after a steering message follows it', () => {
     let s = applyItems(fold(TWO_TURNS.frames.slice(0, 4)), TWO_TURNS.items.slice(0, 1)) // turn_2 open, its user message shown
     s = appendLocalUserMessage(s, 'actually, be brief')

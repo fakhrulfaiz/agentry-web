@@ -197,8 +197,8 @@ export function applySubagents(s: ConversationState, children: SubagentActivity[
  * Sorts the views by the item log. A view backed by an item takes its log
  * position. Any other view (notice, delegation card, optimistic user message)
  * stays right after the view before it, except a subagent card (right after
- * the call that started it) and an assistant message the log does not have
- * yet (still streaming), which stays at the end of its turn.
+ * the call that started it), and an assistant message the log does not have
+ * yet (still streaming) or a turn's notice, which stay at the end of its turn.
  */
 function inLogOrder(s: ConversationState, items: StoredSessionItem[]): ConversationState {
   const order = new Map<string, number>()
@@ -218,7 +218,8 @@ function inLogOrder(s: ConversationState, items: StoredSessionItem[]): Conversat
     }
     if (key === undefined) {
       const turn = s.turnOf.get(view.id)
-      const end = view.kind === 'assistant' && turn !== undefined ? turnEnd.get(turn) : undefined
+      // A streamed message, or a turn's end notice, is never above the logged items of its own turn.
+      const end = (view.kind === 'assistant' || view.kind === 'notice') && turn !== undefined ? turnEnd.get(turn) : undefined
       key = Math.max(anchor, end ?? -Infinity) + 1e-6
     }
     anchor = key
