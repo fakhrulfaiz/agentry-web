@@ -40,7 +40,7 @@
  * user to `/login`; a 403 or 404 closes the stream and sets `closedReason`.
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
-import { api, isSignedOut } from '@/api/client'
+import { api, isSignedOut, type SettingsChange } from '@/api/client'
 import type { OAIAgentSession, OAISessionEvent, OAITurn, StoredSessionItem } from '@/api/types'
 import {
   appendLocalUserMessage,
@@ -146,7 +146,8 @@ export function useConversation(
   loaded: boolean
   connection: Connection
   closedReason: ClosedReason | null
-  send(text: string): Promise<void>
+  /** Sends a message, with the model / effort the user changed (if any). */
+  send(text: string, change?: SettingsChange): Promise<void>
   stop(): Promise<void>
   answer(actionId: string, a: ActionAnswer): Promise<void>
 } {
@@ -460,10 +461,10 @@ export function useConversation(
   }, [onSignedOut])
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, change?: SettingsChange) => {
       dispatch({ type: 'local-user', text })
       try {
-        await guard(() => api.sendMessage(sessionId, text))
+        await guard(() => api.sendMessage(sessionId, text, change))
       } catch (error) {
         dispatch({ type: 'drop-local', text })
         throw error

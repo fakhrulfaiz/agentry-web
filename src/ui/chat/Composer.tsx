@@ -11,8 +11,9 @@
  * it afterwards.
  *
  * Settings: the model and effort menus are live when the caller passes their
- * change handlers (a new chat); without them they show the current values,
- * disabled, with `settingsHint` as the reason (an open chat).
+ * change handlers (a new chat, and an open chat, where the next message
+ * carries a change); without them they show the current values, disabled,
+ * with `hint` as the reason. `efforts` narrows the effort choices.
  *
  * Attachments: the attach button is present but disabled until Agentry has an
  * upload endpoint; the attachments drawer renders once there are attachments,
@@ -59,12 +60,14 @@ export interface ComposerSettings {
   onModelChange?(model: string): void
   effort: EffortChoice
   onEffortChange?(effort: EffortChoice): void
+  /** Efforts offered (default: all, Auto first). */
+  efforts?: EffortChoice[]
   /** Why the menus without a change handler are disabled. */
   hint?: string
 }
 
 function SettingsMenus({ settings }: { settings: ComposerSettings }) {
-  const { models, model, onModelChange, effort, onEffortChange, hint } = settings
+  const { models, model, onModelChange, effort, onEffortChange, efforts, hint } = settings
   // A disabled menu still names its current value.
   const modelOptions = models && models.length > 0 ? models : model ? [model] : []
   return (
@@ -88,7 +91,7 @@ function SettingsMenus({ settings }: { settings: ComposerSettings }) {
         size="sm"
         variant="ghost"
         startIcon={LightBulbIcon}
-        options={EFFORTS}
+        options={efforts ? EFFORTS.filter((e) => efforts.includes(e.value)) : EFFORTS}
         value={effort}
         onChange={(value) => onEffortChange?.(value as EffortChoice)}
         isDisabled={!onEffortChange}

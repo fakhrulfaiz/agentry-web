@@ -262,7 +262,14 @@ export interface OAIApprovalResponseInputEvent {
 
 /** Input event accepted by `POST /v1/agents/sessions/{session_id}/events`. */
 export type OAIInputEvent =
-  | { type: 'agent.session.input.message'; input: OAIInputMessage[] }
+  | {
+      type: 'agent.session.input.message'
+      input: OAIInputMessage[]
+      /** Switches the session's model before the message is queued. */
+      model?: string
+      /** Switches the session's reasoning effort before the message is queued. */
+      reasoning?: { effort: ReasoningEffort }
+    }
   | { type: 'agent.session.input.cancel' }
   | OAIApprovalResponseInputEvent
 

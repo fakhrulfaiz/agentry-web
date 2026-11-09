@@ -20,6 +20,15 @@ const AGENTRY = '/api/agentry'
 const TITLE_MAX = 80
 const ITEMS_PAGE = 100
 
+/** Model and reasoning effort changed for the next message; absent fields keep the session's. */
+export interface SettingsChange {
+  model?: string
+  effort?: ReasoningEffort
+}
+
+/** Agentry's answer when a model or effort change cannot reach the running agent. */
+export const SETTING_NOT_LIVE = 'session_setting_not_live'
+
 /** A non-2xx answer from the BFF or Agentry. `status === 401` means signed out: send the user to `/login`. */
 export class ApiError extends Error {
   readonly status: number
@@ -150,9 +159,19 @@ export const api = {
     return request('POST', `${AGENTRY}/agents/sessions`, body)
   },
 
-  sendMessage(id: string, text: string): Promise<void> {
+  /**
+   * Sends a follow-up message. `change` carries only the settings the user
+   * changed; Agentry applies them before queueing the message, and answers 409
+   * `session_setting_not_live` (queueing nothing) when it cannot.
+   */
+  sendMessage(id: string, text: string, change: SettingsChange = {}): Promise<void> {
     return postEvents(id, [
-      { type: 'agent.session.input.message', input: [{ role: 'user', content: [{ type: 'input_text', text }] }] },
+      {
+        type: 'agent.session.input.message',
+        input: [{ role: 'user', content: [{ type: 'input_text', text }] }],
+        ...(change.model ? { model: change.model } : {}),
+        ...(change.effort ? { reasoning: { effort: change.effort } } : {}),
+      },
     ])
   },
 

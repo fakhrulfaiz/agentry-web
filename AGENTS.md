@@ -11,7 +11,7 @@ Read this first in every session. `CLAUDE.md` is a symlink to this file; edit `A
 - F1 (shell + sign-in + chat): **implemented** on `feat/f1` (all 8 plan tasks). The final whole-branch review is done and its fixes are in (Markdown images, Keycloak refresh/logout hardening, stream snapshot ordering, security headers). **Pending:** the manual Keycloak live check (README "Keycloak live check") and the live check against a real Agentry (`docs/live-check.md`).
   - Spec: `docs/superpowers/specs/2026-11-08-agentry-web-f1-design.md`
   - Plan: `docs/superpowers/plans/2026-11-08-agentry-web-f1.md` (8 tasks)
-- F1.1 (chat fidelity): **implemented** on `feat/f1-1` and through its final review fix wave. Live reasoning and tool cards from the real backend's item log, expandable subagent cards, the Trajectory view (ledger, overview, Event details), the full-featured composer (model and effort for new chats, slash-command slot), chat title menu with starred chats, and less rounded inputs. Pinned by fixtures recorded from the live backend (`tests/fixtures/live/`).
+- F1.1 (chat fidelity): **implemented** on `feat/f1-1` and through its final review fix wave. Live reasoning and tool cards from the real backend's item log, expandable subagent cards, the Trajectory view (ledger, overview, Event details), the full-featured composer (model and effort for new chats and mid-chat, slash-command slot), chat title menu with starred chats, and less rounded inputs. Pinned by fixtures recorded from the live backend (`tests/fixtures/live/`).
   - Plan: `docs/superpowers/plans/2026-11-09-f1-1-chat-fidelity.md`
 - Later specs: F2 admin, F3 artifacts/files, F4 trace inspector + subagent views (F4 also: keyboard access for the trajectory overview).
 
@@ -68,7 +68,8 @@ Cowork capabilities beyond F1. Backend pieces live in `~/code/dsh-agents-api` (m
    - The stream carries assistant messages only: emit reasoning, tool calls and outputs, user messages and subagent activity as stream events. Then drop the items/subagents polling in `src/chat/use-conversation.ts` and the reasoning-prefix strip (`stripReasoning`), which exists because a saved message repeats its step's reasoning in front of its text.
    - Per-item timestamps and per-step token usage, so the trajectory can time records and draw assistant/tool lanes (today: "Not recorded").
    - Session list filtering by metadata (starred chats beyond the loaded pages) and a metadata patch instead of replace-the-whole-map (concurrent writes can drop a key).
-   - Reasoning settings (`model`, `reasoning.effort`) on follow-up messages that reach the running agent; the composer disables them in an open chat until then. The backend's `docs/http-api.md` now lists them on `agent.session.input.message`: verify against the live backend, then enable.
+   - Done: model and reasoning effort on follow-up messages (`model`, `reasoning.effort` on `agent.session.input.message`) reach the running agent; verified against the live backend and enabled in the open-chat composer (a refused change answers 409 `session_setting_not_live`). There is still no way to clear a stored effort back to the agent's default, so Auto is offered only while none is stored.
+   - An unknown `model` on `agent.session.input.message` is accepted (200), stored and queued; the turn then fails at the provider ("supported API model names are …") instead of the documented 409 `session_setting_not_live` (seen live 2026-11-09; an unsupported effort does answer 409). The composer only offers configured models, so this needs a hand-made request or a stale model list to hit.
 
 ## Astryx conventions (installed by `pnpm exec astryx init`)
 

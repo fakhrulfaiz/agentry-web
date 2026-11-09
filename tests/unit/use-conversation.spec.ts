@@ -210,6 +210,44 @@ describe('useConversation', () => {
     unmount()
   })
 
+  it('send carries a model / effort change on the message event', async () => {
+    streams.push(() => streamResponse('', true))
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    await act(async () => {
+      await result.current.send('think harder', { effort: 'high' })
+    })
+    const post = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/events') && init?.method === 'POST')
+    expect(JSON.parse(String(post![1]?.body))).toEqual({
+      events: [
+        {
+          type: 'agent.session.input.message',
+          input: [{ role: 'user', content: [{ type: 'input_text', text: 'think harder' }] }],
+          reasoning: { effort: 'high' },
+        },
+      ],
+    })
+    unmount()
+  })
+
+  it('a 409 session_setting_not_live drops the optimistic message and rethrows the backend message', async () => {
+    streams.push(() => streamResponse('', true))
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    fetchMock.mockImplementationOnce(async () =>
+      Response.json({ error: { message: 'model "nope" is not available', code: 'session_setting_not_live' } }, { status: 409 }),
+    )
+    await act(async () => {
+      await expect(result.current.send('hi', { model: 'nope' })).rejects.toMatchObject({
+        status: 409,
+        code: 'session_setting_not_live',
+        message: 'model "nope" is not available',
+      })
+    })
+    expect(result.current.state.items).toEqual([])
+    unmount()
+  })
+
   it('stop and answer post cancel and approval_response events', async () => {
     streams.push(() => streamResponse('', true))
     const { result, unmount } = renderHook(() => useConversation(SID))

@@ -14,6 +14,11 @@
  * chat's scroll position. The trajectory's "Show in chat" switches to Chat,
  * scrolls to the record's row (retrying for a few frames while it renders)
  * and marks it briefly; a row that never shows up gives a short notice.
+ *
+ * Settings: the composer's model and effort menus start at the session's
+ * stored values; the next message carries only what changed. A refused change
+ * (409 `session_setting_not_live`) keeps the draft, shows Agentry's message and
+ * puts the menus back.
  */
 import { Banner } from '@astryxdesign/core/Banner'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
@@ -23,7 +28,7 @@ import { VStack } from '@astryxdesign/core/VStack'
 import * as stylex from '@stylexjs/stylex'
 import { useToast } from '@astryxdesign/core/Toast'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, isSignedOut } from '@/api/client'
+import { api, ApiError, isSignedOut, SETTING_NOT_LIVE } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
 import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
@@ -33,7 +38,8 @@ import { TopBar } from '@/ui/shell/TopBar'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
 import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
-import { Composer, type ComposerSettings, type EffortChoice } from './Composer'
+import { useChatSettings, withSettings } from './chat-settings'
+import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
@@ -58,24 +64,6 @@ const styles = stylex.create({
   // Both views stay mounted; the inactive one keeps its box (and its scroll position) but is not shown.
   inactive: { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' },
 })
-
-/**
- * Agentry takes the model and reasoning effort when a chat starts; a follow-up
- * message cannot carry them, and a session update does not reach the running
- * agent. So an open chat shows them read-only.
- */
-export const SETTINGS_HINT = 'Model and reasoning effort are set when a chat starts; changing them mid-chat needs backend support'
-const EFFORT_CHOICES = new Set<string>(['low', 'medium', 'high'])
-
-function settingsOf(session: OAIAgentSession | null): ComposerSettings {
-  const effort = session?.agent.reasoning?.effort
-  return {
-    models: null,
-    model: session?.agent.model ?? '',
-    effort: effort && EFFORT_CHOICES.has(effort) ? (effort as EffortChoice) : 'auto',
-    hint: SETTINGS_HINT,
-  }
-}
 
 const CLOSED_NOTICE: Record<ClosedReason, { title: string; description: string }> = {
   forbidden: {
@@ -109,6 +97,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const { state, loaded, connection, closedReason, send, stop, answer } = useConversation(sessionId)
   const toast = useToast()
   const [session, setSession] = useState<OAIAgentSession | null>(null)
+  const [models, setModels] = useState<string[] | null>(null)
+  const settings = useChatSettings(session)
   const [missing, setMissing] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [view, setView] = useSessionView<View>(sessionId, VIEW_VALUES, 'chat')
@@ -182,6 +172,26 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     void loadSession()
   }, [loadSession])
 
+  // The model menu offers the same models as a new chat; without them it still names the session's.
+  useEffect(() => {
+    let live = true
+    api.models().then(
+      (list) => live && setModels(list),
+      (error: unknown) => {
+        if (isSignedOut(error)) return goToLogin()
+        if (live) setModels([])
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+  const modelOptions = useMemo(() => {
+    const stored = session?.agent.model
+    if (models === null) return null
+    return stored && !models.includes(stored) ? [stored, ...models] : models
+  }, [models, session?.agent.model])
+
   /** Runs an action; a failure becomes the banner (503) or the inline message. */
   const run = useCallback(async (call: () => Promise<void>) => {
     try {
@@ -193,7 +203,24 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     }
   }, [])
 
-  const onSend = useCallback((text: string) => run(() => send(text)), [run, send])
+  // The next message carries only the changed model / effort. Accepted: the session holds them now.
+  // Refused (409 session_setting_not_live): nothing was queued, the draft stays, and the menus go back.
+  const { change, revert } = settings
+  const onSend = useCallback(
+    async (text: string) => {
+      try {
+        await run(() => send(text, change))
+      } catch (error) {
+        if (error instanceof ApiError && error.code === SETTING_NOT_LIVE) revert()
+        throw error
+      }
+      if (change.model || change.effort) {
+        setSession((current) => (current ? withSettings(current, change) : current))
+        revert()
+      }
+    },
+    [run, send, change, revert],
+  )
   const onStop = useCallback(() => void run(stop).catch(() => {}), [run, stop])
   const onAnswer = useCallback((id: string, a: ActionAnswer) => answer(id, a), [answer])
 
@@ -237,7 +264,14 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                 onStop={onStop}
                 isRunning={running}
                 autoFocus
-                settings={settingsOf(session)}
+                settings={{
+                  models: modelOptions,
+                  model: settings.model,
+                  onModelChange: settings.setModel,
+                  effort: settings.effort,
+                  efforts: settings.efforts,
+                  onEffortChange: settings.setEffort,
+                }}
                 status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
               />
             }

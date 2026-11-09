@@ -131,8 +131,25 @@ describe('Composer footer and header', () => {
     expect(settings.onEffortChange).toHaveBeenCalledWith('high')
   })
 
-  it('an open chat shows its model and effort, disabled, with the reason', () => {
-    const hint = 'Set when a chat starts'
+  it('an open chat starts at its stored model and effort, and both menus are live', async () => {
+    const user = userEvent.setup()
+    const settings = live({ model: 'mock-large', effort: 'low', efforts: ['low', 'medium', 'high'] })
+    render(<Composer onSend={vi.fn(async () => {})} settings={settings} />)
+    const model = screen.getByRole('combobox', { name: 'Model' })
+    const effort = screen.getByRole('combobox', { name: 'Reasoning effort' })
+    expect(model).toHaveTextContent('mock-large')
+    expect(effort).toHaveTextContent('Low')
+    expect(isDisabled(model)).toBe(false)
+    expect(isDisabled(effort)).toBe(false)
+    // A stored effort cannot go back to Auto (Agentry has no value for it), so Auto is not offered.
+    await user.click(effort)
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Low', 'Medium', 'High'])
+    await user.click(screen.getByRole('option', { name: 'High' }))
+    expect(settings.onEffortChange).toHaveBeenCalledWith('high')
+  })
+
+  it('menus without a change handler show their value, disabled, with the reason', () => {
+    const hint = 'Not available here'
     render(<Composer onSend={vi.fn(async () => {})} settings={{ models: null, model: 'mock-large', effort: 'low', hint }} />)
     const model = screen.getByRole('combobox', { name: 'Model' })
     const effort = screen.getByRole('combobox', { name: 'Reasoning effort' })

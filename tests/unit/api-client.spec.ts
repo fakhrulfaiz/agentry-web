@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, isSignedOut, mergeMetadata, titleFrom } from '@/api/client'
+import { api, ApiError, isSignedOut, mergeMetadata, SETTING_NOT_LIVE, titleFrom } from '@/api/client'
 
 const fetchMock = vi.fn<typeof fetch>()
 const CSRF = 'meta-token'
@@ -77,6 +77,34 @@ describe('api client', () => {
     const items = await api.items('s1')
     expect(items.map((i) => i.id)).toEqual(['i1', 'i2'])
     expect(String(fetchMock.mock.calls[1][0])).toBe('/api/agentry/agents/sessions/s1/items?limit=100&after=i1')
+  })
+
+  it('a follow-up carries only the changed model and effort, as top-level fields of the message event', async () => {
+    const message = { type: 'agent.session.input.message', input: [{ role: 'user', content: [{ type: 'input_text', text: 'go on' }] }] }
+    fetchMock.mockImplementation(async () => Response.json({}))
+    await api.sendMessage('s1', 'go on')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1/events', method: 'POST' })
+    expect(lastCall().body).toEqual({ events: [message] })
+
+    await api.sendMessage('s1', 'go on', { effort: 'high' })
+    expect(lastCall().body).toEqual({ events: [{ ...message, reasoning: { effort: 'high' } }] })
+
+    await api.sendMessage('s1', 'go on', { model: 'm2' })
+    expect(lastCall().body).toEqual({ events: [{ ...message, model: 'm2' }] })
+
+    await api.sendMessage('s1', 'go on', { model: 'm2', effort: 'low' })
+    expect(lastCall().body).toEqual({ events: [{ ...message, model: 'm2', reasoning: { effort: 'low' } }] })
+  })
+
+  it('a refused setting change is a 409 ApiError with session_setting_not_live', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({ error: { type: 'invalid_request_error', message: 'reasoning effort "high" is not supported', code: 'session_setting_not_live' } }, { status: 409 }),
+    )
+    await expect(api.sendMessage('s1', 'hi', { effort: 'high' })).rejects.toMatchObject({
+      status: 409,
+      code: SETTING_NOT_LIVE,
+      message: 'reasoning effort "high" is not supported',
+    })
   })
 
   it('throws ApiError with the Agentry error code and message', async () => {
