@@ -14,6 +14,7 @@ import type { ReactNode } from 'react'
 import type { MessageView } from '@/chat/reducer'
 import type { ActionAnswer } from '@/chat/use-conversation'
 import { ApprovalCard } from './ApprovalCard'
+import { CommandResult } from './CommandResult'
 import { Markdown } from './Markdown'
 import { Notice } from './Notice'
 import { QuestionCard } from './QuestionCard'
@@ -100,6 +101,12 @@ export function Message({
       return (
         <AssistantRow anchor={anchor} highlighted={highlighted}>
           <SubagentCard view={view} depth={depth} />
+        </AssistantRow>
+      )
+    case 'command':
+      return (
+        <AssistantRow anchor={anchor} highlighted={highlighted}>
+          <CommandResult view={view} />
         </AssistantRow>
       )
     case 'notice':

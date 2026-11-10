@@ -178,7 +178,7 @@ describe('Conversation views', () => {
   it('keeps the composer draft (and the chat itself) across view switches', async () => {
     const user = userEvent.setup()
     render(<Conversation sessionId={SID} />)
-    const input = await screen.findByRole('textbox', { name: 'Message input' })
+    const input = await screen.findByRole('combobox', { name: 'Message input' })
     await user.click(input)
     await user.keyboard('a long draft about Node')
     const chatRow = screen.getAllByTestId('assistant-message').at(-1)
@@ -187,7 +187,7 @@ describe('Conversation views', () => {
       await user.click(screen.getByRole('button', { name: 'Chat' }))
     }
     // The same editor and rows: nothing was unmounted.
-    expect(screen.getByRole('textbox', { name: 'Message input' })).toBe(input)
+    expect((screen.queryByRole('combobox', { name: 'Message input' }) ?? screen.getByRole('textbox', { name: 'Message input' }))).toBe(input)
     expect(input).toHaveTextContent('a long draft about Node')
     expect(screen.getAllByTestId('assistant-message').at(-1)).toBe(chatRow)
     await act(async () => {})

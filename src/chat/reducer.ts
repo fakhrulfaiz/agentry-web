@@ -89,6 +89,7 @@ export type MessageView =
     endedAt?: number
   }
   | { kind: 'action'; id: string; action: OAIRequiredAction }
+  | { kind: 'command'; id: string; name: string; args?: string; ok: boolean; text?: string }
   | { kind: 'notice'; id: string; level: 'failed' | 'interrupted' | 'cancelled'; message: string }
 
 export interface ConversationState {
@@ -312,6 +313,8 @@ function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean
     case 'agent.session.turn.failed':
     case 'agent.session.turn.cancelled':
       return applyTurnEnd(s, event.turn)
+    case 'agent.session.item.done':
+      return applyItem(s, event.item, true, event.turn_id ?? undefined)
     case 'agent.session.turn.item.added':
       return applyItem(s, event.item, false, event.turn_id)
     case 'agent.session.turn.item.done':
@@ -481,6 +484,15 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
         args: item.cwd === undefined ? { command: item.command } : { command: item.command, cwd: item.cwd },
         status: toolStatus(item.status, 'running'),
         ...withOutput(item.output),
+      }, turn)
+    case 'slash_command':
+      return place(s, {
+        kind: 'command',
+        id: item.id,
+        name: item.name,
+        ...(item.args ? { args: item.args } : {}),
+        ok: item.status === 'completed',
+        ...(item.text ? { text: item.text } : {}),
       }, turn)
     case 'function_call_output': {
       // A shell command's output carries a call id its `command_execution` item does not

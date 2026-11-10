@@ -144,18 +144,23 @@ export function useConversation(
   state: ConversationState
   /** False until the saved history has been read (or failed to load). */
   loaded: boolean
+  /** False until the session status is known (the first snapshot or stream frame has been read). */
+  ready: boolean
   connection: Connection
   closedReason: ClosedReason | null
   /** Sends a message, with the model / effort the user changed (if any). */
   send(text: string, change?: SettingsChange): Promise<void>
   stop(): Promise<void>
   answer(actionId: string, a: ActionAnswer): Promise<void>
+  /** Runs a backend slash command and shows its result item at once (the stream carries the same item). */
+  runCommand(name: string, input: string): Promise<void>
 } {
   const [state, dispatch] = useReducer(reducer, sessionId, initialState)
   // Optimistic until the first connection fails, so opening a chat does not flash "Reconnecting…".
   const [connection, setConnection] = useState<Connection>('live')
   const [closedReason, setClosedReason] = useState<ClosedReason | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [ready, setReady] = useState(false)
   // A ref, so an inline callback does not restart the stream on every render.
   const signedOutRef = useRef(options.onSignedOut ?? goToLogin)
   useEffect(() => {
@@ -168,6 +173,7 @@ export function useConversation(
     setConnection('live')
     setClosedReason(null)
     setLoaded(false)
+    setReady(false)
     const abort = new AbortController()
     const { signal } = abort
     let lastId = '0'
@@ -225,6 +231,7 @@ export function useConversation(
         if (!signal.aborted && applied === requestedAt) {
           active = ACTIVE.has(session.status)
           dispatch({ type: 'event', event: snapshotEvent(session) })
+          setReady(true)
           schedulePoll()
         }
       } catch (error) {
@@ -372,6 +379,7 @@ export function useConversation(
     const track = (event: OAISessionEvent, durable: boolean) => {
       if ('session' in event) {
         active = ACTIVE.has(event.session.status)
+        setReady(true)
         schedulePoll()
       }
       if (!durable || !REFRESH_ON.has(event.type)) return
@@ -451,9 +459,9 @@ export function useConversation(
     }
   }, [sessionId, onSignedOut])
 
-  const guard = useCallback(async (call: () => Promise<void>) => {
+  const guard = useCallback(async <T,>(call: () => Promise<T>): Promise<T> => {
     try {
-      await call()
+      return await call()
     } catch (error) {
       if (isSignedOut(error)) onSignedOut()
       throw error
@@ -480,5 +488,14 @@ export function useConversation(
     [guard, sessionId],
   )
 
-  return { state, loaded, connection, closedReason, send, stop, answer }
+  const runCommand = useCallback(
+    async (name: string, input: string) => {
+      const result = await guard(() => api.runCommand(sessionId, name, input))
+      // No SSE id: the item is upserted by its id, so the stream's copy does not double it.
+      dispatch({ type: 'event', event: { type: 'agent.session.item.done', event_id: `command_${result.command_id}`, session_id: sessionId, turn_id: result.item.turn_id, item: result.item } })
+    },
+    [guard, sessionId],
+  )
+
+  return { state, loaded, ready, connection, closedReason, send, stop, answer, runCommand }
 }

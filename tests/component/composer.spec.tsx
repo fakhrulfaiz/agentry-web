@@ -209,7 +209,8 @@ describe('Composer slash commands', () => {
     await user.click(input())
     await user.keyboard('/te')
     const list = await screen.findByRole('listbox', { name: 'Commands' })
-    expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual(['/test'])
+    // Names matching the text come first; a description that contains it comes after ("Write" contains "te").
+    expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual(['/test', '/planWrite a plan'])
     await user.keyboard('{Escape}')
     await waitFor(() => expect(menu()).not.toBeInTheDocument())
     expect(input()).toHaveTextContent('/te')

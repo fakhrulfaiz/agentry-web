@@ -172,6 +172,8 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
   }
 
   for (const item of items) {
+    // A command result is human-only output, not a step of the agent's work.
+    if (item.type === 'slash_command') continue
     const turnId = item.turn_id
     switch (item.type) {
       case 'message': {

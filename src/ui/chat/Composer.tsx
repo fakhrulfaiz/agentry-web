@@ -19,22 +19,33 @@
  * upload endpoint; the attachments drawer renders once there are attachments,
  * which is never today.
  *
- * Slash commands: with `commands`, typing `/` at the start of the message
- * opens a menu of them (arrows, Enter, Escape); choosing one inserts
- * `/name `. Without commands there is no menu, and `/x` is sent as text.
+ * Slash menu: typing `/` at the start of the message opens a menu with up to
+ * three groups, in this order: Commands (`dshCommands`, run on the backend
+ * through `onRunCommand`, greyed out while a turn runs), App (`appHandlers`,
+ * run in the web app) and Skills (`commands`, insert `/name `). Arrows, Enter,
+ * Tab and Escape work as in any menu; a row that takes text inserts `/name `
+ * and waits, one that does not runs at once. Without any entries there is no
+ * menu, and `/x` is sent as text.
+ *
+ * Submit routing: a line naming a backend command runs it, one naming an app
+ * command runs its handler, anything else (skills included) is a message.
+ * A refused command (`AppCommandError`) is shown as a notice and the text stays.
  */
 import { Button } from '@astryxdesign/core/Button'
 import { ChatComposer, ChatComposerDrawer, ChatComposerInput, type ChatComposerTrigger } from '@astryxdesign/core/Chat'
+import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
-import { createStaticSource } from '@astryxdesign/core/Typeahead'
+import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
 import { LightBulbIcon, PaperClipIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReasoningEffort } from '@/api/types'
+import type { AgentCommand, ReasoningEffort } from '@/api/types'
+import { APP_COMMANDS, AppCommandError, parseSlashLine, type AppCommandHandlers } from '@/commands/app-commands'
 import { focusEditor } from './focus'
+import { buildSlashItems, slashSource, type SlashItemData } from './slash-menu'
 
 /** Efforts offered; `auto` sends none (the agent's default). */
 export type EffortChoice = 'auto' | Extract<ReasoningEffort, 'low' | 'medium' | 'high'>
@@ -109,6 +120,10 @@ export function Composer({
   placeholder = 'Message Agentry…',
   settings,
   commands = [],
+  dshCommands = [],
+  appHandlers,
+  onRunCommand,
+  initialValue = '',
   status,
   autoFocus = false,
 }: {
@@ -119,12 +134,21 @@ export function Composer({
   isDisabled?: boolean
   placeholder?: string
   settings?: ComposerSettings
-  /** Slash commands for the `/` menu (none until Agentry lists skills). */
+  /** Skills for the `/` menu's Skills group (none until Agentry lists them). */
   commands?: SlashCommand[]
+  /** Backend commands for the Commands group. */
+  dshCommands?: AgentCommand[]
+  /** App commands this page can run; others are not offered. */
+  appHandlers?: AppCommandHandlers
+  /** Runs a backend command (`input` is the text after the name); a rejection keeps the text. */
+  onRunCommand?(name: string, input: string): Promise<void>
+  /** Text the composer starts with (read once, on mount). */
+  initialValue?: string
   status?: { type: 'error' | 'warning'; message?: string }
   autoFocus?: boolean
 }) {
-  const [value, setValue] = useState('')
+  const toast = useToast()
+  const [value, setValue] = useState(initialValue)
   const [sending, setSending] = useState(false)
   const root = useRef<HTMLDivElement | null>(null)
   const refocus = useRef(autoFocus)
@@ -136,40 +160,83 @@ export function Composer({
     if (!sending && !isDisabled && refocus.current && focusEditor(root.current)) refocus.current = false
   }, [sending, isDisabled])
 
+  const submitRef = useRef<(text: string) => Promise<void>>(async () => {})
+  const app = useMemo(() => APP_COMMANDS.filter((c) => appHandlers?.[c.name]), [appHandlers])
   const slash = useMemo<ChatComposerTrigger | null>(() => {
-    if (commands.length === 0) return null
-    const items = commands.map((c) => ({ id: c.name, label: c.name, ...(c.description ? { auxiliaryData: c.description } : {}) }))
+    const items = buildSlashItems({ commands: onRunCommand ? dshCommands : [], app, skills: commands, busy: isRunning })
+    if (items.length === 0) return null
     return {
       character: '/',
-      searchSource: createStaticSource(items),
+      searchSource: slashSource(items),
       menuLabel: 'Commands',
       emptySearchText: 'No matching command',
-      renderItem: (item) => (
-        <VStack>
-          <Text>/{item.label}</Text>
-          {typeof item.auxiliaryData === 'string' && <Text type="supporting">{item.auxiliaryData}</Text>}
-        </VStack>
-      ),
-      onSelect: (item) => `/${item.id} `,
+      renderItem: (item) => {
+        const data = item.auxiliaryData as SlashItemData
+        return (
+          <HStack gap={2} vAlign="center" hAlign="between" width="100%">
+            <VStack>
+              <Text type={data.disabled ? 'supporting' : undefined}>/{item.label}</Text>
+              {(data.description || data.disabled) && (
+                <Text type="supporting">{data.disabled ? 'Available when the turn finishes' : data.description}</Text>
+              )}
+            </VStack>
+            {data.hint && <Text type="supporting">{data.hint}</Text>}
+          </HStack>
+        )
+      },
+      onSelect: (item) => {
+        const data = item.auxiliaryData as SlashItemData
+        // A row that needs no text runs at once; a skill or a row with a hint waits for the rest of the line.
+        if (data.group !== 'Skills' && !data.hint && !data.disabled) {
+          void submitRef.current(`/${data.name}`)
+          return ''
+        }
+        return `/${data.name} `
+      },
     }
-  }, [commands])
+  }, [commands, dshCommands, app, onRunCommand, isRunning])
   // Only at the start of the message: a `/` later in the text is just text.
   const triggers = slash && (value === '' || value.startsWith('/')) ? [slash] : undefined
+
+  /** Opens the model or effort menu by clicking its trigger. */
+  const openMenu = (menu: 'model' | 'effort'): boolean => {
+    const trigger = root.current?.querySelector<HTMLElement>(`[aria-label="${menu === 'model' ? 'Model' : 'Reasoning effort'}"]:not([disabled])`)
+    trigger?.click()
+    return trigger != null
+  }
+
+  /** Routes a slash line to the backend or an app handler. Returns false when the line is a message. */
+  async function runSlash(text: string): Promise<boolean> {
+    const parsed = parseSlashLine(text)
+    if (!parsed) return false
+    if (onRunCommand && dshCommands.some((c) => c.name === parsed.name)) {
+      if (isRunning) throw new AppCommandError('Wait for the current turn to finish')
+      await onRunCommand(parsed.name, parsed.arg)
+      return true
+    }
+    const handler = appHandlers?.[parsed.name as keyof AppCommandHandlers]
+    if (!handler || !app.some((c) => c.name === parsed.name)) return false
+    const notice = await handler(parsed.arg, { openMenu })
+    if (notice) toast({ type: 'info', body: notice })
+    return true
+  }
 
   async function submit(text: string) {
     if (sending || isDisabled || !text.trim()) return
     setSending(true)
     try {
-      await onSend(text)
+      if (!(await runSlash(text))) await onSend(text)
       setValue('')
-    } catch {
-      // The caller shows the error; the text comes back so it can be sent again.
+    } catch (error) {
+      if (error instanceof AppCommandError) toast({ type: 'error', body: error.message })
+      // Otherwise the caller shows the error; either way the text comes back so it can be sent again.
       setValue(text)
     } finally {
       refocus.current = true
       setSending(false)
     }
   }
+  submitRef.current = submit
 
   return (
     <ChatComposer

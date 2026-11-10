@@ -27,13 +27,19 @@ import { HStack } from '@astryxdesign/core/HStack'
 import { VStack } from '@astryxdesign/core/VStack'
 import * as stylex from '@stylexjs/stylex'
 import { useToast } from '@astryxdesign/core/Toast'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut, SETTING_NOT_LIVE } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
+import { AppCommandError, chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
+import { refreshCommands, useCommandList, useCommandsLoader } from '@/commands/commands-store'
+import { REFRESH_MS } from '@/commands/list-store'
+import { useSkillCommands, useSkillsLoader } from '@/skills/skills-store'
 import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { ChatTitleMenu } from '@/ui/shell/ChatTitleMenu'
+import { RenameDialog, SESSIONS_CHANGED, type SessionRef } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
@@ -43,7 +49,9 @@ import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
+import { SessionArtifacts } from './SessionArtifacts'
 import { SubagentItems } from './SubagentCard'
+import { Thinking } from './Thinking'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
 type View = 'chat' | 'trajectory'
@@ -94,9 +102,16 @@ function retryTexts(items: MessageView[]): Map<string, string> {
 }
 
 export function Conversation({ sessionId }: { sessionId: string }) {
-  const { state, loaded, connection, closedReason, send, stop, answer } = useConversation(sessionId)
+  const { state, loaded, ready, connection, closedReason, send, stop, answer, runCommand } = useConversation(sessionId)
+  const router = useRouter()
   const toast = useToast()
   const [session, setSession] = useState<OAIAgentSession | null>(null)
+  // The menu lists belong to this chat; they reload when the chat changes.
+  useSkillsLoader(sessionId)
+  useCommandsLoader(sessionId)
+  const commands = useSkillCommands(sessionId)
+  const dshCommands = useCommandList(sessionId)
+  const [renaming, setRenaming] = useState<SessionRef | null>(null)
   const [models, setModels] = useState<string[] | null>(null)
   const settings = useChatSettings(session)
   const [missing, setMissing] = useState(false)
@@ -105,7 +120,35 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [reveal, setReveal] = useState<string | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
+  // A message was just sent: show the waiting row until the session reports its turn.
+  const [sent, setSent] = useState(false)
+  // Notices already shown: a turn that fails or is stopped after the send adds a new one and ends the wait.
+  const seenNotices = useRef<Set<string>>(new Set())
+  const noticesAtSend = useRef<Set<string>>(new Set())
   const reducedMotion = usePrefersReducedMotion()
+  // Something visibly happened already (a streaming thought or answer, a running tool): no waiting row.
+  const liveActivity = state.items.some(
+    (v) =>
+      (v.kind === 'assistant' && v.streaming && v.text.trim() !== '') ||
+      (v.kind === 'reasoning' && v.streaming && v.text.trim() !== '') ||
+      (v.kind === 'tool' && v.status === 'running'),
+  )
+  useEffect(() => {
+    for (const view of state.items) if (view.kind === 'notice') seenNotices.current.add(view.id)
+  }, [state.items])
+  const endedInNotice = state.items.some((v) => v.kind === 'notice' && !noticesAtSend.current.has(v.id))
+  useEffect(() => {
+    if (
+      sent &&
+      (state.status === 'in_progress' ||
+        state.status === 'requires_action' ||
+        liveActivity ||
+        endedInNotice ||
+        closedReason)
+    ) {
+      setSent(false)
+    }
+  }, [sent, state.status, liveActivity, endedInNotice, closedReason])
   // Same state as the chat, so the trajectory updates live with it.
   const model = session?.agent.model
   const trajectory = useMemo(
@@ -208,9 +251,12 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const { change, revert } = settings
   const onSend = useCallback(
     async (text: string) => {
+      noticesAtSend.current = new Set(seenNotices.current)
+      setSent(true)
       try {
         await run(() => send(text, change))
       } catch (error) {
+        setSent(false)
         if (error instanceof ApiError && error.code === SETTING_NOT_LIVE) revert()
         throw error
       }
@@ -221,6 +267,50 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     },
     [run, send, change, revert],
   )
+  /** Runs a backend slash command. A busy session or a stale catalog is a notice; the typed text stays. */
+  const onRunCommand = useCallback(
+    async (name: string, input: string) => {
+      try {
+        await runCommand(name, input)
+        setFailure(null)
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'session_busy') throw new AppCommandError('Wait for the current turn to finish')
+        if (error instanceof ApiError && error.code === 'command_not_found') {
+          void refreshCommands(sessionId, Date.now() + REFRESH_MS)
+          throw new AppCommandError('That command is no longer available')
+        }
+        if (!isSignedOut(error)) setFailure({ message: messageOf(error), retry: () => void onRunCommand(name, input).catch(() => {}), unavailable: isUnavailable(error) })
+        throw error
+      }
+    },
+    [runCommand, sessionId],
+  )
+  const { setModel, setEffort } = settings
+  const appHandlers = useMemo<AppCommandHandlers>(() => {
+    const startNew = async (arg: string) => {
+      if (arg) {
+        const created = await api.createSession({ text: arg, model: settings.model, ...(settings.effort === 'auto' ? {} : { effort: settings.effort }) })
+        window.dispatchEvent(new Event(SESSIONS_CHANGED))
+        router.push(`/c/${encodeURIComponent(created.id)}`)
+      } else router.push('/')
+    }
+    return {
+      new: startNew,
+      clear: () => router.push('/'),
+      model: (arg, { openMenu }) => {
+        if (!arg) return openMenu('model') ? undefined : `Model: ${settings.model}`
+        setModel(chooseModel(arg, modelOptions))
+        return `Model set to ${arg}. It applies from your next message.`
+      },
+      effort: (arg, { openMenu }) => {
+        if (!arg) return openMenu('effort') ? undefined : `Reasoning effort: ${settings.effort}`
+        const effort = chooseEffort(arg, settings.efforts)
+        setEffort(effort)
+        return `Reasoning effort set to ${effort}. It applies from your next message.`
+      },
+      rename: () => setRenaming({ id: sessionId, metadata: session?.metadata }),
+    }
+  }, [router, settings.model, settings.effort, settings.efforts, setModel, setEffort, modelOptions, sessionId, session?.metadata])
   const onStop = useCallback(() => void run(stop).catch(() => {}), [run, stop])
   const onAnswer = useCallback((id: string, a: ActionAnswer) => answer(id, a), [answer])
 
@@ -235,6 +325,10 @@ export function Conversation({ sessionId }: { sessionId: string }) {
 
   const running = state.status === 'in_progress' || state.status === 'requires_action'
   const streaming = state.items.some((v) => v.kind === 'assistant' && v.streaming)
+  const loading = !loaded || !ready
+  // The history is still arriving, the message is being queued, or the model is thinking
+  // before its first visible output. A closed stream or an unavailable server shows its own notice.
+  const waiting = !closedReason && !failure?.unavailable && (loading || ((sent || state.status === 'in_progress') && !liveActivity))
   const retries = retryTexts(state.items)
   // A chat with nothing in it yet has no trajectory to switch to (unknown while its history loads).
   const blank = loaded && state.items.length === 0 && state.turns.length === 0
@@ -259,11 +353,17 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             xstyle={styles.chat}
             density="spacious"
             composer={
-              <Composer
+              <VStack gap={2}>
+                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} />}
+                <Composer
                 onSend={onSend}
                 onStop={onStop}
                 isRunning={running}
                 autoFocus
+                commands={commands}
+                dshCommands={dshCommands}
+                appHandlers={appHandlers}
+                onRunCommand={onRunCommand}
                 settings={{
                   models: modelOptions,
                   model: settings.model,
@@ -273,7 +373,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   onEffortChange: settings.setEffort,
                 }}
                 status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
-              />
+                />
+              </VStack>
             }
           >
             <SubagentItems.Provider value={subagentItems}>
@@ -290,6 +391,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                     />
                   )
                 })}
+                {waiting && <Thinking label={loading ? 'Loading conversation…' : 'Agentry is thinking…'} />}
               </ChatMessageList>
             </SubagentItems.Provider>
           </ChatLayout>
@@ -300,6 +402,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           </VStack>
         )}
       </VStack>
+      <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
     </VStack>
   )
 }

@@ -12,6 +12,11 @@ import { summarizeArgs } from '@/ui/chat/ToolCard'
 import { ErrorBanner } from '@/ui/errors/ErrorBanner'
 import live from '../fixtures/live/web-search.json'
 
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
+}))
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()

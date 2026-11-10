@@ -321,3 +321,29 @@ describe('stripReasoning (the backend repeats a step\'s thinking in front of its
     expect(s.items.find((v) => v.id === 'item_msg_5')).toMatchObject({ kind: 'assistant', text: 'Okay, the answer is 4.' })
   })
 })
+
+describe('slash command results', () => {
+  const item = { id: 'item_cmd_7', type: 'slash_command', command_id: 'c1', name: 'compact', status: 'completed', text: 'Compacted', turn_id: null } as const
+
+  it('shows a turn-less item from the stream as a command view', () => {
+    const s = applyEvent(initialState(SID), { id: '5', event: { type: 'agent.session.item.done', event_id: 'e5', session_id: SID, turn_id: null, item } })
+    expect(s.items).toEqual([{ kind: 'command', id: 'item_cmd_7', name: 'compact', ok: true, text: 'Compacted' }])
+  })
+
+  it('does not double an item that arrives from both the response and the log', () => {
+    const event = { type: 'agent.session.item.done', event_id: 'x', session_id: SID, turn_id: null, item } as const
+    let s = applyEvent(initialState(SID), { event })
+    s = applyItems(s, [item])
+    expect(s.items.filter((v) => v.kind === 'command')).toHaveLength(1)
+  })
+
+  it('marks a failed command and keeps its arguments', () => {
+    const s = applyItems(initialState(SID), [{ ...item, name: 'feedback', args: 'x', status: 'failed', text: 'Usage' }])
+    expect(s.items).toEqual([{ kind: 'command', id: 'item_cmd_7', name: 'feedback', args: 'x', ok: false, text: 'Usage' }])
+  })
+
+  it('places a turn-less item after the items logged before it', () => {
+    const s = applyItems(initialState(SID), [...TURN1_ITEMS, item])
+    expect(s.items.at(-1)).toMatchObject({ kind: 'command' })
+  })
+})

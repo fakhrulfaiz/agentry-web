@@ -79,6 +79,50 @@ test('reopening a chat shows the full history once: user, tool and assistant', a
   await expect(assistantMessages(page)).toHaveText(/^I searched and found 3 results: alpha, beta and gamma\.$/)
 })
 
+test('a sent message shows a thinking row until the reply starts', async ({ page }) => {
+  await signIn(page)
+  await startChat(page, 'Hello there')
+  await expect(assistantMessages(page).last()).toContainText('You said: Hello there')
+  // The first turn is over before the next message, so the slow reply is its own turn.
+  await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0)
+
+  await sendInChat(page, 'slow reply please')
+  await expect(page.getByTestId('thinking')).toContainText('Agentry is thinking…')
+  await expect(assistantMessages(page).last()).toContainText('word1')
+  await expect(page.getByTestId('thinking')).toHaveCount(0)
+})
+
+test('a long reopened chat has one scrollbar and keeps the composer at the bottom', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 700 })
+  await signIn(page)
+  await startChat(page, 'Use a tool please')
+  await expect(assistantMessages(page)).toHaveCount(1)
+
+  // A history long enough for the hidden Trajectory view to outgrow the pane.
+  for (let i = 0; i < 6; i++) {
+    await sendInChat(page, `Use a tool please number ${i}`)
+    await expect(assistantMessages(page)).toHaveCount(i + 2)
+    await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0)
+  }
+
+  await page.reload()
+  await expect(assistantMessages(page).last()).toContainText('I searched and found 3 results')
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const main = document.querySelector('[role="main"]')
+        const pane = document.querySelector('[data-testid="trajectory-pane"]')
+        const box = document.querySelector('[aria-label="Message input"]')?.getBoundingClientRect()
+        return {
+          pageScrolls: main === null || main.scrollHeight > main.clientHeight + 1,
+          paneOverflows: pane === null || pane.scrollHeight > pane.clientHeight + 1,
+          composerAtBottom: box !== undefined && box.bottom <= window.innerHeight + 1 && box.top >= 0,
+        }
+      }),
+    )
+    .toEqual({ pageScrolls: false, paneOverflows: false, composerAtBottom: true })
+})
+
 /** Elements in the conversation that stick out of its column, and whether the page scrolls sideways. */
 async function overflow(page: Page) {
   return page.evaluate(() => {
@@ -254,6 +298,8 @@ test('Stop interrupts a slow turn mid-stream', async ({ page }) => {
   await expect(assistantMessages(page).last()).toContainText('word3')
   await page.getByRole('button', { name: 'Stop' }).click()
   await expect(page.getByText('Stopped')).toBeVisible()
+  // The waiting row ends with the turn; the notice explains what happened.
+  await expect(page.getByTestId('thinking')).toHaveCount(0)
   const text = await assistantMessages(page).last().textContent()
   await page.waitForTimeout(1500)
   await expect(assistantMessages(page).last()).toHaveText(text ?? '')

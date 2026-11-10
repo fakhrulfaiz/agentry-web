@@ -19,6 +19,9 @@ const PANEL_WIDTH = 360
 
 const styles = stylex.create({
   frame: { flexGrow: 1, minBlockSize: 0, minInlineSize: 0 },
+  // The page owns the slot's height: content that scrolls itself (the ledger) shrinks
+  // to it instead of growing past the shell and adding a second page scrollbar.
+  content: { display: 'flex', flexDirection: 'column', minBlockSize: 0 },
 })
 
 export function SidePanelLayout({
@@ -41,7 +44,11 @@ export function SidePanelLayout({
       <Layout
         xstyle={styles.frame}
         padding={0}
-        content={children}
+        content={
+          <LayoutContent isScrollable={false} padding={0} xstyle={styles.content}>
+            {children}
+          </LayoutContent>
+        }
         end={
           isOpen && !narrow ? (
             <LayoutPanel width={PANEL_WIDTH} hasDivider isScrollable label={title} role="complementary" padding={4}>
