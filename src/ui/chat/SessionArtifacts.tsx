@@ -26,7 +26,7 @@ import { api } from '@/api/client'
 import type { Artifact } from '@/api/types'
 import { artifactContentUrl, deliverableEntries } from '@/artifacts/artifact'
 import { artifactKind, artifactUrl, contentTypeForName, previewMode, type ArtifactKind } from '@/artifacts/kind'
-import { ArtifactPreview } from '@/ui/artifacts/ArtifactPreview'
+import { usePreviewPanel } from '@/preview/store'
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>
 
@@ -137,7 +137,7 @@ export function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () 
 /** `idle` is false while a turn runs; the list is re-read each time it turns true again. */
 export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionId: string; enabled: boolean; idle?: boolean }) {
   const [items, setItems] = useState<Artifact[]>([])
-  const [selected, setSelected] = useState<Artifact | null>(null)
+  const { actions } = usePreviewPanel()
 
   const load = useCallback(async () => {
     try {
@@ -178,14 +178,9 @@ export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionI
     <>
       <ul {...stylex.props(styles.grid)} aria-label="Files in this chat" data-testid="chat-artifacts">
         {items.map((artifact) => (
-          <FileCard key={artifact.id} artifact={artifact} onOpen={() => setSelected(artifact)} />
+          <FileCard key={artifact.id} artifact={artifact} onOpen={() => actions.openFile(artifact.path)} />
         ))}
       </ul>
-      <ArtifactPreview
-        artifact={selected}
-        onClose={() => setSelected(null)}
-        onOpenChat={() => window.location.assign(`/c/${encodeURIComponent(sessionId)}`)}
-      />
     </>
   )
 }

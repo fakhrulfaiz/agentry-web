@@ -20,6 +20,7 @@
  * (409 `session_setting_not_live`) keeps the draft, shows Agentry's message and
  * puts the menus back.
  */
+import { Button } from '@astryxdesign/core/Button'
 import { Banner } from '@astryxdesign/core/Banner'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
@@ -41,6 +42,8 @@ import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { ChatTitleMenu } from '@/ui/shell/ChatTitleMenu'
 import { RenameDialog, SESSIONS_CHANGED, type SessionRef } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
+import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
+import { PreviewPanel } from '@/ui/preview/PreviewPanel'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
 import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
@@ -75,6 +78,16 @@ const styles = stylex.create({
   // Both views stay mounted; the inactive one keeps its box (and its scroll position) but is not shown.
   inactive: { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' },
 })
+
+/** Files button in the chat header; also opens `?file=<path>` (from the Artifacts page) once. */
+function PreviewControls() {
+  const { actions } = usePreviewPanel()
+  useEffect(() => {
+    const file = new URLSearchParams(window.location.search).get('file')
+    if (file) actions.openFile(file)
+  }, [actions])
+  return <Button label="Files" size="sm" variant="ghost" onClick={actions.showFiles} />
+}
 
 const CLOSED_NOTICE: Record<ClosedReason, { title: string; description: string }> = {
   forbidden: {
@@ -341,11 +354,13 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const shown: View = blank ? 'chat' : view
 
   return (
+    <PreviewPanelProvider sessionId={session?.id ?? null}>
     <VStack xstyle={styles.page}>
       <TopBar
         title={session && !blank ? <ChatTitleMenu sessionId={session.id} metadata={session.metadata} /> : undefined}
         end={
           <HStack gap={2} vAlign="center">
+            {session && !blank && <PreviewControls />}
             <ConnectionPill connection={connection} />
           </HStack>
         }
@@ -353,6 +368,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       />
       {closedReason && <Banner status="warning" container="section" {...CLOSED_NOTICE[closedReason]} />}
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={() => failure.retry?.()} />}
+      <HStack gap={0} xstyle={styles.chat}>
       <VStack xstyle={styles.views}>
         <VStack xstyle={[styles.chat, shown !== 'chat' && styles.inactive]} inert={shown !== 'chat'} data-testid="chat-pane">
           <ChatLayout
@@ -428,7 +444,10 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           </VStack>
         )}
       </VStack>
+      {session && <PreviewPanel sessionId={session.id} idle={!running} />}
+      </HStack>
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
     </VStack>
+    </PreviewPanelProvider>
   )
 }

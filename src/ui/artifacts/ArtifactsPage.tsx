@@ -45,7 +45,6 @@ import {
 } from "@/artifacts/kind";
 import { seedHref, type ArtifactSeedId } from "@/artifacts/seed";
 import { goToLogin } from "@/chat/use-conversation";
-import { ArtifactPreview } from "./ArtifactPreview";
 
 /** Width of the page column, as on claude.ai. */
 const COLUMN_WIDTH = 880;
@@ -214,7 +213,6 @@ export function ArtifactsPage() {
   const [cursor, setCursor] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [selected, setSelected] = useState<Artifact | null>(null);
 
   const load = useCallback(async (after?: string) => {
     try {
@@ -280,7 +278,11 @@ export function ArtifactsPage() {
             <ArtifactCard
               key={artifact.id}
               artifact={artifact}
-              onOpen={() => setSelected(artifact)}
+              onOpen={() =>
+                router.push(
+                  `/c/${encodeURIComponent(artifact.session_id)}?file=${encodeURIComponent(artifact.path)}`,
+                )
+              }
             />
           ))}
         </div>
@@ -351,13 +353,6 @@ export function ArtifactsPage() {
             />
           </HStack>
         )}
-        <ArtifactPreview
-          artifact={selected}
-          onClose={() => setSelected(null)}
-          onOpenChat={(sessionId) =>
-            router.push(`/c/${encodeURIComponent(sessionId)}`)
-          }
-        />
       </VStack>
     </div>
   );

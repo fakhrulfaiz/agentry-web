@@ -36,14 +36,8 @@ describe('SessionArtifacts', () => {
     )
     await user.click(within(strip).getByRole('button', { name: 'File artificial-intelligence.docx' }))
 
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('artificial-intelligence.docx')).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: 'Download' })).toHaveAttribute(
-      'href',
-      '/api/agentry/agents/sessions/sesn_1/artifacts/artificial-intelligence.docx?download=1',
-    )
-    // The preview asks for the bytes through the BFF.
-    expect(within(dialog).getByText(/No preview is available/)).toBeInTheDocument()
+    // Clicking a card opens the chat's preview panel (a no-op without a provider), not a dialog.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('uses the delivery description as the card subtitle and drops files outside the workspace', async () => {

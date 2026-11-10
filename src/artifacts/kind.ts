@@ -61,7 +61,7 @@ export function isPresentedArtifact(path: string): boolean {
   return !segments.some((segment) => segment.startsWith('.') || segment === '__pycache__')
 }
 
-const CODE_EXTENSIONS = new Set([
+export const CODE_EXTENSIONS = new Set([
   'md', 'txt', 'json', 'yaml', 'yml', 'xml', 'csv', 'log', 'js', 'jsx', 'ts', 'tsx', 'py', 'sh',
   'html', 'css', 'sql', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'rb', 'toml',
 ])

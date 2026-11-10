@@ -123,39 +123,13 @@ describe('ArtifactsPage', () => {
     await screen.findByText('No artifacts yet.')
   })
 
-  it('previews a PDF with Open chat and Download', async () => {
+  it('opens the chat with the file in its preview panel', async () => {
     apiMock.listSessionDeliverables.mockImplementation(async () =>
       artifacts([entry('summary.pdf', '2026-11-10T09:00:00.000Z')]),
     )
     render(<ArtifactsPage />)
     const user = userEvent.setup()
     await user.click(await screen.findByText('summary.pdf'))
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByTitle('summary.pdf')).toHaveAttribute(
-      'src',
-      '/api/agentry/agents/sessions/sesn_1/artifacts/summary.pdf',
-    )
-    expect(within(dialog).getByRole('link', { name: 'Download' })).toHaveAttribute(
-      'href',
-      '/api/agentry/agents/sessions/sesn_1/artifacts/summary.pdf?download=1',
-    )
-    await user.click(within(dialog).getByRole('button', { name: 'Open chat' }))
-    expect(nav.push).toHaveBeenCalledWith('/c/sesn_1')
-  })
-
-  it('previews text in a pre and offers download only for other types', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('# Notes'))
-    vi.stubGlobal('fetch', fetchMock)
-    apiMock.listSessionDeliverables.mockImplementation(async () =>
-      artifacts([entry('notes.md', '2026-11-10T09:00:00.000Z'), entry('blob.bin', '2026-11-10T08:00:00.000Z')]),
-    )
-    render(<ArtifactsPage />)
-    const user = userEvent.setup()
-    await user.click(await screen.findByText('notes.md'))
-    await waitFor(() => expect(screen.getByTestId('artifact-text')).toHaveTextContent('# Notes'))
-    await user.keyboard('{Escape}')
-    await user.click(await screen.findByText('blob.bin'))
-    expect(await screen.findByText(/No preview is available/)).toBeInTheDocument()
-    vi.unstubAllGlobals()
+    expect(nav.push).toHaveBeenCalledWith('/c/sesn_1?file=summary.pdf')
   })
 })
