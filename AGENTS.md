@@ -15,6 +15,15 @@ Read this first in every session. `CLAUDE.md` is a symlink to this file; edit `A
   - Plan: `docs/superpowers/plans/2026-11-09-f1-1-chat-fidelity.md`
 - Later specs: F2 admin, F3 artifacts/files, F4 trace inspector + subagent views (F4 also: keyboard access for the trajectory overview).
 
+## Working-tree provenance (2026-11-10)
+
+Parts of the current uncommitted work under `main` were authored by a different agent session (skills/commands `/` menu, the Artifacts page, the scheduled-list restyle and wire-type updates, fonts, the thinking row and single-scrollbar fixes — see their CHANGELOG entries). Commits per the user's call come later; until then:
+
+- Scheduled tasks detail page (`/scheduled/{id}`, `src/ui/scheduled/ScheduleDetail.tsx` + route + `tests/component/schedule-detail.spec.tsx`): authored 2026-11-10 in a separate session (mockups: claude.ai detail + DeepSeek automation panel).
+- `tests/component/slash-menu.spec.tsx` mock typing was fixed by the detail-page session so `pnpm typecheck` passes.
+- Artifacts rewiring (2026-11-10, this session): the other agent's Artifacts page was built against the F3 cowork spec (`GET /v1/agents/artifacts`), which the backend never implemented; `src/api/client.ts` (`listSessionArtifacts`), `src/api/types.ts` (`SessionArtifactEntry/List`, slimmed `Artifact`), `src/artifacts/{artifact.ts,kind.ts}`, `src/ui/artifacts/*`, `src/ui/chat/SessionArtifacts.tsx`, `src/server/{allowlist.ts,artifact-bytes.ts}` and `app/api/agentry/agents/sessions/[id]/artifacts/[...path]/route.ts` (the old `agents/artifacts/[id]/content` route is deleted) now speak the backend's per-session endpoints. Known suite flakiness: `tests/component/reveal.spec.tsx` and `tests/component/schedule-detail.spec.tsx` fail timing-sensitive tests only under full-run parallelism — `pnpm vitest run --no-file-parallelism` shows 441/441 pass.
+- Known pre-existing failures (other session's in-progress work, left untouched): `tests/component/cards.spec.tsx` 403 test (its `next/navigation` mock predates `Conversation`'s `useRouter` use) and `tests/component/trajectory.spec.tsx` draft test (composer hidden behind the new `ready` gating while the spec never delivers a session status).
+
 ## Resume / start the F1 plan
 
 In a Claude Code session opened in `~/code/agentry-web`, say:
@@ -59,7 +68,7 @@ Progress is tracked in the plan's ledger under `.superpowers/sdd/` (git-ignored)
 
 Cowork capabilities beyond F1. Backend pieces live in `~/code/dsh-agents-api` (mirrored in its `AGENTS.md`).
 
-1. **Skill picker.** `/name` in a message already invokes a DSH user-invocable skill (`dsh-tool-skill` scans user messages). Add a backend skill-catalog endpoint and a `/` autocomplete menu in the composer. Skills come from `<workspace>/.agents/skills`, `$DSH_HOME/skills`, `~/.agents/skills`, a configured directory, and `skill-office`.
+1. **Skill picker.** `/name` in a message already invokes a DSH user-invocable skill (`dsh-tool-skill` scans user messages). Backend skill-catalog endpoint done 2026-11-10 (`GET /v1/agents/skills`); remaining: the `/` autocomplete menu in the composer. Skills come from `<workspace>/.agents/skills`, `$DSH_HOME/skills`, `~/.agents/skills`, a configured directory, and `skill-office`.
 2. **Screenshots in tool cards.** Browser tools return images through the tool-result pipeline and attachment store. Add a backend attachment/image endpoint and image rendering in tool cards (F4 scope).
 3. **Browser automation.** Mount `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` (or the Chrome DevTools / Stagehand variant) in the Agentry profile (backend Task 8).
 4. **Vision-capable model route.** DSH sends screenshots to the model only on an image-capable route; non-vision routes get a diagnostic. Needed for "review the screenshot" workflows.
@@ -70,6 +79,7 @@ Cowork capabilities beyond F1. Backend pieces live in `~/code/dsh-agents-api` (m
    - Session list filtering by metadata (starred chats beyond the loaded pages) and a metadata patch instead of replace-the-whole-map (concurrent writes can drop a key).
    - Done: model and reasoning effort on follow-up messages (`model`, `reasoning.effort` on `agent.session.input.message`) reach the running agent; verified against the live backend and enabled in the open-chat composer (a refused change answers 409 `session_setting_not_live`). There is still no way to clear a stored effort back to the agent's default, so Auto is offered only while none is stored.
    - An unknown `model` on `agent.session.input.message` is accepted (200), stored and queued; the turn then fails at the provider ("supported API model names are …") instead of the documented 409 `session_setting_not_live` (seen live 2026-11-09; an unsupported effort does answer 409). The composer only offers configured models, so this needs a hand-made request or a stale model list to hit.
+7. **Owner-filtered schedule tools:** `schedule_list/view/edit` see every Host task; filter by owner (upstream DSH change or replacement tool) before multi-user containers. (Backend AGENTS.md item 6.)
 
 ## Astryx conventions (installed by `pnpm exec astryx init`)
 
