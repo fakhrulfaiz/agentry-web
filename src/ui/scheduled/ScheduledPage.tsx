@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * The Scheduled page: Yours (a dense table of the user's tasks, or the empty
@@ -6,199 +6,428 @@
  * chat lives at `/scheduled/{id}`; the New task menu splits into the chat seed
  * and the manual form.
  */
-import { Banner } from '@astryxdesign/core/Banner'
-import { Button } from '@astryxdesign/core/Button'
-import { Center } from '@astryxdesign/core/Center'
-import { ClickableCard } from '@astryxdesign/core/ClickableCard'
-import { Divider } from '@astryxdesign/core/Divider'
-import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
-import { EmptyState } from '@astryxdesign/core/EmptyState'
-import { HStack } from '@astryxdesign/core/HStack'
-import { Icon } from '@astryxdesign/core/Icon'
-import { StackItem } from '@astryxdesign/core/Layout'
-import { Link } from '@astryxdesign/core/Link'
-import { Skeleton } from '@astryxdesign/core/Skeleton'
-import { Tab, TabList } from '@astryxdesign/core/TabList'
-import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } from '@astryxdesign/core/Table'
-import { Text } from '@astryxdesign/core/Text'
-import { Timestamp } from '@astryxdesign/core/Timestamp'
-import { VStack } from '@astryxdesign/core/VStack'
-import { ClockIcon } from '@heroicons/react/24/outline'
-import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, isSignedOut } from '@/api/client'
-import type { AgentSchedule, ScheduleStatus } from '@/api/types'
-import { goToLogin } from '@/chat/use-conversation'
-import { describeTiming } from '@/schedule/describe'
-import { browserTimeZone, formToTiming } from '@/schedule/form'
-import { TEMPLATES, templateValues, type ScheduleTemplate } from '@/schedule/templates'
-import { SESSIONS_CHANGED } from '@/ui/shell/session-actions'
-import { TopBar } from '@/ui/shell/TopBar'
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { Center } from "@astryxdesign/core/Center";
+import { ClickableCard } from "@astryxdesign/core/ClickableCard";
+import { Divider } from "@astryxdesign/core/Divider";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Icon } from "@astryxdesign/core/Icon";
+import { StackItem } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
+import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Switch } from "@astryxdesign/core/Switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+} from "@astryxdesign/core/Table";
+import { Heading } from "@astryxdesign/core/Heading";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { ToggleButton } from "@astryxdesign/core/ToggleButton";
+import { Timestamp } from "@astryxdesign/core/Timestamp";
+import { VStack } from "@astryxdesign/core/VStack";
+import {
+  CalendarDaysIcon,
+  ClockIcon,
+  EyeIcon,
+  LightBulbIcon,
+  MagnifyingGlassIcon,
+  SunIcon,
+} from "@heroicons/react/24/outline";
+import type { ComponentType, SVGProps } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError, isSignedOut } from "@/api/client";
+import type { AgentSchedule, ScheduleStatus } from "@/api/types";
+import { goToLogin } from "@/chat/use-conversation";
+import { describeTiming } from "@/schedule/describe";
+import { browserTimeZone, formToTiming } from "@/schedule/form";
+import {
+  TEMPLATES,
+  templateValues,
+  type ScheduleTemplate,
+} from "@/schedule/templates";
+import { DeleteScheduleDialog } from "@/ui/scheduled/ScheduleDialogs";
+import { SESSIONS_CHANGED } from "@/ui/shell/session-actions";
 
-type View = 'yours' | 'templates'
+type View = "yours" | "templates";
 
-const STATUS_LABEL: Record<ScheduleStatus, string> = {
-  active: 'Active',
-  paused: 'Paused',
-  ended: 'Ended',
-}
+/** Width of the page column, as on claude.ai. */
+const COLUMN_WIDTH = 880;
+
+const TEMPLATE_ICONS: Record<
+  ScheduleTemplate["id"],
+  ComponentType<SVGProps<SVGSVGElement>>
+> = {
+  "daily-briefing": SunIcon,
+  "weekly-review": CalendarDaysIcon,
+  "monitor-topic": EyeIcon,
+  "content-ideas": LightBulbIcon,
+};
 
 const scheduleLine = (template: ScheduleTemplate): string =>
-  describeTiming(formToTiming(templateValues(template, browserTimeZone())))
+  describeTiming(formToTiming(templateValues(template, browserTimeZone())));
 
-function TemplateGrid({ onPick }: { onPick: (template: ScheduleTemplate) => void }) {
-  const rows: ScheduleTemplate[][] = []
-  for (let index = 0; index < TEMPLATES.length; index += 2) rows.push(TEMPLATES.slice(index, index + 2))
+function TemplateGrid({
+  onPick,
+}: {
+  onPick: (template: ScheduleTemplate) => void;
+}) {
+  const rows: ScheduleTemplate[][] = [];
+  for (let index = 0; index < TEMPLATES.length; index += 2)
+    rows.push(TEMPLATES.slice(index, index + 2));
   return (
     <VStack gap={3}>
       {rows.map((row) => (
-        <HStack key={row.map((template) => template.id).join('-')} gap={3} vAlign="stretch">
+        <HStack
+          key={row.map((template) => template.id).join("-")}
+          gap={3}
+          vAlign="stretch"
+        >
           {row.map((template) => (
             <StackItem key={template.id} size="fill">
-              <ClickableCard label={template.title} onClick={() => onPick(template)} width="100%">
-                <VStack gap={1}>
-                  <Text weight="medium">{template.title}</Text>
-                  <Text type="supporting" color="secondary">
-                    {template.description}
-                  </Text>
-                  <Text type="supporting" color="secondary">
-                    {scheduleLine(template)}
-                  </Text>
-                </VStack>
+              <ClickableCard
+                label={template.title}
+                onClick={() => onPick(template)}
+                width="100%"
+              >
+                <HStack gap={3} vAlign="start">
+                  <Icon icon={TEMPLATE_ICONS[template.id]} color="secondary" />
+                  <VStack gap={1}>
+                    <Text weight="medium">{template.title}</Text>
+                    <Text type="supporting" color="secondary">
+                      {template.description}
+                    </Text>
+                    <HStack gap={1} vAlign="center">
+                      <Icon icon={ClockIcon} size="sm" color="secondary" />
+                      <Text type="supporting" color="secondary">
+                        {scheduleLine(template)}
+                      </Text>
+                    </HStack>
+                  </VStack>
+                </HStack>
               </ClickableCard>
             </StackItem>
           ))}
         </HStack>
       ))}
     </VStack>
-  )
+  );
 }
 
 export function ScheduledPage() {
-  const router = useRouter()
-  const [view, setView] = useState<View>('yours')
-  const [schedules, setSchedules] = useState<AgentSchedule[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter();
+  const [view, setView] = useState<View>("yours");
+  const [schedules, setSchedules] = useState<AgentSchedule[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<AgentSchedule | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const page = await api.listSchedules()
-      setSchedules(page.data)
-      setError(null)
+      const page = await api.listSchedules();
+      setSchedules(page.data);
+      setError(null);
     } catch (err) {
       if (err instanceof ApiError && isSignedOut(err)) {
-        goToLogin()
-        return
+        goToLogin();
+        return;
       }
-      setError(err instanceof ApiError ? err.message : 'Could not load scheduled tasks.')
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not load scheduled tasks.",
+      );
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    void load()
-    const onChange = () => void load()
-    window.addEventListener(SESSIONS_CHANGED, onChange)
-    return () => window.removeEventListener(SESSIONS_CHANGED, onChange)
-  }, [load])
+    void load();
+    const onChange = () => void load();
+    window.addEventListener(SESSIONS_CHANGED, onChange);
+    return () => window.removeEventListener(SESSIONS_CHANGED, onChange);
+  }, [load]);
+
+  const replaceRow = (next: AgentSchedule) =>
+    setSchedules((rows) =>
+      rows ? rows.map((row) => (row.id === next.id ? next : row)) : rows,
+    );
+
+  const explain = (err: unknown, fallback: string) => {
+    if (err instanceof ApiError && isSignedOut(err)) {
+      goToLogin();
+      return;
+    }
+    setActionError(err instanceof ApiError ? err.message : fallback);
+  };
+
+  const toggle = async (task: AgentSchedule) => {
+    setActionError(null);
+    setPending(task.id);
+    const nextStatus: ScheduleStatus =
+      task.status === "active" ? "paused" : "active";
+    setSchedules((rows) =>
+      rows
+        ? rows.map((row) =>
+            row.id === task.id ? { ...row, status: nextStatus } : row,
+          )
+        : rows,
+    );
+    try {
+      replaceRow(
+        task.status === "active"
+          ? await api.pauseSchedule(task.id)
+          : await api.resumeSchedule(task.id),
+      );
+    } catch (err) {
+      replaceRow(task);
+      explain(err, "Could not update the task.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const runNow = async (task: AgentSchedule) => {
+    setActionError(null);
+    setPending(task.id);
+    try {
+      replaceRow(await api.runSchedule(task.id));
+    } catch (err) {
+      explain(err, "Could not start the task.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const deleted = (id: string) =>
+    setSchedules((rows) => (rows ? rows.filter((row) => row.id !== id) : rows));
+
+  const needle = query.trim().toLowerCase();
+  const rows = (schedules ?? []).filter((task) =>
+    needle === "" ? true : task.title.toLowerCase().includes(needle),
+  );
 
   const newTask = (
     <DropdownMenu
-      button={{ label: 'New task', variant: 'primary', size: 'sm' }}
+      button={{ label: "New task", variant: "primary", size: "sm" }}
       items={[
-        { label: 'Create with chat', onClick: () => router.push('/?schedule=1') },
-        { label: 'Set up manually', onClick: () => router.push('/scheduled/new') },
+        {
+          label: "Create with chat",
+          onClick: () => router.push("/?schedule=1"),
+        },
+        {
+          label: "Set up manually",
+          onClick: () => router.push("/scheduled/new"),
+        },
       ]}
       alignment="end"
     />
-  )
+  );
 
-  const pickTemplate = (template: ScheduleTemplate) => router.push(`/scheduled/new?template=${template.id}`)
+  const pickTemplate = (template: ScheduleTemplate) =>
+    router.push(`/scheduled/new?template=${template.id}`);
 
   const content =
     schedules === null && error === null ? (
-      <VStack padding={4} gap={3} data-testid="scheduled-loading">
+      <VStack gap={3} data-testid="scheduled-loading">
         <Skeleton height={44} index={0} />
         <Skeleton height={44} index={1} />
         <Skeleton height={44} index={2} />
       </VStack>
     ) : schedules && schedules.length > 0 ? (
-      <VStack padding={4} gap={3}>
-        <Table density="compact" hasHover>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Name</TableHeaderCell>
-              <TableHeaderCell>Schedule</TableHeaderCell>
-              <TableHeaderCell>Next run</TableHeaderCell>
-              <TableHeaderCell>Status</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {schedules.map((task) => (
-              <TableRow key={task.id}>
-                <TableCell>
-                  <Link href={`/scheduled/${task.id}`}>{task.title}</Link>
-                </TableCell>
-                <TableCell>
-                  <Text type="supporting">{describeTiming(task.timing, undefined, browserTimeZone())}</Text>
-                </TableCell>
-                <TableCell>
-                  {task.next_run_at ? (
-                    <Timestamp value={task.next_run_at} format="date_time" type="supporting" />
-                  ) : (
-                    <Text type="supporting">—</Text>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Text type="supporting">{STATUS_LABEL[task.status]}</Text>
-                </TableCell>
+      <VStack gap={3}>
+        <VStack maxWidth={360}>
+          <TextInput
+            label="Search tasks"
+            isLabelHidden
+            type="search"
+            size="sm"
+            placeholder="Search tasks"
+            startIcon={MagnifyingGlassIcon}
+            value={query}
+            onChange={setQuery}
+            hasClear
+          />
+        </VStack>
+        {rows.length === 0 ? (
+          <Text type="supporting">No tasks match “{query.trim()}”.</Text>
+        ) : (
+          <Table density="compact" hasHover>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>Name</TableHeaderCell>
+                <TableHeaderCell>Schedule</TableHeaderCell>
+                <TableHeaderCell>Next run</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((task) => (
+                <TableRow key={task.id}>
+                  <TableCell>
+                    <Link href={`/scheduled/${task.id}`}>{task.title}</Link>
+                  </TableCell>
+                  <TableCell>
+                    <Text type="supporting">
+                      {describeTiming(
+                        task.timing,
+                        undefined,
+                        browserTimeZone(),
+                      )}
+                    </Text>
+                  </TableCell>
+                  <TableCell>
+                    {task.next_run_at ? (
+                      <Timestamp
+                        value={task.next_run_at}
+                        format="date_time"
+                        type="supporting"
+                      />
+                    ) : (
+                      <Text type="supporting">—</Text>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {task.status === "ended" ? (
+                      <Text type="supporting">Ended</Text>
+                    ) : (
+                      <Switch
+                        label={`${task.status === "active" ? "Pause" : "Resume"} ${task.title}`}
+                        value={task.status === "active"}
+                        onChange={() => void toggle(task)}
+                        isLabelHidden
+                        size="sm"
+                        isDisabled={pending === task.id}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <MoreMenu
+                      label={`More options for ${task.title}`}
+                      size="sm"
+                      alignment="end"
+                      items={[
+                        { label: "Run now", onClick: () => void runNow(task) },
+                        {
+                          label: "Edit",
+                          onClick: () =>
+                            router.push(`/scheduled/${task.id}/edit`),
+                        },
+                        { type: "divider" },
+                        {
+                          label: "Delete",
+                          variant: "destructive",
+                          onClick: () => setDeleting(task),
+                        },
+                      ]}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </VStack>
     ) : (
-      <Center axis="both" padding={8}>
-        <VStack gap={4} width="100%" maxWidth={720} hAlign="center">
+      <Center axis="both" paddingBlock={8}>
+        <VStack gap={4} width="100%" hAlign="center">
           <EmptyState
             icon={<Icon icon={ClockIcon} size="lg" color="secondary" />}
             title="No scheduled tasks yet."
             description="Set one up yourself, or start from a template below."
-            actions={<Button label="Set up manually" onClick={() => router.push('/scheduled/new')} />}
+            actions={
+              <Button
+                label="Set up manually"
+                onClick={() => router.push("/scheduled/new")}
+              />
+            }
           />
           <Divider label="Templates" />
           <TemplateGrid onPick={pickTemplate} />
         </VStack>
       </Center>
-    )
+    );
 
   return (
-    <VStack>
-      <TopBar
-        title="Scheduled tasks"
-        end={newTask}
-        tabs={
-          <TabList value={view} onChange={(value) => setView(value as View)} size="sm" hasDivider>
-            <Tab value="yours" label="Yours" />
-            <Tab value="templates" label="Templates" />
-          </TabList>
-        }
-      />
-      {error !== null && (
-        <VStack padding={4}>
-          <Banner
-            status="error"
-            title={error}
-            endContent={<Button label="Retry" size="sm" onClick={() => void load()} />}
-          />
-        </VStack>
-      )}
-      {view === 'templates' ? (
-        <VStack padding={4}>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: COLUMN_WIDTH,
+        margin: "0 auto",
+        padding: "24px 16px",
+      }}
+    >
+      <VStack gap={4}>
+        <Heading level={1} type="display-2">
+          Scheduled tasks
+        </Heading>
+        <HStack gap={3} vAlign="center">
+          <StackItem size="fill">
+            <HStack
+              gap={1}
+              vAlign="center"
+              role="group"
+              aria-label="Scheduled tasks view"
+            >
+              <ToggleButton
+                label="Yours"
+                size="sm"
+                isPressed={view === "yours"}
+                onPressedChange={() => setView("yours")}
+              />
+              <ToggleButton
+                label="Templates"
+                size="sm"
+                isPressed={view === "templates"}
+                onPressedChange={() => setView("templates")}
+              />
+            </HStack>
+          </StackItem>
+          {newTask}
+        </HStack>
+        {error !== null && (
+          <VStack>
+            <Banner
+              status="error"
+              title={error}
+              endContent={
+                <Button label="Retry" size="sm" onClick={() => void load()} />
+              }
+            />
+          </VStack>
+        )}
+        {actionError !== null && (
+          <VStack>
+            <Banner
+              status="error"
+              title={actionError}
+              isDismissable
+              onDismiss={() => setActionError(null)}
+            />
+          </VStack>
+        )}
+        {view === "templates" ? (
           <TemplateGrid onPick={pickTemplate} />
-        </VStack>
-      ) : (
-        content
-      )}
-    </VStack>
-  )
+        ) : (
+          content
+        )}
+        <DeleteScheduleDialog
+          schedule={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={deleted}
+        />
+      </VStack>
+    </div>
+  );
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSchedule } from '@/api/types'
@@ -12,7 +12,13 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: nav.push, refresh: vi.fn(), replace: vi.fn() }),
 }))
 
-const apiMock = vi.hoisted(() => ({ listSchedules: vi.fn() }))
+const apiMock = vi.hoisted(() => ({
+  listSchedules: vi.fn(),
+  pauseSchedule: vi.fn(),
+  resumeSchedule: vi.fn(),
+  runSchedule: vi.fn(),
+  deleteSchedule: vi.fn(),
+}))
 vi.mock('@/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/client')>()),
   api: apiMock,
@@ -52,7 +58,8 @@ const page = (data: AgentSchedule[]) => ({
 
 beforeEach(() => {
   nav.push.mockReset()
-  apiMock.listSchedules.mockReset()
+  for (const fn of Object.values(apiMock)) fn.mockReset()
+  auth.goToLogin.mockReset()
 })
 afterEach(() => {
   cleanup()
@@ -70,6 +77,21 @@ describe('ScheduledPage', () => {
     for (const title of ['Daily briefing', 'Weekly review', 'Monitor a topic', 'Content ideas']) {
       expect(screen.getAllByText(title).length).toBeGreaterThan(0)
     }
+  })
+
+  it('switches between Yours and Templates with pressed-state chips', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task()]))
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await screen.findByText('Standup')
+    expect(screen.getByRole('button', { name: 'Yours' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Templates' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(screen.getByRole('button', { name: 'Templates' }))
+    expect(screen.getByRole('button', { name: 'Templates' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('Standup')).not.toBeInTheDocument()
+    expect(screen.getByText('Daily briefing')).toBeInTheDocument()
   })
 
   it('lists the tasks with their schedule copy and a link to the detail page', async () => {
@@ -118,5 +140,101 @@ describe('ScheduledPage', () => {
     apiMock.listSchedules.mockResolvedValue(page([task()]))
     window.dispatchEvent(new CustomEvent(SESSIONS_CHANGED))
     expect(await screen.findByText('Standup')).toBeInTheDocument()
+  })
+
+  it('pauses and resumes a task from its row switch', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task()]))
+    apiMock.pauseSchedule.mockResolvedValue(task({ status: 'paused' }))
+    apiMock.resumeSchedule.mockResolvedValue(task())
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await user.click(await screen.findByRole('switch', { name: 'Pause Standup' }))
+    expect(apiMock.pauseSchedule).toHaveBeenCalledWith('t1')
+    const resume = await screen.findByRole('switch', { name: 'Resume Standup' })
+    expect(resume).not.toBeChecked()
+
+    await user.click(resume)
+    expect(apiMock.resumeSchedule).toHaveBeenCalledWith('t1')
+    expect(await screen.findByRole('switch', { name: 'Pause Standup' })).toBeChecked()
+  })
+
+  it('reverts the switch and explains a failed pause', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task()]))
+    apiMock.pauseSchedule.mockRejectedValue(new ApiError(500, 'http_500', 'Pause failed.'))
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await user.click(await screen.findByRole('switch', { name: 'Pause Standup' }))
+    expect(await screen.findByText('Pause failed.')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Pause Standup' })).toBeChecked()
+  })
+
+  it('runs a task now and shows why it could not start', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task()]))
+    apiMock.runSchedule.mockRejectedValue(new ApiError(409, 'schedule_execution_pending', 'This task is already running.'))
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'More options for Standup' }))
+    const menu = await screen.findByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Run now' }))
+
+    expect(apiMock.runSchedule).toHaveBeenCalledWith('t1')
+    expect(await screen.findByText('This task is already running.')).toBeInTheDocument()
+  })
+
+  it('deletes a task after confirmation', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task()]))
+    apiMock.deleteSchedule.mockResolvedValue({ id: 't1', object: 'agent.schedule.deleted', deleted: true })
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'More options for Standup' }))
+    const menu = await screen.findByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(apiMock.deleteSchedule).toHaveBeenCalledWith('t1')
+    await waitFor(() => expect(screen.queryByText('Standup')).not.toBeInTheDocument())
+    expect(await screen.findByText('No scheduled tasks yet.')).toBeInTheDocument()
+  })
+
+  it('keeps the task when the delete is cancelled', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task()]))
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'More options for Standup' }))
+    const menu = await screen.findByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(apiMock.deleteSchedule).not.toHaveBeenCalled()
+    expect(screen.getByText('Standup')).toBeInTheDocument()
+  })
+
+  it('filters the rows by title', async () => {
+    apiMock.listSchedules.mockResolvedValue(
+      page([task({ id: 't1', title: 'Alpha' }), task({ id: 't2', title: 'Beta', session_id: 'sesn_2', revision: 'r2' })]),
+    )
+    const user = userEvent.setup()
+    render(<ScheduledPage />)
+
+    await screen.findByText('Beta')
+    await user.type(screen.getByRole('searchbox', { name: 'Search tasks' }), 'Alpha')
+
+    expect(screen.getByText('Alpha')).toBeInTheDocument()
+    expect(screen.queryByText('Beta')).not.toBeInTheDocument()
+  })
+
+  it('shows an ended task without a switch', async () => {
+    apiMock.listSchedules.mockResolvedValue(page([task({ status: 'ended', next_run_at: null })]))
+    render(<ScheduledPage />)
+
+    expect(await screen.findByText('Ended')).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })

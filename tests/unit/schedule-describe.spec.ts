@@ -14,12 +14,21 @@ describe('describeTiming', () => {
     ['two weekdays', weekly('09:00:00.000', [1, 3]), 'Mondays and Wednesdays at 9:00 AM'],
     ['three weekdays', weekly('09:00:00.000', [1, 3, 5]), 'Mondays, Wednesdays and Fridays at 9:00 AM'],
     ['daily', { kind: 'daily', daily: { time: '09:00:00.000', time_zone: 'UTC' } }, 'Daily at 9:00 AM'],
-    ['every hour', { kind: 'every', every: { every_seconds: 3600 } }, 'Every hour'],
-    ['every minutes', { kind: 'every', every: { every_seconds: 900 } }, 'Every 15 minutes'],
-    ['every seconds', { kind: 'every', every: { every_seconds: 90 } }, 'Every 90 seconds'],
-    ['after', { kind: 'after', after: { after_seconds: 60 } }, 'Once, 1 minute from now'],
-    ['cron', { kind: 'cron', cron: { expression: '0 9 * * *', time_zone: 'UTC' } }, 'Custom schedule'],
-    ['rrule', { kind: 'rrule', rrule: { rrule: 'RRULE:FREQ=DAILY' } }, 'Custom schedule'],
+    ['every hour', { kind: 'every', every_seconds: 3600 }, 'Every hour'],
+    ['every minutes', { kind: 'every', every_seconds: 900 }, 'Every 15 minutes'],
+    ['every seconds', { kind: 'every', every_seconds: 90 }, 'Every 90 seconds'],
+    ['after', { kind: 'after', after_seconds: 60 }, 'Once, 1 minute from now'],
+    ['cron daily', { kind: 'cron', cron: { expression: '0 9 * * *', time_zone: 'UTC' } }, 'Daily at 9:00 AM'],
+    ['cron weekdays at a wall time', { kind: 'cron', cron: { expression: '0 8 * * 1-5', time_zone: 'UTC' } }, 'Weekdays at 8:00 AM'],
+    ['cron named weekdays', { kind: 'cron', cron: { expression: '0 8 * * MON-FRI', time_zone: 'UTC' } }, 'Weekdays at 8:00 AM'],
+    ['cron one weekday', { kind: 'cron', cron: { expression: '15 14 * * 1', time_zone: 'UTC' } }, 'Every Monday at 2:15 PM'],
+    ['cron two weekdays', { kind: 'cron', cron: { expression: '0 9 * * 1,3', time_zone: 'UTC' } }, 'Mondays and Wednesdays at 9:00 AM'],
+    ['cron every minutes', { kind: 'cron', cron: { expression: '*/15 * * * *', time_zone: 'UTC' } }, 'Every 15 minutes'],
+    ['cron every hours', { kind: 'cron', cron: { expression: '0 */2 * * *', time_zone: 'UTC' } }, 'Every 2 hours'],
+    ['cron with seconds field', { kind: 'cron', cron: { expression: '0 0 8 * * 1-5', time_zone: 'UTC' } }, 'Weekdays at 8:00 AM'],
+    ['cron day-of-month stays custom', { kind: 'cron', cron: { expression: '0 9 1 * *', time_zone: 'UTC' } }, 'Custom schedule'],
+    ['cron hourly at an offset stays custom', { kind: 'cron', cron: { expression: '30 * * * *', time_zone: 'UTC' } }, 'Custom schedule'],
+    ['rrule', { kind: 'rrule', rrule: 'RRULE:FREQ=DAILY' }, 'Custom schedule'],
   ])('%s', (_name, timing, expected) => {
     expect(describeTiming(timing, 'en-US')).toBe(expected)
   })
@@ -28,6 +37,12 @@ describe('describeTiming', () => {
     const timing: ScheduleTiming = { kind: 'at', at: '2026-11-12T07:00:00.000Z' }
     expect(describeTiming(timing, 'en-US', 'UTC')).toBe('Once on Nov 12, 2026 at 7:00 AM')
     expect(describeTiming(timing, 'en-US', 'America/New_York')).toBe('Once on Nov 12, 2026 at 2:00 AM')
+  })
+
+  it('shows a UTC instant in the browser zone by default', () => {
+    const at = '2026-11-12T07:00:00.000Z'
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(describeTiming({ kind: 'at', at }, 'en-US')).toBe(describeTiming({ kind: 'at', at }, 'en-US', zone))
   })
 
   it('accepts times with or without seconds', () => {

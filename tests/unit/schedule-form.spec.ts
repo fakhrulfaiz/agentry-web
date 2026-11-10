@@ -33,7 +33,24 @@ const schedule = (timing: ScheduleTiming): AgentSchedule => ({
 
 describe('formToTiming', () => {
   it('compiles hourly to a one-hour every rule', () => {
-    expect(formToTiming(values({ frequency: 'hourly' }))).toEqual({ kind: 'every', every: { every_seconds: 3600 } })
+    expect(formToTiming(values({ frequency: 'hourly' }))).toEqual({ kind: 'every', every_seconds: 3600 })
+  })
+
+  it('compiles the interval into every hours and minutes rules', () => {
+    expect(formToTiming(values({ frequency: 'hourly', interval: 3 }))).toEqual({ kind: 'every', every_seconds: 10800 })
+    expect(formToTiming(values({ frequency: 'minutes', interval: 5 }))).toEqual({ kind: 'every', every_seconds: 300 })
+  })
+
+  it('rejects an interval below one', () => {
+    for (const interval of [0, -1]) {
+      try {
+        formToTiming(values({ frequency: 'minutes', interval }))
+        throw new Error('expected a rejection')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ScheduleFormError)
+        expect((error as ScheduleFormError).code).toBe('invalid_rule')
+      }
+    }
   })
 
   it('compiles daily with a normalized time and the chosen zone', () => {
@@ -134,7 +151,8 @@ describe('timingToForm', () => {
       { kind: 'weekly', weekly: { time: '16:00:00.000', time_zone: 'Asia/Tokyo', weekdays: [2, 4] } },
       { frequency: 'weekly', time: '16:00', weekdays: [2, 4] },
     ],
-    ['hourly', { kind: 'every', every: { every_seconds: 3600 } }, { frequency: 'hourly' }],
+    ['hourly', { kind: 'every', every_seconds: 3600 }, { frequency: 'hourly', interval: 1 }],
+    ['minutes', { kind: 'every', every_seconds: 300 }, { frequency: 'minutes', interval: 5 }],
     ['custom', { kind: 'cron', cron: { expression: '0 9 * * *', time_zone: 'Asia/Tokyo' } }, { frequency: 'custom', cron: '0 9 * * *' }],
   ])('round-trips %s', (_name, timing, expected) => {
     expect(timingToForm(timing, base)).toMatchObject({ title: 'Keep me', prompt: 'And me', model: 'mock-model', ...expected })
@@ -145,9 +163,15 @@ describe('timingToForm', () => {
     expect(form).toMatchObject({ frequency: 'once', date: '2026-11-13', time: '05:45' })
   })
 
+  it('converts a once instant into the browser zone when the form has none', () => {
+    const form = timingToForm({ kind: 'at', at: '2026-11-12T20:45:00.000Z' }, { ...base, timeZone: '' })
+    expect(form.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
+    expect(form.frequency).toBe('once')
+  })
+
   it('does not throw for kinds the form cannot edit', () => {
-    expect(timingToForm({ kind: 'after', after: { after_seconds: 60 } }, base)).toMatchObject({ frequency: 'custom', timeZone: 'Asia/Tokyo' })
-    expect(timingToForm({ kind: 'rrule', rrule: { rrule: 'RRULE:FREQ=DAILY' } }, base)).toMatchObject({ frequency: 'custom', timeZone: 'Asia/Tokyo' })
+    expect(timingToForm({ kind: 'after', after_seconds: 60 }, base)).toMatchObject({ frequency: 'custom', timeZone: 'Asia/Tokyo' })
+    expect(timingToForm({ kind: 'rrule', rrule: 'RRULE:FREQ=DAILY' }, base)).toMatchObject({ frequency: 'custom', timeZone: 'Asia/Tokyo' })
   })
 
   it('round-trips every timing formToTiming emits', () => {
@@ -156,6 +180,8 @@ describe('timingToForm', () => {
       values({ frequency: 'weekdays' }),
       values({ frequency: 'weekly', weekdays: [3, 5] }),
       values({ frequency: 'hourly' }),
+      values({ frequency: 'hourly', interval: 3 }),
+      values({ frequency: 'minutes', interval: 5 }),
       values({ frequency: 'custom', cron: '0 9 * * 1-5' }),
     ]) {
       const timing = formToTiming(form)

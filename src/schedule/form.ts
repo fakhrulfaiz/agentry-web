@@ -5,14 +5,16 @@
  */
 import type { ScheduleTiming } from '@/api/types'
 
-export type Frequency = 'once' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'custom'
+export type Frequency = 'once' | 'minutes' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'custom'
 
+/** Menu order follows the automation panel's: Weekly, Monday to Friday, Every day, Every N hours/minutes, Once, Custom. */
 export const FREQUENCIES: readonly { value: Frequency; label: string }[] = [
-  { value: 'once', label: 'Once' },
-  { value: 'hourly', label: 'Hourly' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekdays', label: 'Weekdays' },
   { value: 'weekly', label: 'Weekly' },
+  { value: 'weekdays', label: 'Monday to Friday' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'hourly', label: 'Every N hours' },
+  { value: 'minutes', label: 'Every N minutes' },
+  { value: 'once', label: 'Once' },
   { value: 'custom', label: 'Custom' },
 ] as const
 
@@ -22,10 +24,12 @@ export interface ScheduleFormValues {
   frequency: Frequency
   /** `YYYY-MM-DD`, used by `once` only. */
   date: string
-  /** `HH:mm`, used by every kind except hourly. */
+  /** `HH:mm`, used by every kind except hourly and minutes. */
   time: string
   /** ISO weekdays, Monday = 1 … Sunday = 7. */
   weekdays: number[]
+  /** Steps between runs for the `minutes` and `hourly` frequencies. */
+  interval: number
   cron: string
   timeZone: string
   model: string
@@ -38,6 +42,7 @@ export const EMPTY_FORM: ScheduleFormValues = {
   date: '',
   time: '09:00',
   weekdays: [1, 2, 3, 4, 5],
+  interval: 1,
   cron: '',
   timeZone: '',
   model: '',
@@ -136,10 +141,24 @@ function zonedToUtc(date: string, time: string, timeZone: string): Date {
   return new Date(guess)
 }
 
+/**
+ * A whole-number step, at least 1; fractional or missing values refuse to
+ * compile (the drawer's NumberInput already clamps, this is the last line of
+ * defense because the form is also used programmatically).
+ */
+function normalizeInterval(interval: number): number {
+  if (!Number.isInteger(interval) || interval < 1) {
+    throw new ScheduleFormError('invalid_rule', 'Enter an interval of 1 or more.')
+  }
+  return interval
+}
+
 export function formToTiming(values: ScheduleFormValues): ScheduleTiming {
   switch (values.frequency) {
+    case 'minutes':
+      return { kind: 'every', every_seconds: normalizeInterval(values.interval) * 60 }
     case 'hourly':
-      return { kind: 'every', every: { every_seconds: 3600 } }
+      return { kind: 'every', every_seconds: normalizeInterval(values.interval) * 3600 }
     case 'daily':
       return { kind: 'daily', daily: { time: normalizeTime(values.time), time_zone: values.timeZone } }
     case 'weekdays':
@@ -212,8 +231,18 @@ export function timingToForm(timing: ScheduleTiming, base: ScheduleFormValues): 
         weekdays: [...timing.weekly.weekdays],
         timeZone: timing.weekly.time_zone,
       }
-    case 'every':
-      return timing.every.every_seconds === 3600 ? { ...base, frequency: 'hourly' } : { ...base, frequency: 'custom', cron: '' }
+    case 'every': {
+      const seconds = timing.every_seconds
+      if (seconds === 3600) return { ...base, frequency: 'hourly', interval: 1 }
+      if (Number.isInteger(seconds) && seconds % 3600 === 0) {
+        return { ...base, frequency: 'hourly', interval: seconds / 3600 }
+      }
+      if (Number.isInteger(seconds) && seconds % 60 === 0) {
+        return { ...base, frequency: 'minutes', interval: seconds / 60 }
+      }
+      // Sub-minute or irregular cycles stay cron-fallback rules the form reads but cannot re-express.
+      return { ...base, frequency: 'custom', cron: '' }
+    }
     case 'cron':
       return { ...base, frequency: 'custom', cron: timing.cron.expression, timeZone: timing.cron.time_zone }
     case 'at': {
