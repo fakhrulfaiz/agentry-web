@@ -30,7 +30,7 @@ export interface RendererProps {
   onRetry?: () => void
 }
 
-const preBox = { margin: 0, padding: 16, overflow: 'auto', fontSize: 13, height: '100%' } as const
+const preBox = { margin: 0, padding: 16, fontSize: 13, lineHeight: 1.6 } as const
 
 /** Splits CSV/TSV text into rows, honouring quoted fields and doubled quotes. */
 export function parseDelimited(text: string, delimiter: string): string[][] {
@@ -148,10 +148,42 @@ function JsonNode({ name, value }: { name?: string; value: unknown }) {
   )
 }
 
+/** Page chrome for converted Word documents; the iframe is sandboxed and sets its own light surface. */
+const DOCX_SHELL = (body: string) =>
+  `<!doctype html><meta charset="utf-8"><style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:0 auto;padding:24px;background:#fff;color:#111}img{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid rgba(128,128,128,.5);padding:4px 8px}</style>${body}`
+
+/** Word documents: converted to HTML in the browser (mammoth), then shown in a sandboxed iframe like HTML files. */
+function DocxView({ sessionId, path, reloadKey, onMissing, onRetry }: RendererProps) {
+  const [state, setState] = useState<{ status: 'loading' | 'ok' | 'missing' | 'error'; html?: string }>({ status: 'loading' })
+  useEffect(() => {
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+    ;(async () => {
+      const res = await fetch(fileUrl(sessionId, path), { signal: controller.signal })
+      if (res.status === 404) return setState({ status: 'missing' })
+      if (!res.ok) throw new Error(String(res.status))
+      const mammoth = await import('mammoth')
+      const { value } = await mammoth.convertToHtml({ arrayBuffer: await res.arrayBuffer() })
+      setState({ status: 'ok', html: DOCX_SHELL(value) })
+    })().catch(() => {
+      if (!controller.signal.aborted) setState({ status: 'error' })
+    })
+    return () => controller.abort()
+  }, [sessionId, path, reloadKey])
+  useEffect(() => {
+    if (state.status === 'missing') onMissing?.()
+  }, [state.status, onMissing])
+  if (state.status === 'loading') return <Skeleton height={160} />
+  if (state.status === 'missing') return <Banner status="warning" title="File no longer exists." />
+  if (state.status === 'error' || state.html === undefined)
+    return <Banner status="error" title="Could not open this document. Download it instead." endContent={onRetry ? <Button label="Retry" onClick={onRetry} /> : undefined} />
+  return <iframe title={path} sandbox="" srcDoc={state.html} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: 'white' }} />
+}
+
 function DownloadCard({ sessionId, path }: { sessionId: string; path: string }) {
   return (
-    <VStack gap={3} hAlign="center">
-      <Text type="supporting">No preview is available for this file type.</Text>
+    <VStack gap={3} hAlign="center" style={{ padding: 48 }}>
+      <Text type="supporting" color="secondary">No preview is available for this file type.</Text>
       <Button label="Download" variant="primary" href={fileUrl(sessionId, path, true)} />
     </VStack>
   )
@@ -172,10 +204,10 @@ function TextBased({ props }: { props: RendererProps }) {
   let body: React.ReactNode
   switch (id) {
     case 'markdown':
-      body = <div style={{ padding: 16 }}><Markdown text={text} /></div>
+      body = <div style={{ padding: '20px 24px' }}><Markdown text={text} /></div>
       break
     case 'html':
-      body = <iframe title={path} sandbox={runScripts ? 'allow-scripts' : ''} srcDoc={text} style={{ width: '100%', height: '100%', border: 0, background: 'white' }} />
+      body = <iframe title={path} sandbox={runScripts ? 'allow-scripts' : ''} srcDoc={text} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: 'white' }} />
       break
     case 'table':
       body = <div style={{ padding: 16 }}><Table text={text} path={path} /></div>
@@ -195,10 +227,10 @@ function TextBased({ props }: { props: RendererProps }) {
       body = <pre style={{ ...preBox, whiteSpace: wrap ? 'pre-wrap' : 'pre' }}>{text}</pre>
   }
   return (
-    <VStack gap={0}>
+    <>
       {notice}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>{body}</div>
-    </VStack>
+      {body}
+    </>
   )
 }
 
@@ -209,7 +241,9 @@ export function RendererBody(props: RendererProps) {
       // eslint-disable-next-line @next/next/no-img-element -- BFF bytes of unknown size; next/image does not apply
       return <img src={fileUrl(sessionId, path)} alt={path} style={{ maxWidth: '100%', objectFit: 'contain', display: 'block', margin: '0 auto', padding: 16 }} />
     case 'pdf':
-      return <iframe title={path} src={fileUrl(sessionId, path)} style={{ width: '100%', height: '100%', border: 0 }} />
+      return <iframe title={path} src={fileUrl(sessionId, path)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
+    case 'docx':
+      return <DocxView {...props} />
     case 'download':
       return <DownloadCard sessionId={sessionId} path={path} />
     case 'source':

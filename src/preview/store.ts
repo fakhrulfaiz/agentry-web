@@ -14,7 +14,7 @@ export interface PanelState {
 
 export const MIN_WIDTH = 320
 export const MAX_WIDTH = 900
-const DEFAULT_WIDTH = 480
+const DEFAULT_WIDTH = 560
 const WIDTH_KEY = 'agentry-preview-width'
 
 export const initialState = (): PanelState => ({ open: false, tabs: [], active: 'files', treeVisible: false, width: DEFAULT_WIDTH })

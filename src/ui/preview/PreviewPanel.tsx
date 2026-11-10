@@ -1,16 +1,30 @@
 'use client'
 
 /**
- * The chat's right-hand preview panel: a Files tab (the sandbox tree) plus one
- * tab per opened file, with a header (renderer, wrap, scripts, reload, copy,
- * download) and an optional tree beside the file. Resizable; Escape closes it.
+ * The chat's right-hand preview panel, in the manner of claude.ai's artifact
+ * panel: a floating card whose header carries the file's identity on the left
+ * and, on the right, a Preview | Code switch with icon actions. The sandbox tree
+ * opens beside the file from the folder icon. Resizable; Escape closes it.
  */
-import { Button } from '@astryxdesign/core/Button'
-import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Text } from '@astryxdesign/core/Text'
-import { ToggleButton } from '@astryxdesign/core/ToggleButton'
-import { VStack } from '@astryxdesign/core/VStack'
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { ToggleButton, ToggleButtonGroup } from '@astryxdesign/core/ToggleButton'
+import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
+import {
+  ArrowDownTrayIcon,
+  CheckIcon,
+  ClipboardDocumentIcon,
+  CodeBracketIcon,
+  DocumentIcon,
+  DocumentTextIcon,
+  FolderIcon,
+  PhotoIcon,
+  TableCellsIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline'
+import * as stylex from '@stylexjs/stylex'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type PointerEvent, type SVGProps } from 'react'
 import { api } from '@/api/client'
 import { type RendererId, renderersFor } from '@/preview/renderers'
 import { MAX_WIDTH, MIN_WIDTH, usePreviewPanel } from '@/preview/store'
@@ -19,67 +33,188 @@ import { fileUrl } from '@/preview/use-file-bytes'
 import { FileTree } from './FileTree'
 import { RendererBody } from './renderers'
 
-const RENDERER_LABEL: Record<RendererId, string> = {
-  markdown: 'Rendered', code: 'Code', text: 'Text', image: 'Image', pdf: 'PDF', html: 'Preview',
-  source: 'Source', table: 'Table', json: 'JSON', download: 'Download',
-}
-const TEXT_RENDERERS = new Set<RendererId>(['code', 'text', 'source'])
-const basename = (path: string) => path.split('/').pop() ?? path
+const styles = stylex.create({
+  shell: (width: number) => ({
+    position: { default: 'relative', '@media (max-width: 767px)': 'fixed' },
+    inset: { default: 'auto', '@media (max-width: 767px)': 0 },
+    zIndex: { default: 'auto', '@media (max-width: 767px)': 20 },
+    width,
+    minWidth: { default: 0, '@media (max-width: 767px)': '100%' },
+    flexShrink: 0,
+    display: 'flex',
+    minHeight: 0,
+    padding: { default: '8px 8px 8px 0', '@media (max-width: 767px)': 0 },
+    boxSizing: 'border-box',
+    backgroundColor: { default: 'transparent', '@media (max-width: 767px)': colorVars['--color-background-body'] },
+  }),
+  grip: { width: 8, flexShrink: 0, cursor: 'col-resize', display: { default: 'block', '@media (max-width: 767px)': 'none' } },
+  card: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: colorVars['--color-border'],
+    borderRadius: radiusVars['--radius-container'],
+    backgroundColor: colorVars['--color-background-card'],
+  },
+  header: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px 12px 16px', flexShrink: 0 },
+  identity: { display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 },
+  tile: {
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: radiusVars['--radius-element'],
+    backgroundColor: colorVars['--color-background-muted'],
+    color: colorVars['--color-text-secondary'],
+  },
+  titles: { minWidth: 0, display: 'flex', flexDirection: 'column' },
+  actions: { display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 },
+  tabs: {
+    display: 'flex',
+    gap: 4,
+    padding: '0 12px 8px',
+    overflowX: 'auto',
+    flexShrink: 0,
+  },
+  chip: {
+    display: 'flex',
+    alignItems: 'center',
+    maxWidth: 180,
+    borderRadius: radiusVars['--radius-element'],
+    paddingInlineStart: 10,
+    cursor: 'pointer',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: colorVars['--color-border'],
+  },
+  chipActive: { backgroundColor: colorVars['--color-background-muted'] },
+  chipLabel: { all: 'unset', cursor: 'pointer', minWidth: 0, paddingBlock: 4 },
+  divider: { height: 1, flexShrink: 0, backgroundColor: colorVars['--color-border'] },
+  body: { flex: 1, minHeight: 0, display: 'flex' },
+  tree: { width: 232, flexShrink: 0, overflow: 'auto', borderInlineEnd: `1px solid ${colorVars['--color-border']}` },
+  content: { flex: 1, minWidth: 0, position: 'relative', overflow: 'auto' },
+  filesPage: { flex: 1, minWidth: 0, overflow: 'auto', padding: 8 },
+})
 
-function FileView({ sessionId, path, tree, onMissing }: { sessionId: string; path: string; tree: TreeNode[]; onMissing(): void }) {
+type IconType = ComponentType<SVGProps<SVGSVGElement>>
+
+const basename = (path: string) => path.split('/').pop() ?? path
+const extOf = (path: string) => path.slice(path.lastIndexOf('.') + 1).toUpperCase()
+
+/** Preview-side renderers vs code-side ones, for the two-way header switch. */
+const SIDE: Record<RendererId, 'preview' | 'code'> = {
+  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', pdf: 'preview', docx: 'preview', download: 'preview',
+  code: 'code', source: 'code', text: 'code',
+}
+const TEXT_LIKE = new Set<RendererId>(['markdown', 'html', 'table', 'json', 'code', 'source', 'text'])
+
+function kindOf(path: string, id: RendererId): { label: string; icon: IconType } {
+  if (id === 'image') return { label: 'Image', icon: PhotoIcon }
+  if (id === 'pdf') return { label: 'PDF', icon: DocumentIcon }
+  if (id === 'table') return { label: 'Table', icon: TableCellsIcon }
+  if (id === 'markdown' || id === 'docx') return { label: 'Document', icon: DocumentTextIcon }
+  if (id === 'download') return { label: 'File', icon: DocumentIcon }
+  return { label: id === 'html' ? 'Web page' : 'Code', icon: CodeBracketIcon }
+}
+
+function formatBytes(n?: number): string {
+  if (n === undefined) return ''
+  if (n < 1024) return `${n} B`
+  return n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+function FileView({
+  sessionId, path, size, tree, reloadKey, onMissing,
+}: { sessionId: string; path: string; size?: number; tree: TreeNode[]; reloadKey: number; onMissing(): void }) {
   const { state, actions } = usePreviewPanel()
   const choices = useMemo(() => renderersFor(basename(path)), [path])
   const [chosen, setChosen] = useState<RendererId | null>(null)
-  const [wrap, setWrap] = useState(true)
   const [runScripts, setRunScripts] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
+  const [retry, setRetry] = useState(0)
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
     setChosen(null)
     setRunScripts(false)
   }, [path])
   const id = chosen ?? choices.default
-  const dirs = path.split('/').slice(0, -1).join('/')
+  const previewId = choices.options.find((o) => SIDE[o] === 'preview')
+  const codeId = choices.options.find((o) => SIDE[o] === 'code')
+  const switchable = previewId !== undefined && codeId !== undefined && previewId !== 'download'
+  const kind = kindOf(path, choices.default)
+  const copy = async () => {
+    try {
+      const text = TEXT_LIKE.has(choices.default) ? await (await fetch(fileUrl(sessionId, path))).text() : path
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
+  }
   return (
-    <VStack gap={0}>
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <Text type="supporting" color="secondary" maxLines={1}>{dirs ? `${dirs}/` : ''}</Text>
-        <Text weight="medium" maxLines={1}>{basename(path)}</Text>
-      </HStack>
-      <HStack gap={1} vAlign="center" wrap="wrap">
-        {choices.options.length > 1 &&
-          choices.options.map((o) => (
-            <ToggleButton key={o} label={RENDERER_LABEL[o]} size="sm" isPressed={o === id} onPressedChange={() => setChosen(o)} />
-          ))}
-        {TEXT_RENDERERS.has(id) && <ToggleButton label="Wrap" size="sm" isPressed={wrap} onPressedChange={setWrap} />}
-        {id === 'html' && <ToggleButton label="Run scripts" size="sm" tooltip="Allow the page's scripts; it still cannot reach this app." isPressed={runScripts} onPressedChange={setRunScripts} />}
-        <Button label="Reload" size="sm" variant="ghost" onClick={() => setReloadKey((k) => k + 1)} />
-        <Button label="Copy path" size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(path)} />
-        <Button label="Download" size="sm" variant="ghost" href={fileUrl(sessionId, path, true)} />
-        <ToggleButton label="Tree" size="sm" isPressed={state.treeVisible} onPressedChange={actions.toggleTree} />
-      </HStack>
-      <HStack gap={0}>
+    <>
+      <div {...stylex.props(styles.header)}>
+        <div {...stylex.props(styles.identity)}>
+          <span {...stylex.props(styles.tile)}>
+            <Icon icon={kind.icon} size="md" />
+          </span>
+          <div {...stylex.props(styles.titles)}>
+            <Text weight="medium" maxLines={1}>{basename(path)}</Text>
+            <Text type="supporting" color="secondary" maxLines={1}>
+              {[extOf(path) !== basename(path).toUpperCase() ? extOf(path) : kind.label, formatBytes(size)].filter(Boolean).join(' · ')}
+            </Text>
+          </div>
+        </div>
+        <div {...stylex.props(styles.actions)}>
+          {id === 'html' && (
+            <ToggleButton label="Run scripts" size="sm" tooltip="Let the page run its scripts. It still cannot reach this app." isPressed={runScripts} onPressedChange={setRunScripts} />
+          )}
+          {switchable && (
+            <ToggleButtonGroup label="View" size="sm" value={SIDE[id]} onChange={(v) => typeof v === 'string' && setChosen(v === 'preview' ? previewId! : codeId!)}>
+              <ToggleButton value="preview" label="Preview" />
+              <ToggleButton value="code" label="Code" />
+            </ToggleButtonGroup>
+          )}
+          <IconButton label={copied ? 'Copied' : 'Copy'} tooltip={copied ? 'Copied' : 'Copy'} variant="ghost" size="sm" icon={<Icon icon={copied ? CheckIcon : ClipboardDocumentIcon} size="sm" />} onClick={() => void copy()} />
+          <IconButton label="Download" tooltip="Download" variant="ghost" size="sm" href={fileUrl(sessionId, path, true)} icon={<Icon icon={ArrowDownTrayIcon} size="sm" />} />
+          <IconButton label="Files" tooltip="Files" variant="ghost" size="sm" icon={<Icon icon={FolderIcon} size="sm" />} onClick={actions.toggleTree} />
+          <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
+        </div>
+      </div>
+      <div {...stylex.props(styles.divider)} />
+      <div {...stylex.props(styles.body)}>
         {state.treeVisible && (
-          <div style={{ width: 220, flex: 'none', overflow: 'auto', maxHeight: '70vh' }}>
+          <div {...stylex.props(styles.tree)}>
             <FileTree tree={tree} current={path} onOpen={actions.openFile} />
           </div>
         )}
-        <div style={{ flex: 1, minWidth: 0, height: '70vh' }}>
-          <RendererBody id={id} sessionId={sessionId} path={path} reloadKey={reloadKey} wrap={wrap} runScripts={runScripts} onMissing={onMissing} onRetry={() => setReloadKey((k) => k + 1)} />
+        <div {...stylex.props(styles.content)}>
+          <RendererBody id={id} sessionId={sessionId} path={path} reloadKey={reloadKey + retry} wrap runScripts={runScripts} onMissing={onMissing} onRetry={() => setRetry((k) => k + 1)} />
         </div>
-      </HStack>
-    </VStack>
+      </div>
+    </>
   )
 }
 
 export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boolean }) {
   const { state, actions } = usePreviewPanel()
   const [entries, setEntries] = useState<{ path: string; size?: number }[]>([])
+  const [reloadKey, setReloadKey] = useState(0)
   const load = useCallback(() => {
     api.listSessionArtifacts(sessionId).then((l) => setEntries(l.data), () => setEntries([]))
   }, [sessionId])
+  const wasIdle = useRef(idle)
   useEffect(() => {
-    // Files change only while a turn runs; refresh on every return to idle and when the panel opens.
-    if (state.open && idle) load()
+    // Files change only while a turn runs; refresh the tree and the open file on every return to idle.
+    if (state.open && idle) {
+      load()
+      if (!wasIdle.current) setReloadKey((k) => k + 1)
+    }
+    wasIdle.current = idle
   }, [state.open, idle, load])
   const tree = useMemo(() => buildTree(entries), [entries])
 
@@ -104,8 +239,9 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
     else return
     e.preventDefault()
   }
+  const showingFiles = state.active === 'files'
   return (
-    <HStack gap={0} data-testid="preview-panel" onKeyDown={onKey} style={{ width: state.width, flex: 'none', minHeight: 0, borderLeft: '1px solid var(--border, rgba(128,128,128,.3))' }}>
+    <div data-testid="preview-panel" onKeyDown={onKey} {...stylex.props(styles.shell(state.width))}>
       <div
         role="separator"
         aria-orientation="vertical"
@@ -116,31 +252,46 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
         tabIndex={0}
         onPointerDown={startDrag}
         onKeyDown={onResizeKey}
-        style={{ width: 6, flex: 'none', cursor: 'col-resize' }}
+        {...stylex.props(styles.grip)}
       />
-      <VStack gap={2} style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 8 }}>
-        <HStack gap={1} vAlign="center" wrap="wrap" role="tablist" aria-label="Preview tabs">
-          <ToggleButton label="Files" size="sm" isPressed={state.active === 'files'} onPressedChange={actions.showFiles} />
-          {state.tabs.map((t) => (
-            <HStack key={t.path} gap={0} vAlign="center">
-              <ToggleButton label={basename(t.path)} size="sm" isPressed={state.active === t.path} onPressedChange={() => actions.openFile(t.path)} />
-              {!t.pinned && <Button label={`Keep ${basename(t.path)} open`} isIconOnly icon={<span aria-hidden>📌</span>} size="sm" variant="ghost" onClick={() => actions.pinTab(t.path)} />}
-              <Button label={`Close ${basename(t.path)}`} isIconOnly icon={<span aria-hidden>×</span>} size="sm" variant="ghost" onClick={() => actions.closeTab(t.path)} />
-            </HStack>
-          ))}
-          <Button label="Close preview" size="sm" variant="ghost" onClick={actions.close} />
-        </HStack>
-        {state.active === 'files' ? (
+      <div {...stylex.props(styles.card)}>
+        {state.tabs.length > 1 && (
+          <div role="tablist" aria-label="Open files" {...stylex.props(styles.tabs)} style={{ paddingTop: 8 }}>
+            {state.tabs.map((t) => (
+              <div key={t.path} {...stylex.props(styles.chip, state.active === t.path && styles.chipActive)}>
+                <button type="button" role="tab" aria-selected={state.active === t.path} onClick={() => actions.openFile(t.path)} onDoubleClick={() => actions.pinTab(t.path)} {...stylex.props(styles.chipLabel)}>
+                  <Text type="supporting" maxLines={1}>{basename(t.path)}</Text>
+                </button>
+                <IconButton label={`Close ${basename(t.path)}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeTab(t.path)} />
+              </div>
+            ))}
+          </div>
+        )}
+        {showingFiles ? (
           <>
-            <HStack hAlign="end">
-              <Button label="Reload" size="sm" variant="ghost" onClick={load} />
-            </HStack>
-            <FileTree tree={tree} onOpen={actions.openFile} />
+            <div {...stylex.props(styles.header)}>
+              <div {...stylex.props(styles.identity)}>
+                <span {...stylex.props(styles.tile)}>
+                  <Icon icon={FolderIcon} size="md" />
+                </span>
+                <div {...stylex.props(styles.titles)}>
+                  <Text weight="medium">Files</Text>
+                  <Text type="supporting" color="secondary">In this chat’s sandbox</Text>
+                </div>
+              </div>
+              <div {...stylex.props(styles.actions)}>
+                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
+              </div>
+            </div>
+            <div {...stylex.props(styles.divider)} />
+            <div {...stylex.props(styles.filesPage)}>
+              <FileTree tree={tree} onOpen={actions.openFile} />
+            </div>
           </>
         ) : (
-          <FileView sessionId={sessionId} path={state.active} tree={tree} onMissing={load} />
+          <FileView sessionId={sessionId} path={state.active} size={entries.find((e) => e.path === state.active)?.size} tree={tree} reloadKey={reloadKey} onMissing={load} />
         )}
-      </VStack>
-    </HStack>
+      </div>
+    </div>
   )
 }

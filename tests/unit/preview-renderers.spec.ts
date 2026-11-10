@@ -9,7 +9,8 @@ describe('renderersFor', () => {
     ['a.csv', 'table', ['table', 'text']],
     ['a.json', 'json', ['json', 'code']],
     ['a.py', 'code', ['code', 'text']],
-    ['a.docx', 'download', ['download']],
+    ['a.docx', 'docx', ['docx']],
+    ['a.xlsx', 'download', ['download']],
     ['a.bin', 'download', ['download']],
     ['a.PDF', 'pdf', ['pdf']],
   ])('%s', (name, def, options) => {

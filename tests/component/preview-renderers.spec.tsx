@@ -33,3 +33,11 @@ describe('RendererBody', () => {
     expect(onMissing).toHaveBeenCalled()
   })
 })
+
+describe('RendererBody docx', () => {
+  it('reports a missing document', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+    render(<RendererBody sessionId="s1" path="a.docx" reloadKey={0} wrap runScripts={false} id="docx" />)
+    await screen.findByText('File no longer exists.')
+  })
+})

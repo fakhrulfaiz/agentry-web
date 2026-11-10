@@ -1,9 +1,35 @@
 'use client'
 
 /** The sandbox file tree: ARIA tree with arrow/Enter/Left/Right keys. */
+import { Icon } from '@astryxdesign/core/Icon'
 import { Text } from '@astryxdesign/core/Text'
+import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
+import { ChevronDownIcon, ChevronRightIcon, DocumentIcon, FolderIcon } from '@heroicons/react/24/outline'
+import * as stylex from '@stylexjs/stylex'
 import { useMemo, useState, type KeyboardEvent } from 'react'
 import type { TreeNode } from '@/preview/tree'
+
+const styles = stylex.create({
+  list: { listStyle: 'none', margin: 0, padding: 8 },
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+    paddingBlock: 6,
+    paddingInlineEnd: 8,
+    borderRadius: radiusVars['--radius-element'],
+    cursor: 'pointer',
+    outlineStyle: { default: 'none', ':focus-visible': 'solid' },
+    outlineWidth: 2,
+    outlineColor: colorVars['--color-accent'],
+    backgroundColor: { default: 'transparent', ':hover': colorVars['--color-overlay-hover'] },
+  },
+  selected: { backgroundColor: colorVars['--color-background-muted'] },
+  indent: (px: number) => ({ paddingInlineStart: 8 + px }),
+  lead: { flexShrink: 0, display: 'inline-flex', color: colorVars['--color-text-secondary'] },
+  spacer: { flexShrink: 0, width: 16 },
+})
 
 interface Row {
   node: TreeNode
@@ -24,7 +50,7 @@ export function FileTree({ tree, current, onOpen }: { tree: TreeNode[]; current?
   if (tree.length === 0)
     return (
       <Text type="supporting" color="secondary" role="status">
-        No files yet.
+        No files yet. Files the agent creates will show up here.
       </Text>
     )
   const toggle = (path: string, to?: boolean) =>
@@ -47,29 +73,38 @@ export function FileTree({ tree, current, onOpen }: { tree: TreeNode[]; current?
     e.preventDefault()
   }
   return (
-    <ul role="tree" aria-label="Files" onKeyDown={onKey} style={{ listStyle: 'none', margin: 0, padding: 8 }}>
-      {rows.map((row, i) => (
+    <ul role="tree" aria-label="Files" onKeyDown={onKey} {...stylex.props(styles.list)}>
+      {rows.map(({ node, depth }, i) => (
         <li
-          key={row.node.path}
+          key={node.path}
           role="treeitem"
-          aria-level={row.depth + 1}
-          aria-expanded={row.node.kind === 'dir' ? open.has(row.node.path) : undefined}
-          aria-selected={row.node.path === current}
+          aria-level={depth + 1}
+          aria-expanded={node.kind === 'dir' ? open.has(node.path) : undefined}
+          aria-selected={node.path === current}
           tabIndex={i === focus ? 0 : -1}
           onFocus={() => setFocus(i)}
-          onClick={() => activate(row)}
-          title={row.node.size !== undefined ? `${row.node.size} bytes` : undefined}
-          style={{
-            paddingLeft: 8 + row.depth * 16,
-            paddingBlock: 4,
-            cursor: 'pointer',
-            fontWeight: row.node.path === current ? 600 : 400,
-          }}
+          onClick={() => activate({ node, depth })}
+          title={node.size !== undefined ? `${node.size} bytes` : undefined}
+          {...stylex.props(styles.row, styles.indent(depth * 16), node.path === current && styles.selected)}
         >
-          <Text maxLines={1}>
-            {row.node.kind === 'dir' ? (open.has(row.node.path) ? '▾ ' : '▸ ') : ''}
-            {row.node.name}
-          </Text>
+          {node.kind === 'dir' ? (
+            <>
+              <span {...stylex.props(styles.lead)}>
+                <Icon icon={open.has(node.path) ? ChevronDownIcon : ChevronRightIcon} size="sm" />
+              </span>
+              <span {...stylex.props(styles.lead)}>
+                <Icon icon={FolderIcon} size="sm" />
+              </span>
+            </>
+          ) : (
+            <>
+              <span {...stylex.props(styles.spacer)} />
+              <span {...stylex.props(styles.lead)}>
+                <Icon icon={DocumentIcon} size="sm" />
+              </span>
+            </>
+          )}
+          <Text maxLines={1}>{node.name}</Text>
         </li>
       ))}
     </ul>
