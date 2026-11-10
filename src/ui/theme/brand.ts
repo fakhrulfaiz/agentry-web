@@ -9,6 +9,10 @@
 import { defineTheme } from '@astryxdesign/core/theme'
 import { neutralTheme } from '@astryxdesign/theme-neutral'
 
+/** Fonts loaded by `app/layout.tsx` through next/font (`--font-sans`, `--font-serif`). */
+const SANS = 'var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+const SERIF = 'var(--font-serif), Georgia, "Times New Roman", serif'
+
 /** Brand accent as [light, dark]. */
 const ACCENT: [string, string] = ['#0f766e', '#5eead4']
 const ACCENT_MUTED: [string, string] = ['#ccebe7', '#134e4a']
@@ -30,6 +34,8 @@ export const agentryTheme = defineTheme({
     '--color-text-accent': ACCENT,
     '--color-accent-muted': ACCENT_MUTED,
     '--radius-chat': 'var(--radius-container)',
+    '--font-family-body': SANS,
+    '--font-family-heading': SERIF,
   },
   components: {
     'text-input': { base: INPUT_RADIUS },
