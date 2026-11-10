@@ -3,3 +3,8 @@
 
 /* Replaced at build time with the CSS for our own stylex.create() calls. */
 @stylex;
+
+/* The new-chat composer: a taller input, as on claude.ai's home page. */
+[data-tall] [aria-label="Message input"] {
+  min-height: 6.5rem;
+}

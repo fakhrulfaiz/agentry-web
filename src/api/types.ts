@@ -88,8 +88,29 @@ export interface OAIAgent {
   model: string
   metadata: Record<string, string>
   tools: OAIToolConfig[]
+  /** Host tool mask: `allow` keeps only these names, `deny` hides these. */
+  host_tools?: { allow?: string[] | null; deny?: string[] | null } | null
+  multi_agent?: { enabled: boolean; max_concurrent_subagents?: number | null } | null
   reasoning?: { effort?: ReasoningEffort | null; summary?: 'auto' | 'none' | null } | null
   service_tier?: ServiceTier | null
+}
+
+/** Body for `POST /v1/agents` (and, with every field optional, `POST /v1/agents/{id}`). */
+export interface CreateAgentParams {
+  model: string
+  name?: string | null
+  instructions?: string | null
+  metadata?: Record<string, string> | null
+  host_tools?: { allow?: string[] | null; deny?: string[] | null } | null
+  multi_agent?: { enabled: boolean; max_concurrent_subagents?: number | null } | null
+  reasoning?: { effort?: ReasoningEffort | null } | null
+}
+export type UpdateAgentParams = Partial<CreateAgentParams>
+
+/** One Host tool from `GET /v1/agents/tools`. */
+export interface HostToolInfo {
+  name: string
+  description?: string
 }
 
 /** Environment on a session. F1 never edits it. */

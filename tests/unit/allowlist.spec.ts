@@ -143,8 +143,12 @@ describe('isAllowed', () => {
   })
 
   it('rejects methods outside the allow-list', () => {
-    expect(isAllowed('DELETE', '/agents/agent_1')).toBe(false)
-    expect(isAllowed('POST', '/agents')).toBe(false)
+    expect(isAllowed('PUT', '/agents/agent_1')).toBe(false)
+    expect(isAllowed('DELETE', '/agents')).toBe(false)
+    // Saved agents: create, update and delete are allowed; the reserved route names are never agent ids.
+    expect(isAllowed('POST', '/agents')).toBe(true)
+    expect(isAllowed('DELETE', '/agents/agent_1')).toBe(true)
+    expect(isAllowed('POST', '/agents/tools')).toBe(false)
     expect(isAllowed('PUT', `/agents/sessions/${ID}`)).toBe(false)
     expect(isAllowed('PATCH', `/agents/sessions/${ID}`)).toBe(false)
     expect(isAllowed('GET', `/agents/sessions/${ID}/events`)).toBe(false)

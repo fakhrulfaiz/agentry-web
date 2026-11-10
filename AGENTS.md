@@ -13,6 +13,7 @@ Read this first in every session. `CLAUDE.md` is a symlink to this file; edit `A
   - Plan: `docs/superpowers/plans/2026-11-08-agentry-web-f1.md` (8 tasks)
 - F1.1 (chat fidelity): **implemented** on `feat/f1-1` and through its final review fix wave. Live reasoning and tool cards from the real backend's item log, expandable subagent cards, the Trajectory view (ledger, overview, Event details), the full-featured composer (model and effort for new chats and mid-chat, slash-command slot), chat title menu with starred chats, and less rounded inputs. Pinned by fixtures recorded from the live backend (`tests/fixtures/live/`).
   - Plan: `docs/superpowers/plans/2026-11-09-f1-1-chat-fidelity.md`
+- Agents page (2026-11-10): saved agents CRUD at `/agents`, bundled starters, agent menu in new chats, soft per-agent app limit (spec `docs/superpowers/specs/2026-11-10-agents-page-design.md`). Not yet: ECC/URL import, subagent deployment as a named agent, agent-authoring tools and skill, per-agent skills, hard app limits.
 - Later specs: F2 admin, F3 artifacts/files, F4 trace inspector + subagent views (F4 also: keyboard access for the trajectory overview).
 
 ## Working-tree provenance (2026-11-10)

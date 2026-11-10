@@ -1,5 +1,6 @@
 import { agentryHeaders, agentryUrl, jsonError } from '@/server/agentry'
-import { allowedPath } from '@/server/allowlist'
+import { allowedPath, ID_SEGMENT } from '@/server/allowlist'
+import { withAgentConnectorNote } from '@/server/agent-connectors'
 import { checkCsrf } from '@/server/csrf'
 import { authFailure, requireCredential } from '@/server/require-auth'
 import { relay, signedOut } from '@/server/upstream'
@@ -9,6 +10,26 @@ export const dynamic = 'force-dynamic'
 
 const PREFIX = '/api/agentry'
 const STATE_CHANGING = new Set(['POST', 'DELETE'])
+
+/** Session create with a saved agent: adds the agent's soft app limit to the instructions. */
+async function withAgentNote(authorization: string, body: ArrayBuffer): Promise<ArrayBuffer> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(body))
+  } catch {
+    return body
+  }
+  const next = await withAgentConnectorNote(parsed, async (id) => {
+    if (!ID_SEGMENT.test(id)) return null
+    try {
+      const res = await fetch(agentryUrl(`/agents/${id}`), { headers: agentryHeaders(authorization, { accept: 'application/json' }), cache: 'no-store' })
+      return res.ok ? ((await res.json()) as { instructions?: string | null; metadata?: Record<string, string> | null }) : null
+    } catch {
+      return null
+    }
+  })
+  return next === parsed ? body : (new TextEncoder().encode(JSON.stringify(next)).buffer as ArrayBuffer)
+}
 
 /**
  * Allow-listed proxy to Agentry `/v1`. Builds fresh upstream headers, so the
@@ -31,7 +52,8 @@ async function handle(req: Request): Promise<Response> {
   const extra: Record<string, string> = { accept: req.method === 'GET' && path.endsWith('/content') ? '*/*' : 'application/json' }
   const type = req.headers.get('content-type')
   if (type) extra['content-type'] = type
-  const body = req.method === 'GET' ? undefined : await req.arrayBuffer()
+  let body = req.method === 'GET' ? undefined : await req.arrayBuffer()
+  if (body && req.method === 'POST' && path === '/agents/sessions') body = await withAgentNote(auth.authorization, body)
 
   let upstream: Response
   try {

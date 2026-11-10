@@ -1,0 +1,145 @@
+'use client'
+
+/**
+ * The Agents page: Yours (a dense table of the user's saved agents, or the empty
+ * state) and Starters (agents to start from, which open the form prefilled).
+ */
+import { Banner } from '@astryxdesign/core/Banner'
+import { Button } from '@astryxdesign/core/Button'
+import { ClickableCard } from '@astryxdesign/core/ClickableCard'
+import { EmptyState } from '@astryxdesign/core/EmptyState'
+import { Heading } from '@astryxdesign/core/Heading'
+import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
+import { StackItem } from '@astryxdesign/core/Layout'
+import { Link } from '@astryxdesign/core/Link'
+import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } from '@astryxdesign/core/Table'
+import { Text } from '@astryxdesign/core/Text'
+import { TextInput } from '@astryxdesign/core/TextInput'
+import { ToggleButton } from '@astryxdesign/core/ToggleButton'
+import { VStack } from '@astryxdesign/core/VStack'
+import { MagnifyingGlassIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { api, ApiError, isSignedOut } from '@/api/client'
+import type { OAIAgent } from '@/api/types'
+import { agentToForm } from '@/agents/form'
+import { STARTERS } from '@/agents/starters'
+import { goToLogin } from '@/chat/use-conversation'
+
+const COLUMN_WIDTH = 880
+
+/** One-line summary: the first line of the instructions. */
+const summary = (agent: OAIAgent): string => (agent.instructions ?? '').split('\n').find((l) => l.trim())?.trim() ?? ''
+
+function Starters({ onPick }: { onPick(id: string): void }) {
+  return (
+    <VStack gap={3}>
+      {STARTERS.map((starter) => (
+        <ClickableCard key={starter.id} label={starter.name} onClick={() => onPick(starter.id)} width="100%" padding={4}>
+          <VStack gap={1}>
+            <Text weight="medium">{starter.name}</Text>
+            <Text type="supporting" color="secondary">{starter.summary}</Text>
+          </VStack>
+        </ClickableCard>
+      ))}
+    </VStack>
+  )
+}
+
+export function AgentsPage() {
+  const router = useRouter()
+  const [agents, setAgents] = useState<OAIAgent[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState<'yours' | 'starters'>('yours')
+  const [query, setQuery] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      setAgents((await api.listAgents()).data)
+      setError(null)
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(err instanceof ApiError ? err.message : 'Could not load your agents.')
+      setAgents((cur) => cur ?? [])
+    }
+  }, [])
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return (agents ?? []).filter((a) => !q || `${a.name ?? ''} ${a.instructions ?? ''}`.toLowerCase().includes(q))
+  }, [agents, query])
+  const pick = (id: string) => router.push(`/agents/new?starter=${encodeURIComponent(id)}`)
+
+  return (
+    <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
+      <VStack gap={4}>
+        <Heading level={1} type="display-2">Agents</Heading>
+        <HStack gap={3} vAlign="center">
+          <StackItem size="fill">
+            <HStack gap={1} vAlign="center" role="group" aria-label="Agents view">
+              <ToggleButton label="Yours" size="sm" isPressed={view === 'yours'} onPressedChange={() => setView('yours')} />
+              <ToggleButton label="Starters" size="sm" isPressed={view === 'starters'} onPressedChange={() => setView('starters')} />
+            </HStack>
+          </StackItem>
+          <Button label="New agent" variant="primary" onClick={() => router.push('/agents/new')} />
+        </HStack>
+        {error !== null && (
+          <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />
+        )}
+        {view === 'starters' ? (
+          <Starters onPick={pick} />
+        ) : agents === null ? (
+          <Skeleton height={160} />
+        ) : agents.length === 0 ? (
+          <EmptyState
+            icon={<Icon icon={UserGroupIcon} size="lg" color="secondary" />}
+            title="No agents yet."
+            description="An agent is a saved setup: instructions, a model and the tools it may use. Create one, or start from a starter."
+            actions={<Button label="Browse starters" onClick={() => setView('starters')} />}
+          />
+        ) : (
+          <VStack gap={3}>
+            <TextInput label="Search agents" isLabelHidden type="search" size="sm" placeholder="Search agents" startIcon={MagnifyingGlassIcon} value={query} onChange={setQuery} />
+            {rows.length === 0 ? (
+              <Text type="supporting" color="secondary" role="status">No agents match your search.</Text>
+            ) : (
+              <Table density="compact" hasHover>
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell>Name</TableHeaderCell>
+                    <TableHeaderCell>Model</TableHeaderCell>
+                    <TableHeaderCell>Tools</TableHeaderCell>
+                    <TableHeaderCell>Apps</TableHeaderCell>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((agent) => {
+                    const form = agentToForm(agent)
+                    return (
+                      <TableRow key={agent.id}>
+                        <TableCell>
+                          <VStack gap={0}>
+                            <Link href={`/agents/${agent.id}`}>{agent.name || 'Untitled agent'}</Link>
+                            {summary(agent) && <Text type="supporting" color="secondary" maxLines={1}>{summary(agent)}</Text>}
+                          </VStack>
+                        </TableCell>
+                        <TableCell><Text type="supporting">{agent.model}</Text></TableCell>
+                        <TableCell><Text type="supporting">{form.allTools ? 'All' : form.tools.length}</Text></TableCell>
+                        <TableCell><Text type="supporting">{form.connectors.length || 'Any'}</Text></TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </VStack>
+        )}
+      </VStack>
+    </div>
+  )
+}

@@ -42,7 +42,7 @@ import { Selector } from '@astryxdesign/core/Selector'
 import { Text } from '@astryxdesign/core/Text'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { LightBulbIcon, PaperClipIcon } from '@heroicons/react/24/outline'
+import { LightBulbIcon, PaperClipIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AgentCommand, ReasoningEffort } from '@/api/types'
 import { APP_COMMANDS, AppCommandError, parseSlashLine, type AppCommandHandlers } from '@/commands/app-commands'
@@ -77,14 +77,31 @@ export interface ComposerSettings {
   efforts?: EffortChoice[]
   /** Why the menus without a change handler are disabled. */
   hint?: string
+  /** Saved agents for the agent menu (new chats only); the menu is hidden without any. */
+  agents?: { id: string; name: string }[]
+  /** The chosen saved agent's id; `''` is the default agent. */
+  agentId?: string
+  onAgentChange?(id: string): void
 }
 
 function SettingsMenus({ settings }: { settings: ComposerSettings }) {
-  const { models, model, onModelChange, effort, onEffortChange, efforts, hint } = settings
+  const { models, model, onModelChange, effort, onEffortChange, efforts, hint, agents, agentId = '', onAgentChange } = settings
   // A disabled menu still names its current value.
   const modelOptions = models && models.length > 0 ? models : model ? [model] : []
   return (
     <>
+      {agents && agents.length > 0 && onAgentChange && (
+        <Selector
+          label="Agent"
+          isLabelHidden
+          size="sm"
+          variant="ghost"
+          startIcon={UserGroupIcon}
+          options={[{ value: '', label: 'Default agent' }, ...agents.map((a) => ({ value: a.id, label: a.name || 'Untitled agent' }))]}
+          value={agentId}
+          onChange={onAgentChange}
+        />
+      )}
       <Selector
         label="Model"
         isLabelHidden
@@ -128,6 +145,7 @@ export function Composer({
   initialValue = '',
   status,
   autoFocus = false,
+  density = 'balanced',
 }: {
   /** Resolves when the message was accepted; a rejection keeps the text in the composer. */
   onSend(text: string, files?: UserFile[]): Promise<void>
@@ -148,6 +166,8 @@ export function Composer({
   initialValue?: string
   status?: { type: 'error' | 'warning'; message?: string }
   autoFocus?: boolean
+  /** `spacious` makes the input taller (the new-chat page). */
+  density?: 'balanced' | 'spacious'
 }) {
   const toast = useToast()
   const [value, setValue] = useState(initialValue)
@@ -275,6 +295,7 @@ export function Composer({
         attachments.add(files)
       }}
       data-dragging={dragging || undefined}
+      data-tall={density === 'spacious' || undefined}
       style={dragging ? { outline: '2px dashed var(--color-accent)', outlineOffset: 2, borderRadius: 16 } : undefined}
     >
     <input
@@ -297,7 +318,8 @@ export function Composer({
       isStopShown={stopShown}
       isDisabled={isDisabled || sending}
       placeholder={placeholder}
-      input={<ChatComposerInput triggers={triggers} />}
+      density={density}
+      input={<ChatComposerInput triggers={triggers} maxRows={density === 'spacious' ? 14 : undefined} />}
       drawer={
         attachments.items.length > 0 ? (
           <ChatComposerDrawer>

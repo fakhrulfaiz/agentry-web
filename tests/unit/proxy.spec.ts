@@ -102,7 +102,7 @@ describe('proxy /api/agentry/[...path]', () => {
       ['GET', '/agents/sessions/s_1/events'],
       ['PUT', '/agents/sessions/s_1'],
       ['PATCH', '/agents/sessions/s_1'],
-      ['POST', '/agents'],
+      ['PUT', '/agents/agent_1'],
     ]) {
       const res = await call(method, path, { csrf: CSRF })
       expect(res.status, `${method} ${path}`).toBe(404)

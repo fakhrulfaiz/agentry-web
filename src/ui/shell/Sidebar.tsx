@@ -16,7 +16,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { VStack } from '@astryxdesign/core/VStack'
 import { ChatBubbleLeftIcon, Cog6ToothIcon, MagnifyingGlassIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
-import { ClockIcon, RectangleStackIcon } from '@heroicons/react/16/solid'
+import { ClockIcon, RectangleStackIcon, UserGroupIcon } from '@heroicons/react/16/solid'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
@@ -194,6 +194,12 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
               icon={ClockIcon}
               href="/scheduled"
               isSelected={pathname.startsWith('/scheduled')}
+            />
+            <SideNavItem
+              label="Agents"
+              icon={UserGroupIcon}
+              href="/agents"
+              isSelected={pathname.startsWith('/agents')}
             />
             <SideNavItem
               label="Artifacts"

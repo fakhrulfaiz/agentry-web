@@ -17,6 +17,9 @@ import type {
   CreateSessionParams,
   OAIAgentSession,
   OAIInputEvent,
+  CreateAgentParams,
+  HostToolInfo,
+  OAIAgent,
   OAIListResponse,
   OAISubagent,
   OAITurn,
@@ -24,6 +27,7 @@ import type {
   ScheduleRunList,
   ScheduleStatus,
   StoredSessionItem,
+  UpdateAgentParams,
   UpdateScheduleParams,
 } from './types'
 
@@ -199,8 +203,9 @@ export const api = {
   },
 
   /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[] }): Promise<OAIAgentSession> {
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
+      ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
       input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
       metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
@@ -337,6 +342,36 @@ export const api = {
   /** Files the agent delivered with `present` in one chat (`GET /v1/agents/sessions/{id}/deliverables`). */
   listSessionDeliverables(id: string): Promise<SessionDeliverableList> {
     return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`)
+  },
+
+  /** The user's saved agents. */
+  listAgents(): Promise<OAIListResponse<OAIAgent>> {
+    return request('GET', `${AGENTRY}/agents?limit=100`)
+  },
+  getAgent(id: string): Promise<OAIAgent> {
+    return request('GET', `${AGENTRY}/agents/${seg(id)}`)
+  },
+  createAgent(params: CreateAgentParams): Promise<OAIAgent> {
+    return request('POST', `${AGENTRY}/agents`, params)
+  },
+  updateAgent(id: string, params: UpdateAgentParams): Promise<OAIAgent> {
+    return request('POST', `${AGENTRY}/agents/${seg(id)}`, params)
+  },
+  async deleteAgent(id: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/${seg(id)}`)
+  },
+  /** The Host's tool catalog, for an agent's allow list. Tolerates the common list shapes. */
+  async listHostTools(): Promise<HostToolInfo[]> {
+    const body = await request<unknown>('GET', `${AGENTRY}/agents/tools`)
+    const rows = Array.isArray(body) ? body : ((body as { data?: unknown })?.data ?? (body as { tools?: unknown })?.tools)
+    if (!Array.isArray(rows)) return []
+    return rows.flatMap((row): HostToolInfo[] => {
+      if (typeof row === 'string') return [{ name: row }]
+      const r = row as { name?: unknown; description?: unknown; function?: { name?: unknown; description?: unknown } }
+      const name = r.name ?? r.function?.name
+      const description = r.description ?? r.function?.description
+      return typeof name === 'string' ? [{ name, ...(typeof description === 'string' ? { description } : {}) }] : []
+    })
   },
 
   /** Files the agent created in one chat, newest first (`GET /v1/agents/sessions/{id}/artifacts`). */

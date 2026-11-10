@@ -21,7 +21,6 @@ const FILE = { id: 'file' } as const
  * read-only subagent routes of F1.1. The SSE stream has its own route.
  */
 const RULES: readonly Rule[] = [
-  { methods: ['GET'], segments: ['agents'] },
   { methods: ['GET'], segments: ['agents', 'tools'] },
   { methods: ['GET'], segments: ['agents', 'skills'] },
   { methods: ['GET'], segments: ['agents', 'commands'] },
@@ -34,7 +33,8 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'files'] },
   { methods: ['GET'], segments: ['agents', 'files', FILE, 'content'] },
   { methods: ['DELETE'], segments: ['agents', 'files', FILE] },
-  { methods: ['GET'], segments: ['agents', AGENT] },
+  { methods: ['GET', 'POST'], segments: ['agents'] },
+  { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', AGENT] },
   { methods: ['GET', 'POST'], segments: ['agents', 'sessions'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'sessions', SESSION] },
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'events'] },

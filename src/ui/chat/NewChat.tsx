@@ -10,6 +10,7 @@ import * as stylex from '@stylexjs/stylex'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
+import type { OAIAgent } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
 import { scheduleSeedText } from '@/schedule/seed'
@@ -44,6 +45,9 @@ export function NewChat() {
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<EffortChoice>('auto')
+  // Saved agents for the agent menu; '' is the default agent. A failed load just hides the menu.
+  const [agents, setAgents] = useState<OAIAgent[]>([])
+  const [agentId, setAgentId] = useState('')
   const [failure, setFailure] = useState<Failure | null>(null)
   // The message being sent, shown with a thinking state until the session exists and the chat opens.
   const [pending, setPending] = useState<{ text: string; files?: UserFile[] } | null>(null)
@@ -63,11 +67,17 @@ export function NewChat() {
   useEffect(() => {
     void loadModels()
   }, [loadModels])
+  useEffect(() => {
+    // A failed or unavailable list just leaves the agent menu hidden.
+    Promise.resolve()
+      .then(() => api.listAgents())
+      .then((list) => setAgents(list.data), () => undefined)
+  }, [])
 
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })
     try {
-      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }) })
+      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}) })
       setPendingFirst(session.id, { text, ...(files?.length ? { files } : {}) })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
@@ -104,7 +114,7 @@ export function NewChat() {
     <VStack xstyle={styles.page}>
       <TopBar />
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={failure.retry} />}
-      <Center axis="both" padding={6} minHeight="70%">
+      <Center axis="both" padding={6} paddingBlockStart={10} minHeight="85%">
         <VStack gap={6} width="100%" maxWidth={760} hAlign="stretch">
           {pending ? (
             <>
@@ -122,6 +132,7 @@ export function NewChat() {
             isDisabled={!model}
             commands={commands}
             appHandlers={appHandlers}
+            density="spacious"
             initialValue={initialValue}
             placeholder="How can Agentry help today?"
             status={
@@ -131,7 +142,7 @@ export function NewChat() {
                   ? { type: 'warning', message: 'No models are configured.' }
                   : undefined
             }
-            settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort }}
+            settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId }}
           />
         </VStack>
       </Center>
