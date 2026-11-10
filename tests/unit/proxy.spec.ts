@@ -96,7 +96,7 @@ describe('proxy /api/agentry/[...path]', () => {
 
   it('rejects traversal and non-allow-listed paths', async () => {
     for (const [method, path] of [
-      ['GET', '/agents/environments'],
+      ['PUT', '/agents/environments/env_1'],
       ['GET', '/admin/v1/sessions'],
       ['GET', '/agents/sessions/a%2Fb'],
       ['GET', '/agents/sessions/s_1/events'],

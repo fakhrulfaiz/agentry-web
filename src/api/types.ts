@@ -520,3 +520,64 @@ export interface Artifact {
   /** The agent's note from `present`, when it gave one. */
   description?: string
 }
+
+/** A sandbox provider and what it supports (`GET /agents/environments/providers`). */
+export interface SandboxProvider {
+  object: 'sandbox.provider'
+  name: string
+  default: boolean
+  capabilities: { templateFields: string[]; files: boolean; exec: boolean }
+}
+
+/** An environment template (`agent.environment.template`). */
+export interface SandboxTemplate {
+  id: string
+  object: 'agent.environment.template'
+  name: string | null
+  created_at: number
+  updated_at: number
+  files: Array<{ type: 'inline' | 'file_id'; path: string; size_bytes?: number }>
+  network: { access: 'enabled' | 'disabled' | 'restricted'; allowed_domains: string[] }
+  packages: { npm: string[]; python: string[]; system: string[] }
+  provider: string
+  image?: string
+  /** Fields the provider cannot apply; provisioning fails while any remain. */
+  unsupported_fields: string[]
+}
+
+/** An environment (`agent.environment`). */
+export interface SandboxEnvironment {
+  id: string
+  object: 'agent.environment'
+  type: 'openai_hosted' | 'self_hosted'
+  status: 'pending' | 'connected' | 'disconnected' | 'expired' | 'failed'
+  provider: string
+  template_id?: string
+  session_id?: string
+  error?: string
+  created_at: number
+}
+
+/** A file in an environment (`agent.environment.file`). */
+export interface EnvironmentFile {
+  object: 'agent.environment.file'
+  environment_id: string
+  /** Absolute path, `/workspace/...`. */
+  path: string
+  size_bytes: number
+}
+
+/** A token page as the Agents API returns it for environment files. */
+export interface SandboxPage<T> {
+  object: 'list'
+  data: T[]
+  has_more: boolean
+  next?: string
+}
+
+export interface CreateTemplateParams {
+  name: string
+  provider?: string
+  network?: { access: 'enabled' | 'disabled' | 'restricted'; allowed_domains?: string[] }
+  packages?: { npm?: string[]; python?: string[]; system?: string[] }
+}

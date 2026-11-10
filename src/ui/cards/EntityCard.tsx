@@ -64,7 +64,8 @@ export function EntityCard({
   footer,
   dimmed = false,
 }: {
-  href: string
+  /** Where the card goes; without it the title is plain text (a card that only shows facts). */
+  href?: string
   title: string
   trailing?: ReactNode
   children?: ReactNode
@@ -75,11 +76,15 @@ export function EntityCard({
     <li {...stylex.props(styles.card, dimmed && styles.dimmed)}>
       <div {...stylex.props(styles.head)}>
         <div {...stylex.props(styles.title)}>
-          <Link href={href}>
-            <span {...stylex.props(styles.stretch)}>
-              <Text weight="medium" maxLines={1}>{title}</Text>
-            </span>
-          </Link>
+          {href === undefined ? (
+            <Text weight="medium" maxLines={1}>{title}</Text>
+          ) : (
+            <Link href={href}>
+              <span {...stylex.props(styles.stretch)}>
+                <Text weight="medium" maxLines={1}>{title}</Text>
+              </span>
+            </Link>
+          )}
         </div>
         {trailing && <div {...stylex.props(styles.trailing)}>{trailing}</div>}
       </div>

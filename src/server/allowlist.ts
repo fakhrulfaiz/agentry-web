@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -15,6 +15,8 @@ const SESSION = { id: 'session' } as const
 const SUBAGENT = { id: 'subagent' } as const
 const SCHEDULE = { id: 'schedule' } as const
 const FILE = { id: 'file' } as const
+const TEMPLATE = { id: 'template' } as const
+const ENVIRONMENT = { id: 'environment' } as const
 
 /**
  * F1's allow-list, relative to the upstream `/v1` prefix (spec §5), plus the
@@ -33,6 +35,13 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'files'] },
   { methods: ['GET'], segments: ['agents', 'files', FILE, 'content'] },
   { methods: ['DELETE'], segments: ['agents', 'files', FILE] },
+  // Sandboxes: providers, templates, environments and their files. File bytes have their own route.
+  { methods: ['GET'], segments: ['agents', 'environments', 'providers'] },
+  { methods: ['GET', 'POST'], segments: ['agents', 'environments', 'templates'] },
+  { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'environments', 'templates', TEMPLATE] },
+  { methods: ['GET', 'POST'], segments: ['agents', 'environments'] },
+  { methods: ['GET', 'DELETE'], segments: ['agents', 'environments', ENVIRONMENT] },
+  { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'files'] },
   { methods: ['GET', 'POST'], segments: ['agents'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', AGENT] },
   { methods: ['GET', 'POST'], segments: ['agents', 'sessions'] },

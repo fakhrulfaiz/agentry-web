@@ -14,6 +14,12 @@ import type {
   SessionArtifactList,
   SessionDeliverableList,
   CreateScheduleParams,
+  CreateTemplateParams,
+  EnvironmentFile,
+  SandboxEnvironment,
+  SandboxPage,
+  SandboxProvider,
+  SandboxTemplate,
   CreateSessionParams,
   OAIAgentSession,
   OAIInputEvent,
@@ -203,10 +209,11 @@ export const api = {
   },
 
   /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string }): Promise<OAIAgentSession> {
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
       ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
+      ...(input.environmentId ? { environment: { type: 'sandbox', environment_id: input.environmentId } } : {}),
       input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
       metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
     }
@@ -342,6 +349,44 @@ export const api = {
   /** Files the agent delivered with `present` in one chat (`GET /v1/agents/sessions/{id}/deliverables`). */
   listSessionDeliverables(id: string): Promise<SessionDeliverableList> {
     return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`)
+  },
+
+  /** Sandbox providers and what each supports. */
+  listSandboxProviders(): Promise<SandboxPage<SandboxProvider>> {
+    return request('GET', `${AGENTRY}/agents/environments/providers`)
+  },
+  listSandboxTemplates(): Promise<SandboxPage<SandboxTemplate>> {
+    return request('GET', `${AGENTRY}/agents/environments/templates?limit=100`)
+  },
+  createSandboxTemplate(params: CreateTemplateParams): Promise<SandboxTemplate> {
+    return request('POST', `${AGENTRY}/agents/environments/templates`, params)
+  },
+  async deleteSandboxTemplate(id: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/environments/templates/${seg(id)}`)
+  },
+  listSandboxEnvironments(): Promise<SandboxPage<SandboxEnvironment>> {
+    return request('GET', `${AGENTRY}/agents/environments?limit=100`)
+  },
+  getSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
+    return request('GET', `${AGENTRY}/agents/environments/${seg(id)}`)
+  },
+  /** Provisions an environment; `templateId` and `provider` are optional (the default provider is used without them). */
+  createSandboxEnvironment(input: { templateId?: string; provider?: string } = {}): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments`, {
+      ...(input.templateId ? { template_id: input.templateId } : {}),
+      ...(input.provider ? { provider: input.provider } : {}),
+    })
+  },
+  async deleteSandboxEnvironment(id: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}`)
+  },
+  /** One page of an environment's files, A to Z. */
+  listEnvironmentFiles(id: string, page?: string): Promise<SandboxPage<EnvironmentFile>> {
+    return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/files?limit=100&order=asc${page ? `&page=${encodeURIComponent(page)}` : ''}`)
+  },
+  /** Writes one file (UTF-8 text or base64 bytes) at an absolute `/workspace/...` path. */
+  uploadEnvironmentFile(id: string, path: string, base64: string): Promise<EnvironmentFile> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/files`, { type: 'inline', path, data: base64 })
   },
 
   /** The user's saved agents. */

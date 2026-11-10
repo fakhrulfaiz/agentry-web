@@ -42,7 +42,7 @@ import { Selector } from '@astryxdesign/core/Selector'
 import { Text } from '@astryxdesign/core/Text'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { LightBulbIcon, PaperClipIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { LightBulbIcon, PaperClipIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AgentCommand, ReasoningEffort } from '@/api/types'
 import { APP_COMMANDS, AppCommandError, parseSlashLine, type AppCommandHandlers } from '@/commands/app-commands'
@@ -82,10 +82,15 @@ export interface ComposerSettings {
   /** The chosen saved agent's id; `''` is the default agent. */
   agentId?: string
   onAgentChange?(id: string): void
+  /** Ready sandbox environments for the environment menu (new chats only); hidden without any. */
+  environments?: { id: string; name: string }[]
+  /** The chosen environment's id; `''` is the default workspace. */
+  environmentId?: string
+  onEnvironmentChange?(id: string): void
 }
 
 function SettingsMenus({ settings }: { settings: ComposerSettings }) {
-  const { models, model, onModelChange, effort, onEffortChange, efforts, hint, agents, agentId = '', onAgentChange } = settings
+  const { models, model, onModelChange, effort, onEffortChange, efforts, hint, agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange } = settings
   // A disabled menu still names its current value.
   const modelOptions = models && models.length > 0 ? models : model ? [model] : []
   return (
@@ -100,6 +105,18 @@ function SettingsMenus({ settings }: { settings: ComposerSettings }) {
           options={[{ value: '', label: 'Default agent' }, ...agents.map((a) => ({ value: a.id, label: a.name || 'Untitled agent' }))]}
           value={agentId}
           onChange={onAgentChange}
+        />
+      )}
+      {environments && environments.length > 0 && onEnvironmentChange && (
+        <Selector
+          label="Environment"
+          isLabelHidden
+          size="sm"
+          variant="ghost"
+          startIcon={ServerStackIcon}
+          options={[{ value: '', label: 'Default workspace' }, ...environments.map((e) => ({ value: e.id, label: e.name }))]}
+          value={environmentId}
+          onChange={onEnvironmentChange}
         />
       )}
       <Selector

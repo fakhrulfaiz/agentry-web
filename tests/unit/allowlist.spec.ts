@@ -17,6 +17,16 @@ describe('isAllowed', () => {
     ['GET', '/agents'],
     ['GET', '/agents/agent_123'],
     ['GET', '/agents/tools'],
+    ['GET', '/agents/environments/providers'],
+    ['GET', '/agents/environments/templates'],
+    ['POST', '/agents/environments/templates'],
+    ['DELETE', '/agents/environments/templates/tpl_1'],
+    ['GET', '/agents/environments'],
+    ['POST', '/agents/environments'],
+    ['GET', '/agents/environments/env_1'],
+    ['DELETE', '/agents/environments/env_1'],
+    ['GET', '/agents/environments/env_1/files'],
+    ['POST', '/agents/environments/env_1/files'],
     ['POST', '/agents/sessions'],
     ['GET', '/agents/sessions'],
     ['GET', `/agents/sessions/${ID}`],
@@ -69,7 +79,6 @@ describe('isAllowed', () => {
       '/agents//sessions',
       '/agents\\sessions',
       '/agents/sessions?x=1',
-      '/agents/environments',
       '/agents/sessions/x/events/extra',
     ]) {
       expect(isAllowed('GET', path), path).toBe(false)
@@ -78,7 +87,6 @@ describe('isAllowed', () => {
   })
 
   it('never treats a reserved name as an agent id', () => {
-    expect(isAllowed('GET', '/agents/environments')).toBe(false)
     // These resolve to their own routes (session list, tools list), not GET /agents/{id}.
     expect(isAllowed('GET', '/agents/sessions')).toBe(true)
     expect(isAllowed('GET', '/agents/tools')).toBe(true)
@@ -155,5 +163,14 @@ describe('isAllowed', () => {
     expect(isAllowed('DELETE', '/agents/sessions')).toBe(false)
     expect(isAllowed('TRACE', '/agents')).toBe(false)
     expect(isAllowed('', '/agents')).toBe(false)
+  })
+})
+
+describe('sandbox routes', () => {
+  it('keep file bytes off the proxy and refuse methods the page does not use', () => {
+    expect(isAllowed('GET', '/agents/environments/env_1/files/a.txt')).toBe(false)
+    expect(isAllowed('POST', '/agents/environments/providers')).toBe(false)
+    expect(isAllowed('POST', '/agents/environments/env_1')).toBe(false)
+    expect(isAllowed('DELETE', '/agents/environments')).toBe(false)
   })
 })

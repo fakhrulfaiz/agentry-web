@@ -33,6 +33,10 @@ describe('api client', () => {
     await api.createSession({ text: 'Think hard', model: 'm1', effort: 'high' })
     expect(lastCall().body).toMatchObject({ agent: { model: 'm1', reasoning: { effort: 'high' } } })
 
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's3', status: 'in_progress' }))
+    await api.createSession({ text: 'Use my box', model: 'm1', environmentId: 'env_1' })
+    expect(lastCall().body).toMatchObject({ environment: { type: 'sandbox', environment_id: 'env_1' } })
+
     fetchMock.mockResolvedValue(Response.json({ object: 'list', data: [], first_id: null, last_id: null, has_more: false }))
     await api.listSessions({ after: 's9', limit: 20 })
     expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions?after=s9&limit=20', method: 'GET' })

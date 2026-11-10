@@ -49,6 +49,9 @@ export function NewChat() {
   // Saved agents for the agent menu; '' is the default agent. A failed load just hides the menu.
   const [agents, setAgents] = useState<OAIAgent[]>([])
   const [agentId, setAgentId] = useState('')
+  // Ready sandbox environments for the environment menu; '' is the default workspace. A failed load hides the menu.
+  const [environments, setEnvironments] = useState<{ id: string; name: string }[]>([])
+  const [environmentId, setEnvironmentId] = useState('')
   const [failure, setFailure] = useState<Failure | null>(null)
   // The message being sent, shown with a thinking state until the session exists and the chat opens.
   const [pending, setPending] = useState<{ text: string; files?: UserFile[] } | null>(null)
@@ -73,12 +76,15 @@ export function NewChat() {
     Promise.resolve()
       .then(() => api.listAgents())
       .then((list) => setAgents(list.data), () => undefined)
+    Promise.resolve()
+      .then(() => api.listSandboxEnvironments())
+      .then((list) => setEnvironments(list.data.filter((e) => e.status === 'connected').map((e) => ({ id: e.id, name: e.id }))), () => undefined)
   }, [])
 
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })
     try {
-      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}) })
+      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}), ...(environmentId ? { environmentId } : {}) })
       setPendingFirst(session.id, { text, ...(files?.length ? { files } : {}) })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
@@ -143,7 +149,7 @@ export function NewChat() {
                   ? { type: 'warning', message: 'No models are configured.' }
                   : undefined
             }
-            settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId }}
+            settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }}
           />
           {!pending && <RecentFiles />}
         </VStack>
