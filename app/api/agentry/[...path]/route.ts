@@ -28,7 +28,7 @@ async function handle(req: Request): Promise<Response> {
   }
   if (STATE_CHANGING.has(req.method) && !checkCsrf(req, auth.session)) return jsonError(403, 'forbidden')
 
-  const extra: Record<string, string> = { accept: 'application/json' }
+  const extra: Record<string, string> = { accept: req.method === 'GET' && path.endsWith('/content') ? '*/*' : 'application/json' }
   const type = req.headers.get('content-type')
   if (type) extra['content-type'] = type
   const body = req.method === 'GET' ? undefined : await req.arrayBuffer()
@@ -50,7 +50,7 @@ async function handle(req: Request): Promise<Response> {
     await upstream.body?.cancel()
     return signedOut(auth.session)
   }
-  return relay(upstream)
+  return relay(upstream, path.endsWith('/content') ? { 'x-content-type-options': 'nosniff' } : {})
 }
 
 export const GET = handle

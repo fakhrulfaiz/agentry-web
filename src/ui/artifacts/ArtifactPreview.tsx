@@ -75,7 +75,8 @@ export function ArtifactPreview({
 }: {
   artifact: Artifact | null
   onClose(): void
-  onOpenChat(sessionId: string): void
+  /** Without it the dialog has no "Open chat" button. */
+  onOpenChat?(sessionId: string): void
 }) {
   return (
     <Dialog isOpen={artifact !== null} onOpenChange={(open) => !open && onClose()} width={800}>
@@ -85,7 +86,7 @@ export function ArtifactPreview({
           <VStack gap={4}>
             <Body artifact={artifact} />
             <HStack gap={2} hAlign="end">
-              <Button label="Open chat" onClick={() => onOpenChat(artifact.session_id)} />
+              {onOpenChat && <Button label="Open chat" onClick={() => onOpenChat(artifact.session_id)} />}
               <Button label="Download" variant="primary" href={artifactUrl(artifact, true)} />
             </HStack>
           </VStack>

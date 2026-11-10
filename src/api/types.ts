@@ -193,12 +193,34 @@ export interface OAITextContentPart {
   text: string
 }
 
+/** A file the user attached: `input_image` or `input_file` after the text part. */
+export interface OAIFileContentPart {
+  type: 'input_image' | 'input_file'
+  /** Absent when the file was not uploaded through the API (name and size only). */
+  file_id?: string
+  filename: string
+  bytes?: number
+  media_type?: string
+  width?: number
+  height?: number
+}
+
+/** A file staged by `POST /agents/files`. */
+export interface OAIFileObject {
+  id: string
+  object: 'file'
+  bytes: number
+  filename: string
+  media_type: string
+  status: 'staged' | 'attached'
+}
+
 /** Saved user or assistant message. */
 export interface OAIMessageItem {
   id: string
   type: 'message'
   role: 'user' | 'assistant'
-  content: OAITextContentPart[]
+  content: Array<OAITextContentPart | OAIFileContentPart>
   phase?: 'commentary' | 'final_answer' | null
   status: ItemStatus
   turn_id: string
@@ -298,7 +320,7 @@ export type StoredSessionItem = OAISessionItem & { subagent_id?: string }
 /** User, assistant, or system input message. */
 export interface OAIInputMessage {
   role: 'user' | 'assistant' | 'system'
-  content?: Array<{ type: string; text?: string }>
+  content?: Array<{ type: string; text?: string; file_id?: string }>
 }
 
 /** Answer to an approval or question (PROVISIONAL, backend Task 6). */

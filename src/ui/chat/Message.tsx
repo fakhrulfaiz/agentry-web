@@ -16,6 +16,7 @@ import type { ActionAnswer } from '@/chat/use-conversation'
 import { ApprovalCard } from './ApprovalCard'
 import { CommandResult } from './CommandResult'
 import { Markdown } from './Markdown'
+import { MessageFiles } from './MessageFiles'
 import { Notice } from './Notice'
 import { QuestionCard } from './QuestionCard'
 import { ReasoningBlock } from './ReasoningBlock'
@@ -73,7 +74,10 @@ export function Message({
       return (
         <ChatMessage sender="user" name="" data-item-id={anchor} xstyle={highlighted ? styles.highlight : undefined}>
           <ChatMessageBubble>
-            <Text xstyle={styles.userText}>{view.text}</Text>
+            <VStack gap={2}>
+              {view.files && <MessageFiles files={view.files} />}
+              {view.text && <Text xstyle={styles.userText}>{view.text}</Text>}
+            </VStack>
           </ChatMessageBubble>
         </ChatMessage>
       )

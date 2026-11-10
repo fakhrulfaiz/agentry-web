@@ -45,6 +45,7 @@ import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
 import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
 import { useChatSettings, withSettings } from './chat-settings'
+import type { UserFile } from '@/chat/attachments'
 import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
@@ -250,11 +251,11 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   // Refused (409 session_setting_not_live): nothing was queued, the draft stays, and the menus go back.
   const { change, revert } = settings
   const onSend = useCallback(
-    async (text: string) => {
+    async (text: string, files?: UserFile[]) => {
       noticesAtSend.current = new Set(seenNotices.current)
       setSent(true)
       try {
-        await run(() => send(text, change))
+        await run(() => send(text, change, files))
       } catch (error) {
         setSent(false)
         if (error instanceof ApiError && error.code === SETTING_NOT_LIVE) revert()

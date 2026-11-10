@@ -98,7 +98,8 @@ const styles = stylex.create({
   text: { minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' },
 })
 
-function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () => void }) {
+/** One file card: icon or image thumbnail, name and type, a download button. Shared with the files on user messages. */
+export function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () => void }) {
   const kind = artifactKind(artifact)
   const ext = artifact.name.includes('.') ? artifact.name.split('.').pop()!.toUpperCase() : ''
   return (

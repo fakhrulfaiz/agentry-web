@@ -19,6 +19,7 @@ import { Wordmark } from '@/ui/brand/Wordmark'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { SESSIONS_CHANGED } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
+import type { UserFile } from '@/chat/attachments'
 import { Composer, type EffortChoice } from './Composer'
 import { pickModel, readModelCookie } from './model-cookie'
 
@@ -58,9 +59,9 @@ export function NewChat() {
     void loadModels()
   }, [loadModels])
 
-  async function start(text: string) {
+  async function start(text: string, files?: UserFile[]) {
     try {
-      const session = await api.createSession({ text, model, ...(effort === 'auto' ? {} : { effort }) })
+      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }) })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
     } catch (error) {

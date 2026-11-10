@@ -177,7 +177,7 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
     const turnId = item.turn_id
     switch (item.type) {
       case 'message': {
-        const text = item.content.map((p) => p.text).join('')
+        const text = item.content.map((p) => ('text' in p ? p.text : '')).join('')
         if (item.role === 'user') {
           out.push(make('user', item.id, turnId, { title: firstLine(text) || 'Message', input: text }))
           break

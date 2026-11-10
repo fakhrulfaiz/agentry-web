@@ -39,6 +39,7 @@
  * hidden tab coming back to the foreground retries at once. A 401 sends the
  * user to `/login`; a 403 or 404 closes the stream and sets `closedReason`.
  */
+import type { UserFile } from './attachments'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { api, isSignedOut, type SettingsChange } from '@/api/client'
 import type { OAIAgentSession, OAISessionEvent, OAITurn, StoredSessionItem } from '@/api/types'
@@ -91,7 +92,7 @@ type Action =
   | { type: 'items'; items: StoredSessionItem[] }
   | { type: 'turns'; turns: OAITurn[] }
   | { type: 'subagents'; children: SubagentActivity[] }
-  | { type: 'local-user'; text: string }
+  | { type: 'local-user'; text: string; files?: UserFile[] }
   | { type: 'drop-local'; text: string }
 
 function reducer(s: ConversationState, a: Action): ConversationState {
@@ -107,7 +108,7 @@ function reducer(s: ConversationState, a: Action): ConversationState {
     case 'subagents':
       return applySubagents(s, a.children)
     case 'local-user':
-      return appendLocalUserMessage(s, a.text)
+      return appendLocalUserMessage(s, a.text, a.files)
     case 'drop-local':
       return removeLocalUserMessage(s, a.text)
   }
@@ -149,7 +150,7 @@ export function useConversation(
   connection: Connection
   closedReason: ClosedReason | null
   /** Sends a message, with the model / effort the user changed (if any). */
-  send(text: string, change?: SettingsChange): Promise<void>
+  send(text: string, change?: SettingsChange, files?: UserFile[]): Promise<void>
   stop(): Promise<void>
   answer(actionId: string, a: ActionAnswer): Promise<void>
   /** Runs a backend slash command and shows its result item at once (the stream carries the same item). */
@@ -469,10 +470,10 @@ export function useConversation(
   }, [onSignedOut])
 
   const send = useCallback(
-    async (text: string, change?: SettingsChange) => {
-      dispatch({ type: 'local-user', text })
+    async (text: string, change?: SettingsChange, files?: UserFile[]) => {
+      dispatch({ type: 'local-user', text, files })
       try {
-        await guard(() => api.sendMessage(sessionId, text, change))
+        await guard(() => api.sendMessage(sessionId, text, change, files))
       } catch (error) {
         dispatch({ type: 'drop-local', text })
         throw error

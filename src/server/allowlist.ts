@@ -2,9 +2,9 @@
 export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 
 /** Names under `/agents/` that are routes, never an agent id. */
-const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands'])
+const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -14,6 +14,7 @@ const AGENT = { id: 'agent' } as const
 const SESSION = { id: 'session' } as const
 const SUBAGENT = { id: 'subagent' } as const
 const SCHEDULE = { id: 'schedule' } as const
+const FILE = { id: 'file' } as const
 
 /**
  * F1's allow-list, relative to the upstream `/v1` prefix (spec §5), plus the
@@ -27,6 +28,10 @@ const RULES: readonly Rule[] = [
   // Artifacts listing; the bytes live under session workspace paths and their
   // dedicated route validates those segments itself (see artifact-bytes).
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'artifacts'] },
+  // Attachments: the upload has its own streaming route; content and delete go through the proxy.
+  { methods: ['POST'], segments: ['agents', 'files'] },
+  { methods: ['GET'], segments: ['agents', 'files', FILE, 'content'] },
+  { methods: ['DELETE'], segments: ['agents', 'files', FILE] },
   { methods: ['GET'], segments: ['agents', AGENT] },
   { methods: ['GET', 'POST'], segments: ['agents', 'sessions'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'sessions', SESSION] },

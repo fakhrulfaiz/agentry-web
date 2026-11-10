@@ -59,6 +59,7 @@
  * drops an approval that the session snapshot reported. Action views are kept
  * at the end of `items`.
  */
+import type { UserFile } from './attachments'
 import type {
   OAIRequiredAction,
   OAISessionEvent,
@@ -72,7 +73,7 @@ import type {
 } from '@/api/types'
 
 export type MessageView =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; files?: UserFile[] }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
   | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown }
@@ -266,9 +267,9 @@ function settleReasoning(s: ConversationState): ConversationState {
  * server item with the same text. Sent during a turn, it belongs to that turn
  * (steering), so later replies of the turn follow it.
  */
-export function appendLocalUserMessage(s: ConversationState, text: string): ConversationState {
+export function appendLocalUserMessage(s: ConversationState, text: string, files?: UserFile[]): ConversationState {
   const n = s.items.filter((v) => v.id.startsWith(LOCAL_PREFIX)).length + 1
-  return place(s, { kind: 'user', id: `${LOCAL_PREFIX}${n}`, text }, s.openTurn ?? undefined, true)
+  return place(s, { kind: 'user', id: `${LOCAL_PREFIX}${n}`, text, ...(files?.length ? { files } : {}) }, s.openTurn ?? undefined, true)
 }
 
 /** Drops the latest optimistic message with this text (its send failed). */
@@ -435,8 +436,13 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
   const turn = item.turn_id || eventTurn
   switch (item.type) {
     case 'message': {
-      const text = item.content.map((part) => part.text).join('')
-      if (item.role === 'user') return placeUser(s, { kind: 'user', id: item.id, text }, turn)
+      const text = item.content.map((part) => ('text' in part ? part.text : '')).join('')
+      if (item.role === 'user') {
+        const files = item.content.flatMap((part): UserFile[] =>
+          'filename' in part ? [{ id: part.file_id, name: part.filename, bytes: part.bytes, mediaType: part.media_type }] : [],
+        )
+        return placeUser(s, { kind: 'user', id: item.id, text, ...(files.length ? { files } : {}) }, turn)
+      }
       const current = find(s.items, item.id)
       if (!done && current?.kind === 'assistant') {
         // `item.added` for a message we already show (streamed, or loaded from items): keep it as is.

@@ -4,7 +4,8 @@ import '../helpers/dom'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ATTACH_HINT, Composer, type ComposerSettings } from '@/ui/chat/Composer'
+import { api } from '@/api/client'
+import { Composer, type ComposerSettings } from '@/ui/chat/Composer'
 
 afterEach(() => {
   cleanup()
@@ -160,11 +161,47 @@ describe('Composer footer and header', () => {
     expect(document.body).toHaveTextContent(hint)
   })
 
-  it('the attach button is present but disabled, and says why', () => {
+  it('stages a picked file, blocks Send until it is uploaded, and sends its id', async () => {
+    const user = userEvent.setup()
+    let finish!: () => void
+    vi.spyOn(api, 'uploadFile').mockImplementation(
+      (file) =>
+        new Promise((resolve) => {
+          finish = () => resolve({ id: 'file_1', object: 'file', bytes: file.size, filename: file.name, media_type: 'text/plain', status: 'staged' })
+        }),
+    )
+    const onSend = vi.fn(async () => {})
+    render(<Composer onSend={onSend} />)
+    expect(isDisabled(screen.getByRole('button', { name: 'Attach files' }))).toBe(false)
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }))
+    await user.keyboard('read it')
+    await user.upload(screen.getByTestId('attach-input'), new File(['hello'], 'notes.txt', { type: 'text/plain' }))
+    expect(await screen.findByTestId('attachment-card')).toHaveTextContent('notes.txt')
+    expect(isDisabled(screen.getByRole('button', { name: 'Send' }))).toBe(true)
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }))
+    await user.keyboard('{Enter}')
+    expect(onSend).not.toHaveBeenCalled()
+    await act(async () => finish())
+    await waitFor(() => expect(isDisabled(screen.getByRole('button', { name: 'Send' }))).toBe(false))
+    await user.keyboard('{Enter}')
+    expect(onSend).toHaveBeenCalledWith('read it', [{ id: 'file_1', name: 'notes.txt', bytes: 5, mediaType: 'text/plain' }])
+    await waitFor(() => expect(screen.queryByTestId('attachment-card')).not.toBeInTheDocument())
+  })
+
+  it('removing a staged file deletes it, and an oversized file is refused with a short error', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(api, 'uploadFile').mockImplementation(async (file) => ({ id: 'file_2', object: 'file', bytes: file.size, filename: file.name, media_type: 'text/plain', status: 'staged' }))
+    const del = vi.spyOn(api, 'deleteFile').mockResolvedValue(undefined)
     render(<Composer onSend={vi.fn(async () => {})} />)
-    const attach = screen.getByRole('button', { name: 'Attach files' })
-    expect(isDisabled(attach)).toBe(true)
-    expect(document.body).toHaveTextContent(ATTACH_HINT)
+    await user.upload(screen.getByTestId('attach-input'), new File(['x'], 'a.txt', { type: 'text/plain' }))
+    await waitFor(() => expect(screen.getByTestId('attachment-card')).toHaveAttribute('data-status', 'done'))
+    await user.click(screen.getByRole('button', { name: 'Remove a.txt' }))
+    expect(del).toHaveBeenCalledWith('file_2')
+    expect(screen.queryByTestId('attachment-card')).not.toBeInTheDocument()
+    const big = new File(['x'], 'big.bin')
+    Object.defineProperty(big, 'size', { value: 26 * 1024 * 1024 })
+    await user.upload(screen.getByTestId('attach-input'), big)
+    await waitFor(() => expect(document.body).toHaveTextContent('big.bin is over 25 MB.'))
   })
 
   it('the attach button sits in the footer row, after the input and before the model menu', () => {

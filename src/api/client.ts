@@ -4,8 +4,10 @@
  * browser. Each request carries the session's CSRF token, read from
  * `<meta name="agentry-csrf">`, in `x-agentry-csrf`.
  */
+import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
+  OAIFileObject,
   AgentCommandList,
   AgentSkillList,
   CommandRunResponse,
@@ -111,6 +113,38 @@ export async function request<T>(method: string, url: string, body?: unknown): P
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+/** Message content: the text (when there is any), then one part per staged file. */
+function contentParts(text: string, files: UserFile[] = []): Array<{ type: string; text?: string; file_id?: string }> {
+  return [
+    ...(text ? [{ type: 'input_text', text }] : []),
+    ...files.flatMap((file) => (file.id ? [{ type: isImageType(file.mediaType) ? 'input_image' : 'input_file', file_id: file.id }] : [])),
+  ]
+}
+
+/** Uploads one file (multipart) and reports progress in `0..1`; aborting `signal` cancels it. */
+function uploadFile(file: File, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<OAIFileObject> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${AGENTRY}/agents/files`)
+    xhr.setRequestHeader('accept', 'application/json')
+    xhr.setRequestHeader(CSRF_HEADER, csrfToken())
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total)
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(JSON.parse(xhr.responseText) as OAIFileObject)
+      toError(new Response(xhr.responseText, { status: xhr.status })).then(reject, reject)
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'network_error', 'Network error'))
+    xhr.onabort = () => reject(new ApiError(0, 'aborted', 'Upload cancelled'))
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    const form = new FormData()
+    form.append('purpose', 'user_data')
+    form.append('file', file, file.name)
+    xhr.send(form)
+  })
+}
+
 function postEvents(id: string, events: OAIInputEvent[]): Promise<void> {
   return request<unknown>('POST', `${AGENTRY}/agents/sessions/${seg(id)}/events`, { events }).then(() => undefined)
 }
@@ -164,11 +198,11 @@ export const api = {
   },
 
   /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string; effort?: ReasoningEffort }): Promise<OAIAgentSession> {
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[] }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
-      input: input.text,
-      metadata: { title: titleFrom(input.text) },
+      input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
+      metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
     }
     return request('POST', `${AGENTRY}/agents/sessions`, body)
   },
@@ -178,15 +212,22 @@ export const api = {
    * changed; Agentry applies them before queueing the message, and answers 409
    * `session_setting_not_live` (queueing nothing) when it cannot.
    */
-  sendMessage(id: string, text: string, change: SettingsChange = {}): Promise<void> {
+  sendMessage(id: string, text: string, change: SettingsChange = {}, files?: UserFile[]): Promise<void> {
     return postEvents(id, [
       {
         type: 'agent.session.input.message',
-        input: [{ role: 'user', content: [{ type: 'input_text', text }] }],
+        input: [{ role: 'user', content: contentParts(text, files) }],
         ...(change.model ? { model: change.model } : {}),
         ...(change.effort ? { reasoning: { effort: change.effort } } : {}),
       },
     ])
+  },
+
+  uploadFile,
+
+  /** Removes a staged file (a removed attachment card). */
+  deleteFile(id: string): Promise<void> {
+    return request<unknown>('DELETE', `${AGENTRY}/agents/files/${seg(id)}`).then(() => undefined)
   },
 
   cancel(id: string): Promise<void> {

@@ -15,9 +15,12 @@
  * carries a change); without them they show the current values, disabled,
  * with `hint` as the reason. `efforts` narrows the effort choices.
  *
- * Attachments: the attach button is present but disabled until Agentry has an
- * upload endpoint; the attachments drawer renders once there are attachments,
- * which is never today.
+ * Attachments: the paperclip opens a file picker; files can also be dropped on
+ * the composer or pasted (images). Each is staged at once (`useAttachments`)
+ * and shown as a card above the input; Send is disabled while an upload is in
+ * flight, and a failed upload must be removed first. Limits (25 MB, 10 files)
+ * are checked before uploading. `onSend` receives the staged files as its
+ * second argument, only when there are any.
  *
  * Slash menu: typing `/` at the start of the message opens a menu with up to
  * three groups, in this order: Commands (`dshCommands`, run on the backend
@@ -32,18 +35,19 @@
  * A refused command (`AppCommandError`) is shown as a notice and the text stays.
  */
 import { Button } from '@astryxdesign/core/Button'
-import { ChatComposer, ChatComposerDrawer, ChatComposerInput, type ChatComposerTrigger } from '@astryxdesign/core/Chat'
+import { ChatComposer, ChatComposerDrawer, ChatComposerInput, ChatSendButton, type ChatComposerTrigger } from '@astryxdesign/core/Chat'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Text } from '@astryxdesign/core/Text'
-import { Token } from '@astryxdesign/core/Token'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
 import { LightBulbIcon, PaperClipIcon } from '@heroicons/react/24/outline'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AgentCommand, ReasoningEffort } from '@/api/types'
 import { APP_COMMANDS, AppCommandError, parseSlashLine, type AppCommandHandlers } from '@/commands/app-commands'
+import type { UserFile } from '@/chat/attachments'
+import { AttachmentCards, useAttachments } from './ComposerAttachments'
 import { focusEditor } from './focus'
 import { buildSlashItems, slashSource, type SlashItemData } from './slash-menu'
 
@@ -55,8 +59,6 @@ const EFFORTS: { value: EffortChoice; label: string }[] = [
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
 ]
-
-export const ATTACH_HINT = 'File attachments need backend support'
 
 export interface SlashCommand {
   name: string
@@ -128,7 +130,7 @@ export function Composer({
   autoFocus = false,
 }: {
   /** Resolves when the message was accepted; a rejection keeps the text in the composer. */
-  onSend(text: string): Promise<void>
+  onSend(text: string, files?: UserFile[]): Promise<void>
   onStop?(): void
   isRunning?: boolean
   isDisabled?: boolean
@@ -152,8 +154,9 @@ export function Composer({
   const [sending, setSending] = useState(false)
   const root = useRef<HTMLDivElement | null>(null)
   const refocus = useRef(autoFocus)
-  // No upload endpoint yet, so this stays empty and the drawer hidden.
-  const attachments: string[] = []
+  const attachments = useAttachments()
+  const picker = useRef<HTMLInputElement | null>(null)
+  const [dragging, setDragging] = useState(false)
 
   // Focus goes to the editor once it is editable (a new chat's waits for the models), never to a button.
   useEffect(() => {
@@ -223,9 +226,17 @@ export function Composer({
 
   async function submit(text: string) {
     if (sending || isDisabled || !text.trim()) return
+    if (attachments.uploading || attachments.failed) {
+      // ChatComposer clears the text after `onSubmit` returns; put it back once it has.
+      await Promise.resolve()
+      setValue(text)
+      return
+    }
     setSending(true)
     try {
-      if (!(await runSlash(text))) await onSend(text)
+      const files = attachments.files()
+      if (!(await runSlash(text))) await (files.length > 0 ? onSend(text, files) : onSend(text))
+      attachments.clear()
       setValue('')
     } catch (error) {
       if (error instanceof AppCommandError) toast({ type: 'error', body: error.message })
@@ -238,33 +249,71 @@ export function Composer({
   }
   submitRef.current = submit
 
+  const stopShown = isRunning && !sending && !value.trim() && onStop !== undefined
+  const hasFiles = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes('Files')
+
   return (
+    <div
+      onDragOver={(event) => {
+        if (!hasFiles(event)) return
+        event.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
+      }}
+      onDrop={(event) => {
+        if (!hasFiles(event)) return
+        event.preventDefault()
+        setDragging(false)
+        attachments.add(Array.from(event.dataTransfer.files))
+      }}
+      onPaste={(event) => {
+        const files = Array.from(event.clipboardData.files)
+        if (files.length === 0) return
+        event.preventDefault()
+        attachments.add(files)
+      }}
+      data-dragging={dragging || undefined}
+      style={dragging ? { outline: '2px dashed var(--color-accent)', outlineOffset: 2, borderRadius: 16 } : undefined}
+    >
+    <input
+      ref={picker}
+      type="file"
+      multiple
+      hidden
+      data-testid="attach-input"
+      onChange={(event) => {
+        attachments.add(Array.from(event.target.files ?? []))
+        event.target.value = ''
+      }}
+    />
     <ChatComposer
       ref={root}
       value={value}
       onChange={setValue}
       onSubmit={(text) => void submit(text)}
       onStop={onStop}
-      isStopShown={isRunning && !sending && !value.trim() && onStop !== undefined}
+      isStopShown={stopShown}
       isDisabled={isDisabled || sending}
       placeholder={placeholder}
       input={<ChatComposerInput triggers={triggers} />}
       drawer={
-        attachments.length > 0 ? (
-          <ChatComposerDrawer count={attachments.length} label="Files">
-            {attachments.map((name) => (
-              <Token key={name} label={name} />
-            ))}
+        attachments.items.length > 0 ? (
+          <ChatComposerDrawer>
+            <AttachmentCards attachments={attachments} />
           </ChatComposerDrawer>
         ) : undefined
       }
+      sendButton={<ChatSendButton isDisabled={attachments.uploading && !stopShown ? true : undefined} />}
       footerActions={
         <>
-          <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly isDisabled tooltip={ATTACH_HINT} />
+          <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly onClick={() => picker.current?.click()} />
           {settings && <SettingsMenus settings={settings} />}
         </>
       }
-      status={status}
+      status={attachments.error ? { type: 'error', message: attachments.error } : attachments.failed ? { type: 'error', message: 'Remove the failed upload to send.' } : status}
     />
+    </div>
   )
 }

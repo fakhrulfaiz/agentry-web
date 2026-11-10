@@ -64,6 +64,8 @@ import type {
   OAIAgentSession,
   OAIApprovalAction,
   OAISessionEvent,
+  OAIFileContentPart,
+  OAIMessageItem,
   OAISessionItem,
   OAISubagent,
   OAITurn,
@@ -178,9 +180,10 @@ function setOverlay(s: MockSession): void {
 }
 
 /** User messages are saved only; the backend stream never carries them. */
-function userMessage(s: MockSession, turnId: string, text: string): void {
+function userMessage(s: MockSession, turnId: string, text: string, attached: OAIFileContentPart[] = []): void {
   s.seq += 1
-  s.items.push({ id: `item_msg_${s.seq}`, type: 'message', role: 'user', content: [{ type: 'input_text', text }], status: 'completed', turn_id: turnId })
+  const content: OAIMessageItem['content'] = [...(text ? [{ type: 'input_text' as const, text }] : []), ...attached]
+  s.items.push({ id: `item_msg_${s.seq}`, type: 'message', role: 'user', content, status: 'completed', turn_id: turnId })
 }
 
 // ---------- scripted turns ----------
@@ -447,7 +450,7 @@ function newTurn(s: MockSession): OAITurn {
   }
 }
 
-function startTurn(s: MockSession, text: string): void {
+function startTurn(s: MockSession, text: string, attached: OAIFileContentPart[] = []): void {
   const turn = newTurn(s)
   const abort = new AbortController()
   s.turns.push(turn)
@@ -457,7 +460,7 @@ function startTurn(s: MockSession, text: string): void {
   emit(s, { type: 'agent.session.in_progress', session: resource(s, false) })
   emit(s, { type: 'agent.session.turn.created', session_id: s.id, turn: { ...turn } })
   emit(s, { type: 'agent.session.turn.in_progress', session_id: s.id, turn: { ...turn } })
-  userMessage(s, turn.id, text)
+  userMessage(s, turn.id, text, attached)
 
   script(s, turn.id, text, abort.signal).then(
     () => endTurn(s, turn, 'completed'),
@@ -552,6 +555,66 @@ function inputText(input: unknown): string {
     .join('')
 }
 
+// ---------- staged files ----------
+
+interface StagedFile {
+  meta: { id: string; object: 'file'; bytes: number; created_at: number; filename: string; purpose: 'user_data'; media_type: string; status: 'staged' | 'attached' }
+  body: Buffer
+}
+const files = new Map<string, StagedFile>()
+const MOCK_MAX_FILE = 25 * 1024 * 1024
+
+async function readBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks)
+}
+
+/** Stages the single `file` part of a multipart body (enough of RFC 7578 for the web app's uploads). */
+function stageFile(contentType: string, raw: Buffer): StagedFile {
+  const boundary = /boundary=(?:"([^"]+)"|([^;]+))/.exec(contentType)
+  if (!boundary) throw new HttpError(400, 'invalid_file', 'Not a multipart body')
+  const delimiter = Buffer.from(`--${boundary[1] ?? boundary[2]}`)
+  for (let at = raw.indexOf(delimiter); at !== -1; at = raw.indexOf(delimiter, at + delimiter.length)) {
+    const headEnd = raw.indexOf('\r\n\r\n', at)
+    if (headEnd === -1) break
+    const name = /filename="([^"]*)"/.exec(raw.subarray(at, headEnd).toString('utf8'))
+    if (!name) continue
+    const end = raw.indexOf(delimiter, headEnd)
+    const body = raw.subarray(headEnd + 4, end === -1 ? raw.length : end - 2)
+    if (body.length === 0) throw new HttpError(400, 'invalid_file', 'The file is empty')
+    if (body.length > MOCK_MAX_FILE) throw new HttpError(413, 'file_too_large', 'The file is over 25 MiB')
+    const filename = name[1].split(/[\\/]/).pop() || 'file'
+    const id = `file_mock${files.size + 1}_${randomUUID().slice(0, 6)}`
+    const mediaType = contentTypeFor(filename)
+    return { meta: { id, object: 'file', bytes: body.length, created_at: now(), filename, purpose: 'user_data', media_type: mediaType, status: 'staged' }, body: Buffer.from(body) }
+  }
+  throw new HttpError(400, 'invalid_file', 'No file part')
+}
+
+function contentTypeFor(filename: string): string {
+  const ext = filename.slice(filename.lastIndexOf('.') + 1).toLowerCase()
+  return ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', txt: 'text/plain', md: 'text/plain', csv: 'text/csv' } as Record<string, string>)[ext] ?? 'application/octet-stream'
+}
+
+/** `input_image` / `input_file` parts of a message input, resolved against the staged files (each used once). */
+function attachedParts(input: unknown): OAIFileContentPart[] {
+  if (!Array.isArray(input)) return []
+  const out: OAIFileContentPart[] = []
+  for (const message of input as Array<{ content?: Array<{ type?: string; file_id?: string }> }>) {
+    for (const part of message.content ?? []) {
+      if (part.type !== 'input_image' && part.type !== 'input_file') continue
+      const file = part.file_id ? files.get(part.file_id) : undefined
+      if (!file) throw new HttpError(404, 'file_not_found', `No file '${String(part.file_id)}'`)
+      if (file.meta.status === 'attached') throw new HttpError(400, 'duplicate_file_id', 'A file may be used once')
+      file.meta.status = 'attached'
+      out.push({ type: part.type, file_id: file.meta.id, filename: file.meta.filename, bytes: file.meta.bytes, media_type: file.meta.media_type })
+    }
+  }
+  if (out.length > 10) throw new HttpError(400, 'too_many_files', 'At most 10 files per message')
+  return out
+}
+
 function getSession(id: string): MockSession {
   const s = sessions.get(id)
   if (!s) throw new HttpError(404, 'resource_not_found', `No session found with id '${id}'`)
@@ -604,7 +667,8 @@ function createSession(body: Record<string, unknown>): MockSession {
   sessions.set(id, s)
   emit(s, { type: 'agent.session.created', session: resource(s, false) })
   const text = inputText(body.input)
-  if (text) startTurn(s, text)
+  const attached = attachedParts(body.input)
+  if (text || attached.length > 0) startTurn(s, text, attached)
   return s
 }
 
@@ -615,9 +679,10 @@ function postEvents(s: MockSession, body: Record<string, unknown>): void {
     switch (event.type) {
       case 'agent.session.input.message': {
         const text = inputText(event.input)
-        if (!text) throw new HttpError(400, 'invalid_request_error', 'message input is empty')
-        if (s.turn) userMessage(s, s.turn.turn.id, text)
-        else startTurn(s, text)
+        const attached = attachedParts(event.input)
+        if (!text && attached.length === 0) throw new HttpError(400, 'invalid_request_error', 'message input is empty')
+        if (s.turn) userMessage(s, s.turn.turn.id, text, attached)
+        else startTurn(s, text, attached)
         break
       }
       case 'agent.session.input.cancel':
@@ -692,6 +757,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       for (const client of s.clients) client.destroy()
     }
     sessions.clear()
+    files.clear()
     return send(res, 200, { ok: true })
   }
 
@@ -706,6 +772,29 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (a !== 'agents') throw new HttpError(404, 'not_found', `No route ${method} ${path}`)
 
   if (parts.length === 1 && method === 'GET') return send(res, 200, list(SAVED_AGENTS, url))
+  if (b === 'files') {
+    if (parts.length === 2 && method === 'POST') {
+      const staged = stageFile(req.headers['content-type'] ?? '', await readBody(req))
+      files.set(staged.meta.id, staged)
+      return send(res, 201, staged.meta)
+    }
+    const file = c ? files.get(c) : undefined
+    if (!file) throw new HttpError(404, 'resource_not_found', `No file found with id '${String(c)}'`)
+    if (parts.length === 3 && method === 'DELETE') {
+      if (file.meta.status === 'attached') throw new HttpError(409, 'file_attached', 'The file is attached to a message')
+      files.delete(file.meta.id)
+      return send(res, 200, { id: file.meta.id, object: 'file.deleted', deleted: true })
+    }
+    if (parts.length === 4 && d === 'content' && method === 'GET') {
+      const image = file.meta.media_type.startsWith('image/')
+      res.writeHead(200, {
+        'content-type': image ? file.meta.media_type : 'application/octet-stream',
+        'content-disposition': `${image ? 'inline' : 'attachment'}; filename="${file.meta.filename}"`,
+        'content-length': file.body.length,
+      })
+      return void res.end(file.body)
+    }
+  }
   if (b === 'artifacts' && method === 'GET') {
     if (parts.length === 2) {
       const rows = ARTIFACTS.map((x) => x.meta as { id: string })

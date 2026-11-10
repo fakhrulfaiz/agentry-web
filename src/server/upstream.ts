@@ -14,5 +14,7 @@ export function relay(upstream: Response, extraHeaders: Record<string, string> =
   const headers = new Headers({ 'cache-control': 'no-store', ...extraHeaders })
   const type = upstream.headers.get('content-type')
   if (type) headers.set('content-type', type)
+  const disposition = upstream.headers.get('content-disposition')
+  if (disposition) headers.set('content-disposition', disposition)
   return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers })
 }
