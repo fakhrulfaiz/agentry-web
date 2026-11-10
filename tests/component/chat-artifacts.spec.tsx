@@ -22,12 +22,18 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('SessionArtifacts', () => {
-  it("shows the chat's files as cards above the composer and previews them", async () => {
+  it("shows the chat's files as cards with kind subtitle and download and previews them", async () => {
     apiMock.listSessionArtifacts.mockResolvedValue({ object: 'list', data: [entry('artificial-intelligence.docx'), entry('make_docx.py')] })
     const user = userEvent.setup()
     render(<SessionArtifacts sessionId="sesn_1" enabled />)
 
     const strip = await screen.findByRole('list', { name: 'Files in this chat' })
+    expect(within(strip).getByText('Document · DOCX')).toBeInTheDocument()
+    expect(within(strip).getByText('Code · PY')).toBeInTheDocument()
+    expect(within(strip).getByRole('link', { name: 'Download artificial-intelligence.docx' })).toHaveAttribute(
+      'href',
+      '/api/agentry/agents/sessions/sesn_1/artifacts/artificial-intelligence.docx?download=1',
+    )
     await user.click(within(strip).getByRole('button', { name: 'File artificial-intelligence.docx' }))
 
     const dialog = await screen.findByRole('dialog')

@@ -1,22 +1,137 @@
 'use client'
 
 /**
- * claude.ai-style file cards above the composer: the files the agent created
- * in this chat (`GET /agents/sessions/{id}/artifacts`, re-read whenever the
- * chat goes idle). Clicking a card opens the shared preview dialog with its
- * Download. The backend item stream does not tag which turn wrote a file, so
- * the strip shows the session's files rather than per-message cards.
+ * claude.ai-style file cards at the end of the chat (like Claude Code's
+ * trailing attachments): the files the agent created in this chat
+ * (`GET /agents/sessions/{id}/artifacts`, re-read whenever the chat goes
+ * idle). Clicking a card opens the shared preview dialog with its Download.
+ * The backend item stream does not tag which turn wrote a file, so the strip
+ * shows the session's files rather than per-message cards.
  */
 import { Button } from '@astryxdesign/core/Button'
-import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
-import { DocumentIcon } from '@heroicons/react/24/outline'
-import { useCallback, useEffect, useState } from 'react'
+import { Text } from '@astryxdesign/core/Text'
+import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
+import {
+  ArrowDownTrayIcon,
+  CodeBracketIcon,
+  DocumentIcon,
+  DocumentTextIcon,
+  PresentationChartBarIcon,
+  TableCellsIcon,
+} from '@heroicons/react/24/outline'
+import * as stylex from '@stylexjs/stylex'
+import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from 'react'
 import { api } from '@/api/client'
 import type { Artifact } from '@/api/types'
 import { artifactContentUrl } from '@/artifacts/artifact'
-import { contentTypeForName, isPresentedArtifact } from '@/artifacts/kind'
+import { artifactKind, artifactUrl, contentTypeForName, isPresentedArtifact, previewMode, type ArtifactKind } from '@/artifacts/kind'
 import { ArtifactPreview } from '@/ui/artifacts/ArtifactPreview'
+
+type IconType = ComponentType<SVGProps<SVGSVGElement>>
+
+const KIND_LABEL: Record<ArtifactKind, string> = {
+  doc: 'Document',
+  slides: 'Presentation',
+  sheet: 'Spreadsheet',
+  pdf: 'PDF',
+  code: 'Code',
+  other: 'File',
+}
+
+const KIND_ICON: Record<ArtifactKind, IconType> = {
+  doc: DocumentTextIcon,
+  slides: PresentationChartBarIcon,
+  sheet: TableCellsIcon,
+  pdf: DocumentIcon,
+  code: CodeBracketIcon,
+  other: DocumentIcon,
+}
+
+const styles = stylex.create({
+  grid: {
+    display: 'grid',
+    gap: 8,
+    gridTemplateColumns: { default: 'minmax(0, 1fr)', '@media (min-width: 640px)': 'repeat(2, minmax(0, 1fr))' },
+    maxWidth: 560,
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+  },
+  card: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: colorVars['--color-border'],
+    borderRadius: radiusVars['--radius-container'],
+    paddingInlineEnd: 8,
+    backgroundColor: { default: 'transparent', ':hover': colorVars['--color-overlay-hover'] },
+  },
+  open: {
+    all: 'unset',
+    boxSizing: 'border-box',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    minWidth: 0,
+    padding: 12,
+    cursor: 'pointer',
+    borderRadius: radiusVars['--radius-container'],
+    outlineStyle: { default: 'none', ':focus-visible': 'solid' },
+    outlineWidth: 2,
+    outlineColor: colorVars['--color-accent'],
+  },
+  tile: {
+    flexShrink: 0,
+    width: 40,
+    height: 40,
+    display: 'grid',
+    placeItems: 'center',
+    overflow: 'hidden',
+    borderRadius: radiusVars['--radius-inner'],
+    backgroundColor: colorVars['--color-background-muted'],
+  },
+  thumb: { width: '100%', height: '100%', objectFit: 'cover' },
+  text: { minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' },
+})
+
+function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () => void }) {
+  const kind = artifactKind(artifact)
+  const ext = artifact.name.includes('.') ? artifact.name.split('.').pop()!.toUpperCase() : ''
+  return (
+    <li {...stylex.props(styles.card)} data-testid="chat-artifact-card">
+      <button type="button" aria-label={`File ${artifact.name}`} onClick={onOpen} {...stylex.props(styles.open)}>
+        <span {...stylex.props(styles.tile)}>
+          {previewMode(artifact) === 'image' ? (
+            // eslint-disable-next-line @next/next/no-img-element -- BFF bytes; next/image does not apply
+            <img src={artifactUrl(artifact)} alt="" loading="lazy" {...stylex.props(styles.thumb)} />
+          ) : (
+            <Icon icon={KIND_ICON[kind]} size="md" />
+          )}
+        </span>
+        <span {...stylex.props(styles.text)}>
+          <Text weight="medium" maxLines={1}>
+            {artifact.name}
+          </Text>
+          <Text type="supporting" color="secondary" maxLines={1}>
+            {ext ? `${KIND_LABEL[kind]} · ${ext}` : KIND_LABEL[kind]}
+          </Text>
+        </span>
+      </button>
+      <Button
+        label={`Download ${artifact.name}`}
+        variant="ghost"
+        size="sm"
+        isIconOnly
+        icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
+        href={artifactUrl(artifact, true)}
+      />
+    </li>
+  )
+}
 
 export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; enabled: boolean }) {
   const [items, setItems] = useState<Artifact[]>([])
@@ -41,7 +156,9 @@ export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; en
             updated_at: entry.last_modified ?? '',
             content_url: artifactContentUrl(sessionId, entry.path),
           }
-        }),
+        })
+          // Newest first; the backend gives no per-turn attribution.
+          .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
       )
     } catch {
       // A session without a workspace, or a fetch hiccup: no strip, silently.
@@ -58,19 +175,11 @@ export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; en
 
   return (
     <>
-      <HStack gap={2} wrap="wrap" role="list" aria-label="Files in this chat" data-testid="chat-artifacts">
+      <ul {...stylex.props(styles.grid)} aria-label="Files in this chat" data-testid="chat-artifacts">
         {items.map((artifact) => (
-          <Button
-            key={artifact.id}
-            size="sm"
-            variant="secondary"
-            label={artifact.name}
-            aria-label={`File ${artifact.name}`}
-            icon={<Icon icon={DocumentIcon} size="sm" />}
-            onClick={() => setSelected(artifact)}
-          />
+          <FileCard key={artifact.id} artifact={artifact} onOpen={() => setSelected(artifact)} />
         ))}
-      </HStack>
+      </ul>
       <ArtifactPreview
         artifact={selected}
         onClose={() => setSelected(null)}

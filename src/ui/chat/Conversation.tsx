@@ -353,9 +353,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             xstyle={styles.chat}
             density="spacious"
             composer={
-              <VStack gap={2}>
-                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} />}
-                <Composer
+              <Composer
                 onSend={onSend}
                 onStop={onStop}
                 isRunning={running}
@@ -373,8 +371,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   onEffortChange: settings.setEffort,
                 }}
                 status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
-                />
-              </VStack>
+              />
             }
           >
             <SubagentItems.Provider value={subagentItems}>
@@ -392,6 +389,9 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   )
                 })}
                 {waiting && <Thinking label={loading ? 'Loading conversation…' : 'Agentry is thinking…'} />}
+                {/* The files the agent created, as a card at the end of the chat (claude.ai's
+                    artifacts), not pinned to the composer. */}
+                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} />}
               </ChatMessageList>
             </SubagentItems.Provider>
           </ChatLayout>
