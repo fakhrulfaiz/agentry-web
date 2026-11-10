@@ -4,7 +4,7 @@ import '../helpers/dom'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OAIAgentSession, SessionArtifactEntry } from '@/api/types'
+import type { OAIAgentSession, SessionDeliverableEntry } from '@/api/types'
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -14,7 +14,7 @@ vi.mock('next/navigation', () => ({
 
 const apiMock = vi.hoisted(() => ({
   listSessions: vi.fn(),
-  listSessionArtifacts: vi.fn(),
+  listSessionDeliverables: vi.fn(),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/client')>()),
@@ -41,27 +41,27 @@ const session = (id: string, title: string): OAIAgentSession => ({
   usage: null,
 })
 
-const entry = (path: string, lastModified: string): SessionArtifactEntry => ({
+const entry = (path: string, lastModified: string): SessionDeliverableEntry => ({
   path,
-  size: 10,
-  last_modified: lastModified,
+  turn_id: 'turn_1',
+  created_at: Date.parse(lastModified) / 1000,
 })
 
 const sessions = (data: OAIAgentSession[], has_more = false) => ({ object: 'list' as const, data, has_more })
-const artifacts = (data: SessionArtifactEntry[]) => ({ object: 'list' as const, data })
+const artifacts = (data: SessionDeliverableEntry[]) => ({ object: 'list' as const, data })
 
 beforeEach(() => {
   nav.push.mockReset()
   apiMock.listSessions.mockReset()
-  apiMock.listSessionArtifacts.mockReset()
+  apiMock.listSessionDeliverables.mockReset()
   apiMock.listSessions.mockImplementation(async () => sessions([session('sesn_1', 'Planning')]))
-  apiMock.listSessionArtifacts.mockImplementation(async () => artifacts([]))
+  apiMock.listSessionDeliverables.mockImplementation(async () => artifacts([]))
 })
 afterEach(cleanup)
 
 describe('ArtifactsPage', () => {
   it('lists the files of the recent sessions in the grid cards', async () => {
-    apiMock.listSessionArtifacts.mockImplementation(async () =>
+    apiMock.listSessionDeliverables.mockImplementation(async () =>
       artifacts([entry('chart.png', '2026-11-10T09:00:00.000Z'), entry('report.docx', '2026-11-10T08:00:00.000Z')]),
     )
     render(<ArtifactsPage />)
@@ -72,7 +72,7 @@ describe('ArtifactsPage', () => {
     expect(within(grid).getByText('report.docx')).toBeInTheDocument()
     expect(within(grid).getAllByText(/Planning/)).toHaveLength(2)
     expect(grid.querySelector('img')).toHaveAttribute('src', '/api/agentry/agents/sessions/sesn_1/artifacts/chart.png')
-    expect(apiMock.listSessionArtifacts).toHaveBeenCalledWith('sesn_1')
+    expect(apiMock.listSessionDeliverables).toHaveBeenCalledWith('sesn_1')
   })
 
   it('shows the empty state', async () => {
@@ -105,7 +105,7 @@ describe('ArtifactsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     await screen.findByText('No artifacts yet.')
     apiMock.listSessions.mockImplementation(async () => sessions([session('sesn_2', 'Research')]))
-    apiMock.listSessionArtifacts.mockImplementation(async (id: string) =>
+    apiMock.listSessionDeliverables.mockImplementation(async (id: string) =>
       id === 'sesn_2' ? artifacts([entry('two.md', '2026-11-10T09:30:00.000Z')]) : artifacts([]),
     )
     await user.click(screen.getByRole('button', { name: 'Load more' }))
@@ -115,7 +115,7 @@ describe('ArtifactsPage', () => {
   })
 
   it('keeps loading when one session answers 404 (it has no workspace)', async () => {
-    apiMock.listSessionArtifacts.mockImplementation(async (id: string) => {
+    apiMock.listSessionDeliverables.mockImplementation(async (id: string) => {
       if (id === 'sesn_1') throw new ApiError(404, 'resource_not_found', 'no workspace')
       return artifacts([entry('ok.md', '2026-11-10T09:00:00.000Z')])
     })
@@ -124,7 +124,7 @@ describe('ArtifactsPage', () => {
   })
 
   it('previews a PDF with Open chat and Download', async () => {
-    apiMock.listSessionArtifacts.mockImplementation(async () =>
+    apiMock.listSessionDeliverables.mockImplementation(async () =>
       artifacts([entry('summary.pdf', '2026-11-10T09:00:00.000Z')]),
     )
     render(<ArtifactsPage />)
@@ -146,7 +146,7 @@ describe('ArtifactsPage', () => {
   it('previews text in a pre and offers download only for other types', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('# Notes'))
     vi.stubGlobal('fetch', fetchMock)
-    apiMock.listSessionArtifacts.mockImplementation(async () =>
+    apiMock.listSessionDeliverables.mockImplementation(async () =>
       artifacts([entry('notes.md', '2026-11-10T09:00:00.000Z'), entry('blob.bin', '2026-11-10T08:00:00.000Z')]),
     )
     render(<ArtifactsPage />)

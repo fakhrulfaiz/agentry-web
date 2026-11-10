@@ -12,6 +12,7 @@ import type {
   AgentSkillList,
   CommandRunResponse,
   SessionArtifactList,
+  SessionDeliverableList,
   CreateScheduleParams,
   CreateSessionParams,
   OAIAgentSession,
@@ -331,6 +332,11 @@ export const api = {
   /** Runs one Host slash command in a chat, outside any turn. 409 `session_busy` while a turn runs. */
   runCommand(sessionId: string, name: string, input?: string): Promise<CommandRunResponse> {
     return request('POST', `${AGENTRY}/agents/sessions/${seg(sessionId)}/commands/${seg(name)}`, input ? { input } : {})
+  },
+
+  /** Files the agent delivered with `present` in one chat (`GET /v1/agents/sessions/{id}/deliverables`). */
+  listSessionDeliverables(id: string): Promise<SessionDeliverableList> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`)
   },
 
   /** Files the agent created in one chat, newest first (`GET /v1/agents/sessions/{id}/artifacts`). */

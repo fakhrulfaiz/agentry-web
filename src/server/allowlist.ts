@@ -28,6 +28,8 @@ const RULES: readonly Rule[] = [
   // Artifacts listing; the bytes live under session workspace paths and their
   // dedicated route validates those segments itself (see artifact-bytes).
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'artifacts'] },
+  // Files the agent delivered with `present`; the cards list only these.
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'deliverables'] },
   // Attachments: the upload has its own streaming route; content and delete go through the proxy.
   { methods: ['POST'], segments: ['agents', 'files'] },
   { methods: ['GET'], segments: ['agents', 'files', FILE, 'content'] },

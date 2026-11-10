@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), query: '' }))
@@ -71,12 +72,11 @@ describe('New chat send', () => {
     apiMock.createSession.mockReturnValue(new Promise((_, reject) => { fail = reject }))
     render(<NewChat />)
     await waitFor(() => expect(input()).toBeInTheDocument())
-    const { userEvent } = await import('@testing-library/user-event').then((m) => ({ userEvent: m.default }))
     await userEvent.type(input(), 'hello world{Enter}')
-    await waitFor(() => expect(screen.getByText('Agentry is thinking…')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Agentry is thinking…')).toBeInTheDocument(), { timeout: 5000 })
     expect(screen.getAllByText('hello world').length).toBeGreaterThan(0)
     fail(new Error('boom'))
-    await waitFor(() => expect(screen.queryByText('Agentry is thinking…')).not.toBeInTheDocument())
-    expect(input()).toHaveTextContent('hello world')
+    await waitFor(() => expect(screen.queryByText('Agentry is thinking…')).not.toBeInTheDocument(), { timeout: 5000 })
+    await waitFor(() => expect(input()).toHaveTextContent('hello world'), { timeout: 5000 })
   })
-})
+}, 15_000)

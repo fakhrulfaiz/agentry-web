@@ -4,9 +4,9 @@ import '../helpers/dom'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionArtifactEntry } from '@/api/types'
+import type { SessionDeliverableEntry } from '@/api/types'
 
-const apiMock = vi.hoisted(() => ({ listSessionArtifacts: vi.fn() }))
+const apiMock = vi.hoisted(() => ({ listSessionDeliverables: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/client')>()),
   api: apiMock,
@@ -14,16 +14,16 @@ vi.mock('@/api/client', async (importOriginal) => ({
 
 const { SessionArtifacts } = await import('@/ui/chat/SessionArtifacts')
 
-const entry = (path: string): SessionArtifactEntry => ({ path, size: 7, last_modified: '2026-11-10T09:00:00.000Z' })
+const entry = (path: string): SessionDeliverableEntry => ({ path, turn_id: 'turn_1', created_at: 1_762_765_200 })
 
 beforeEach(() => {
-  apiMock.listSessionArtifacts.mockReset()
+  apiMock.listSessionDeliverables.mockReset()
 })
 afterEach(cleanup)
 
 describe('SessionArtifacts', () => {
   it("shows the chat's files as cards with kind subtitle and download and previews them", async () => {
-    apiMock.listSessionArtifacts.mockResolvedValue({ object: 'list', data: [entry('artificial-intelligence.docx'), entry('make_docx.py')] })
+    apiMock.listSessionDeliverables.mockResolvedValue({ object: 'list', data: [entry('artificial-intelligence.docx'), entry('make_docx.py')] })
     const user = userEvent.setup()
     render(<SessionArtifacts sessionId="sesn_1" enabled />)
 
@@ -46,21 +46,32 @@ describe('SessionArtifacts', () => {
     expect(within(dialog).getByText(/No preview is available/)).toBeInTheDocument()
   })
 
+  it('uses the delivery description as the card subtitle and drops files outside the workspace', async () => {
+    apiMock.listSessionDeliverables.mockResolvedValue({
+      object: 'list',
+      data: [{ ...entry('report.docx'), description: 'Final report' }, entry('/tmp/elsewhere.png')],
+    })
+    render(<SessionArtifacts sessionId="sesn_1" enabled />)
+    const strip = await screen.findByRole('list', { name: 'Files in this chat' })
+    expect(within(strip).getByText('Final report')).toBeInTheDocument()
+    expect(within(strip).queryByText('elsewhere.png')).not.toBeInTheDocument()
+  })
+
   it('re-reads the listing when the chat turns idle, hides itself without files', async () => {
-    apiMock.listSessionArtifacts.mockResolvedValue({ object: 'list', data: [] })
+    apiMock.listSessionDeliverables.mockResolvedValue({ object: 'list', data: [] })
     const { rerender } = render(<SessionArtifacts sessionId="sesn_1" enabled={false} />)
     expect(screen.queryByRole('list', { name: 'Files in this chat' })).not.toBeInTheDocument()
-    expect(apiMock.listSessionArtifacts).not.toHaveBeenCalled()
+    expect(apiMock.listSessionDeliverables).not.toHaveBeenCalled()
 
     rerender(<SessionArtifacts sessionId="sesn_1" enabled />)
-    await waitFor(() => expect(apiMock.listSessionArtifacts).toHaveBeenCalledWith('sesn_1'))
+    await waitFor(() => expect(apiMock.listSessionDeliverables).toHaveBeenCalledWith('sesn_1'))
     expect(screen.queryByRole('list', { name: 'Files in this chat' })).not.toBeInTheDocument()
   })
 
   it('stays quiet when the session has no workspace', async () => {
-    apiMock.listSessionArtifacts.mockRejectedValue(new Error('no workspace'))
+    apiMock.listSessionDeliverables.mockRejectedValue(new Error('no workspace'))
     render(<SessionArtifacts sessionId="sesn_1" enabled />)
-    await waitFor(() => expect(apiMock.listSessionArtifacts).toHaveBeenCalled())
+    await waitFor(() => expect(apiMock.listSessionDeliverables).toHaveBeenCalled())
     expect(screen.queryByRole('list', { name: 'Files in this chat' })).not.toBeInTheDocument()
   })
 })

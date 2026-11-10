@@ -32,6 +32,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/commands'],
     ['POST', `/agents/sessions/${ID}/commands/compact`],
     ['GET', `/agents/sessions/${ID}/artifacts`],
+    ['GET', `/agents/sessions/${ID}/deliverables`],
     ['GET', '/agents/schedules'],
     ['POST', '/agents/schedules'],
     ['GET', `/agents/schedules/${SCHEDULE}`],

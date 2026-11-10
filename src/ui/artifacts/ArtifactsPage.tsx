@@ -36,11 +36,10 @@ import {
 } from "react";
 import { api, ApiError, isSignedOut } from "@/api/client";
 import type { Artifact } from "@/api/types";
-import { toArtifact } from "@/artifacts/artifact";
+import { deliverableEntries, toArtifact } from "@/artifacts/artifact";
 import {
   artifactKind,
   artifactUrl,
-  isPresentedArtifact,
   previewMode,
   type ArtifactKind,
 } from "@/artifacts/kind";
@@ -194,9 +193,12 @@ function ArtifactCard({
               {artifact.name}
             </Text>
             <Text type="supporting" color="secondary" maxLines={1}>
-              Updated{" "}
-              <Timestamp value={artifact.updated_at} format="relative" />
-              {artifact.session_title ? ` · ${artifact.session_title}` : ""}
+              {artifact.description ?? (
+                <>
+                  Updated <Timestamp value={artifact.updated_at} format="relative" />
+                  {artifact.session_title ? ` · ${artifact.session_title}` : ""}
+                </>
+              )}
             </Text>
           </div>
         </HStack>
@@ -223,14 +225,14 @@ export function ArtifactsPage() {
       // The backend keeps artifacts per session, so the page walks the recent
       // sessions; one without a workspace (404) simply contributes nothing.
       const lists = await Promise.allSettled(
-        page.data.map((session) => api.listSessionArtifacts(session.id)),
+        page.data.map((session) => api.listSessionDeliverables(session.id)),
       );
       const rows: Artifact[] = [];
       page.data.forEach((session, index) => {
         const result = lists[index];
         if (result.status === "fulfilled") {
-          for (const entry of result.value.data)
-            if (isPresentedArtifact(entry.path)) rows.push(toArtifact(session, entry));
+          for (const entry of deliverableEntries(result.value))
+            rows.push(toArtifact(session, entry));
         }
       });
       rows.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));

@@ -455,6 +455,23 @@ export interface SessionArtifactEntry {
   path: string
   size?: number
   last_modified?: string
+  /** The agent's note from `present`, shown as the card subtitle. */
+  description?: string
+}
+
+/** One file the agent delivered with `present` (`GET /v1/agents/sessions/{id}/deliverables`). */
+export interface SessionDeliverableEntry {
+  /** Workspace-relative when inside the workspace, otherwise absolute. */
+  path: string
+  description?: string
+  turn_id: string
+  /** Epoch seconds. */
+  created_at: number
+}
+
+export interface SessionDeliverableList {
+  object: 'list'
+  data: SessionDeliverableEntry[]
 }
 
 export interface SessionArtifactList {
@@ -479,4 +496,6 @@ export interface Artifact {
   session_title?: string
   updated_at: string
   content_url: string
+  /** The agent's note from `present`, when it gave one. */
+  description?: string
 }

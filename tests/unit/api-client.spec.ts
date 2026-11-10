@@ -224,6 +224,13 @@ describe('api client', () => {
     expect(lastCall().method).toBe('GET')
   })
 
+  it('listSessionDeliverables reads GET /api/agentry/agents/sessions/{id}/deliverables', async () => {
+    fetchMock.mockResolvedValue(Response.json({ object: 'list', data: [] }))
+    await api.listSessionDeliverables('sesn_1')
+    expect(lastCall().url).toBe('/api/agentry/agents/sessions/sesn_1/deliverables')
+    expect(lastCall().method).toBe('GET')
+  })
+
   it('a network failure is an ApiError with status 0', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(api.cancel('s1')).rejects.toMatchObject({ status: 0, code: 'network_error' })

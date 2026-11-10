@@ -2,8 +2,8 @@
 
 /**
  * claude.ai-style file cards at the end of the chat (like Claude Code's
- * trailing attachments): the files the agent created in this chat
- * (`GET /agents/sessions/{id}/artifacts`, re-read whenever the chat goes
+ * trailing attachments): the files the agent delivered with `present` in this chat
+ * (`GET /agents/sessions/{id}/deliverables`, re-read whenever the chat goes
  * idle). Clicking a card opens the shared preview dialog with its Download.
  * The backend item stream does not tag which turn wrote a file, so the strip
  * shows the session's files rather than per-message cards.
@@ -24,8 +24,8 @@ import * as stylex from '@stylexjs/stylex'
 import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from 'react'
 import { api } from '@/api/client'
 import type { Artifact } from '@/api/types'
-import { artifactContentUrl } from '@/artifacts/artifact'
-import { artifactKind, artifactUrl, contentTypeForName, isPresentedArtifact, previewMode, type ArtifactKind } from '@/artifacts/kind'
+import { artifactContentUrl, deliverableEntries } from '@/artifacts/artifact'
+import { artifactKind, artifactUrl, contentTypeForName, previewMode, type ArtifactKind } from '@/artifacts/kind'
 import { ArtifactPreview } from '@/ui/artifacts/ArtifactPreview'
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>
@@ -118,7 +118,7 @@ export function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () 
             {artifact.name}
           </Text>
           <Text type="supporting" color="secondary" maxLines={1}>
-            {ext ? `${KIND_LABEL[kind]} · ${ext}` : KIND_LABEL[kind]}
+            {artifact.description ?? (ext ? `${KIND_LABEL[kind]} · ${ext}` : KIND_LABEL[kind])}
           </Text>
         </span>
       </button>
@@ -141,11 +141,9 @@ export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionI
 
   const load = useCallback(async () => {
     try {
-      const list = await api.listSessionArtifacts(sessionId)
+      const list = await api.listSessionDeliverables(sessionId)
       setItems(
-        list.data
-          // Dependency installs into the workspace are the agent's tooling, not output.
-          .filter((entry) => isPresentedArtifact(entry.path))
+        deliverableEntries(list)
           .map((entry) => {
           const name = entry.path.split('/').pop() ?? entry.path
           return {
@@ -157,6 +155,7 @@ export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionI
             session_id: sessionId,
             updated_at: entry.last_modified ?? '',
             content_url: artifactContentUrl(sessionId, entry.path),
+            ...(entry.description ? { description: entry.description } : {}),
           }
         })
           // Newest first; the backend gives no per-turn attribution.

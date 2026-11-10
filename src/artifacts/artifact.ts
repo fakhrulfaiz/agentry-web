@@ -3,7 +3,7 @@
  * `Artifact` the Artifacts page shows: a display name, a MIME type from the
  * file name, the session's title, and the `/v1` API path of the bytes.
  */
-import type { Artifact, OAIAgentSession, SessionArtifactEntry } from '@/api/types'
+import type { Artifact, OAIAgentSession, SessionArtifactEntry, SessionDeliverableList } from '@/api/types'
 import { contentTypeForName } from './kind'
 import { sessionTitle } from '@/ui/shell/group'
 
@@ -13,6 +13,20 @@ export function artifactContentUrl(sessionId: string, path: string): string {
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/')}`
+}
+
+/**
+ * Cards for a deliverables listing. Files outside the workspace (absolute
+ * paths) cannot be fetched through the artifacts content route and are dropped.
+ */
+export function deliverableEntries(list: SessionDeliverableList): SessionArtifactEntry[] {
+  return list.data
+    .filter((entry) => !entry.path.startsWith('/'))
+    .map((entry) => ({
+      path: entry.path,
+      last_modified: new Date(entry.created_at * 1000).toISOString(),
+      ...(entry.description ? { description: entry.description } : {}),
+    }))
 }
 
 export function toArtifact(session: OAIAgentSession, entry: SessionArtifactEntry): Artifact {
@@ -27,5 +41,6 @@ export function toArtifact(session: OAIAgentSession, entry: SessionArtifactEntry
     session_title: sessionTitle(session) || undefined,
     updated_at: entry.last_modified ?? '',
     content_url: artifactContentUrl(session.id, entry.path),
+    ...(entry.description ? { description: entry.description } : {}),
   }
 }
