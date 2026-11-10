@@ -53,6 +53,8 @@ import { scrollToItem } from './reveal'
 import { SessionArtifacts } from './SessionArtifacts'
 import { SubagentItems } from './SubagentCard'
 import { Thinking } from './Thinking'
+import { groupTurns } from './group-turns'
+import { TurnGroup } from './TurnGroup'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
 type View = 'chat' | 'trajectory'
@@ -121,6 +123,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [reveal, setReveal] = useState<string | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
+  // Finished turns whose process group the user expanded; the rest stay collapsed.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   // A message was just sent: show the waiting row until the session reports its turn.
   const [sent, setSent] = useState(false)
   // Notices already shown: a turn that fails or is stopped after the send adds a new one and ends the wait.
@@ -331,6 +335,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   // before its first visible output. A closed stream or an unavailable server shows its own notice.
   const waiting = !closedReason && !failure?.unavailable && (loading || ((sent || state.status === 'in_progress') && !liveActivity))
   const retries = retryTexts(state.items)
+  const entries = groupTurns(state.items, state.turnOf, state.turns)
   // A chat with nothing in it yet has no trajectory to switch to (unknown while its history loads).
   const blank = loaded && state.items.length === 0 && state.turns.length === 0
   const shown: View = blank ? 'chat' : view
@@ -377,16 +382,36 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           >
             <SubagentItems.Provider value={subagentItems}>
               <ChatMessageList isStreaming={streaming}>
-                {state.items.map((view) => {
-                  const retryText = retries.get(view.id)
+                {entries.map((entry) => {
+                  const row = (view: MessageView) => {
+                    const retryText = retries.get(view.id)
+                    return (
+                      <Message
+                        key={view.id}
+                        view={view}
+                        highlighted={highlight === view.id}
+                        answer={onAnswer}
+                        onRetry={retryText !== undefined && !running ? () => void onSend(retryText).catch(() => {}) : undefined}
+                      />
+                    )
+                  }
+                  if (entry.type === 'view') return row(entry.view)
                   return (
-                    <Message
-                      key={view.id}
-                      view={view}
-                      highlighted={highlight === view.id}
-                      answer={onAnswer}
-                      onRetry={retryText !== undefined && !running ? () => void onSend(retryText).catch(() => {}) : undefined}
-                    />
+                    <TurnGroup
+                      key={`group-${entry.turnId}`}
+                      group={entry}
+                      open={expanded.has(entry.turnId) || entry.views.some((v) => v.id === reveal || v.id === highlight)}
+                      onOpenChange={(open) =>
+                        setExpanded((cur) => {
+                          const next = new Set(cur)
+                          if (open) next.add(entry.turnId)
+                          else next.delete(entry.turnId)
+                          return next
+                        })
+                      }
+                    >
+                      {entry.views.map(row)}
+                    </TurnGroup>
                   )
                 })}
                 {waiting && <Thinking label={loading && state.items.length === 0 ? 'Loading conversation…' : 'Agentry is thinking…'} />}
