@@ -492,6 +492,32 @@ function cancelTurn(s: MockSession): void {
 
 // ---------- HTTP ----------
 
+const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+const MOCK_PDF = Buffer.from('%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
+
+/** Sample artifacts for the Artifacts page, newest first. */
+const ARTIFACTS: Array<{ meta: Record<string, unknown>; body: Buffer }> = [
+  ['art_png', 'chart.png', '/workspace/chart.png', 'image/png', PNG_1X1],
+  ['art_docx', 'report.docx', '/workspace/report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', Buffer.from('PK mock docx')],
+  ['art_xlsx', 'budget.xlsx', '/workspace/budget.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', Buffer.from('PK mock xlsx')],
+  ['art_pdf', 'summary.pdf', '/workspace/summary.pdf', 'application/pdf', MOCK_PDF],
+  ['art_md', 'notes.md', '/workspace/notes.md', 'text/markdown', Buffer.from('# Notes\n\n- first\n- second\n')],
+].map(([id, name, path, mime, body], i) => ({
+  meta: {
+    id,
+    name,
+    path,
+    mime_type: mime,
+    size: (body as Buffer).length,
+    session_id: 'sesn_mock',
+    session_title: 'Quarterly planning',
+    created_at: new Date(Date.UTC(2026, 10, 10 - i, 9)).toISOString(),
+    updated_at: new Date(Date.UTC(2026, 10, 10 - i, 9)).toISOString(),
+    content_url: `/v1/agents/artifacts/${id}/content`,
+  },
+  body: body as Buffer,
+}))
+
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
@@ -616,6 +642,36 @@ function postEvents(s: MockSession, body: Record<string, unknown>): void {
   }
 }
 
+const MOCK_COMMANDS = [
+  { name: 'compact', description: 'Compact the conversation history', accepts_attachments: false },
+  { name: 'feedback', description: 'Send feedback about this chat', input_hint: 'what happened', accepts_attachments: false },
+  { name: 'goal', description: 'Set or show the session goal', input_hint: 'objective, clear, pause or resume', accepts_attachments: false },
+]
+
+/** Runs a scripted slash command: `/compact` and `/goal` succeed, `/feedback` without text is a usage error. */
+function runCommand(s: MockSession, name: string, input: string): Record<string, unknown> {
+  if (!MOCK_COMMANDS.some((c) => c.name === name)) throw new HttpError(404, 'command_not_found', `Command "${name}" not found`)
+  if (s.status === 'in_progress' || s.status === 'requires_action') {
+    throw new HttpError(409, 'session_busy', 'The session is busy: wait for the current turn or command to finish')
+  }
+  const ok = !(name === 'feedback' && !input.trim())
+  const text = name === 'compact' ? 'Compacted the conversation.' : name === 'goal' ? (input.trim() ? `Goal set: ${input.trim()}` : 'No goal is set.') : ok ? 'Thanks for the feedback.' : 'Usage: /feedback <text>'
+  s.seq += 1
+  const item = {
+    id: `item_cmd_${s.seq}`,
+    type: 'slash_command' as const,
+    command_id: `cmd_${s.seq}`,
+    name,
+    ...(input.trim() ? { args: input.trim() } : {}),
+    status: ok ? ('completed' as const) : ('failed' as const),
+    text,
+    turn_id: null,
+  }
+  s.items.push(item)
+  emit(s, { type: 'agent.session.item.done', session_id: s.id, turn_id: null, item } as WireBody)
+  return { command_id: item.command_id, name, status: ok ? 'success' : 'error', text, item }
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://mock')
   const method = req.method ?? 'GET'
@@ -650,6 +706,37 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (a !== 'agents') throw new HttpError(404, 'not_found', `No route ${method} ${path}`)
 
   if (parts.length === 1 && method === 'GET') return send(res, 200, list(SAVED_AGENTS, url))
+  if (b === 'artifacts' && method === 'GET') {
+    if (parts.length === 2) {
+      const rows = ARTIFACTS.map((x) => x.meta as { id: string })
+      const page = list(rows, url)
+      return send(res, 200, { object: 'list', data: page.data, has_more: page.has_more, ...(page.last_id ? { last_id: page.last_id } : {}) })
+    }
+    const found = parts.length === 4 && d === 'content' ? ARTIFACTS.find((x) => x.meta.id === c) : undefined
+    if (!found) throw new HttpError(404, 'resource_not_found', `No artifact found at '${path}'`)
+    const name = String(found.meta.name)
+    res.writeHead(200, {
+      'content-type': String(found.meta.mime_type),
+      'content-disposition': `${url.searchParams.get('download') === '1' ? 'attachment' : 'inline'}; filename="${name}"`,
+      'cache-control': 'no-store',
+    })
+    return void res.end(found.body)
+  }
+  if (parts.length === 2 && b === 'skills' && method === 'GET') {
+    return send(res, 200, {
+      object: 'list',
+      data: [
+        { name: 'review', description: 'Review the open diff', source: 'builtin' },
+        { name: 'plan', description: 'Write a plan before changing code', source: 'builtin' },
+        { name: 'summarize', description: 'Summarize a long document', source: 'user' },
+      ],
+    })
+  }
+  if (parts.length === 2 && b === 'commands' && method === 'GET') {
+    const id = url.searchParams.get('session_id')
+    if (id) getSession(id)
+    return send(res, 200, { object: 'list', data: id ? MOCK_COMMANDS : [] })
+  }
   if (parts.length === 2 && b === 'tools' && method === 'GET') return send(res, 200, { object: 'list', data: [], first_id: null, last_id: null, has_more: false })
   if (parts.length === 2 && b === 'sessions') {
     if (method === 'GET') {
@@ -687,6 +774,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         postEvents(s, await readJson(req))
         return send(res, 200, { object: 'list', data: [] })
       }
+    }
+    if (parts.length === 5 && d === 'commands' && method === 'POST') {
+      const body = await readJson(req)
+      return send(res, 200, runCommand(s, e, typeof body.input === 'string' ? body.input : ''))
     }
     if (parts.length === 4 && d === 'items' && method === 'GET') return send(res, 200, list(s.items, url))
     if (parts.length === 4 && d === 'turns' && method === 'GET') return send(res, 200, list(s.turns, url))

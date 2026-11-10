@@ -25,6 +25,10 @@ describe('isAllowed', () => {
     ['POST', `/agents/sessions/${ID}/events`],
     ['GET', `/agents/sessions/${ID}/items`],
     ['GET', `/agents/sessions/${ID}/turns`],
+    ['GET', '/agents/skills'],
+    ['GET', '/agents/commands'],
+    ['POST', `/agents/sessions/${ID}/commands/compact`],
+    ['GET', `/agents/sessions/${ID}/artifacts`],
     ['GET', '/agents/schedules'],
     ['POST', '/agents/schedules'],
     ['GET', `/agents/schedules/${SCHEDULE}`],
@@ -99,8 +103,20 @@ describe('isAllowed', () => {
     }
   })
 
-  it('treats schedules as a reserved collection, never an agent id', () => {
-    expect(isAllowed('GET', '/agents/schedules')).toBe(true)
+  it('serves session artifacts only through the list rule (bytes have their own validated route)', () => {
+    expect(isAllowed('GET', `/agents/sessions/${ID}/artifacts`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/artifacts`)).toBe(false)
+    for (const path of [
+      `/agents/sessions/${ID}/artifacts/report.docx`,
+      `/agents/sessions/${ID}/artifacts/a/b/notes.md`,
+      '/agents/artifacts',
+      '/agents/artifacts/art_1/content',
+    ]) {
+      expect(isAllowed('GET', path), path).toBe(false)
+    }
+  })
+
+  it('treats schedules as a reserved collection, never an agent id', () => {    expect(isAllowed('GET', '/agents/schedules')).toBe(true)
     expect(isAllowed('POST', '/agents/schedules')).toBe(true)
     expect(isAllowed('DELETE', '/agents/schedules')).toBe(false)
   })

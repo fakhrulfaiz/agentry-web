@@ -187,6 +187,43 @@ describe('api client', () => {
     expect(lastCall().url).toBe('/api/models')
   })
 
+  it('listSkills reads GET /api/agentry/agents/skills', async () => {
+    fetchMock.mockResolvedValue(Response.json({ object: 'list', data: [{ name: 'plan' }] }))
+    await expect(api.listSkills()).resolves.toEqual({ object: 'list', data: [{ name: 'plan' }] })
+    expect(lastCall().url).toBe('/api/agentry/agents/skills')
+    expect(lastCall().method).toBe('GET')
+  })
+
+  it('listSkills and listCommands pass the chat as session_id', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(Response.json({ object: 'list', data: [] })))
+    await api.listSkills('s 1')
+    expect(lastCall().url).toBe('/api/agentry/agents/skills?session_id=s%201')
+    await api.listCommands('s1')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/commands?session_id=s1', method: 'GET' })
+    await api.listCommands()
+    expect(lastCall().url).toBe('/api/agentry/agents/commands')
+  })
+
+  it('runCommand posts the input to the chat command route', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(Response.json({ command_id: 'c1', name: 'goal', status: 'success' })))
+    await api.runCommand('s1', 'goal', 'ship it')
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1/commands/goal', method: 'POST', body: { input: 'ship it' } })
+    await api.runCommand('s1', 'compact')
+    expect(lastCall().body).toEqual({})
+  })
+
+  it('a busy chat rejects runCommand with the session_busy code', async () => {
+    fetchMock.mockResolvedValue(Response.json({ error: { code: 'session_busy', message: 'busy' } }, { status: 409 }))
+    await expect(api.runCommand('s1', 'compact')).rejects.toMatchObject({ status: 409, code: 'session_busy' })
+  })
+
+  it('listSessionArtifacts reads GET /api/agentry/agents/sessions/{id}/artifacts', async () => {
+    fetchMock.mockResolvedValue(Response.json({ object: 'list', data: [] }))
+    await api.listSessionArtifacts('sesn_1')
+    expect(lastCall().url).toBe('/api/agentry/agents/sessions/sesn_1/artifacts')
+    expect(lastCall().method).toBe('GET')
+  })
+
   it('a network failure is an ApiError with status 0', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(api.cancel('s1')).rejects.toMatchObject({ status: 0, code: 'network_error' })

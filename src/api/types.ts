@@ -34,6 +34,34 @@ export interface OAITokenUsage {
 }
 
 /** Cursor page returned by list endpoints. */
+/** A skill Agentry can use, as `GET /v1/agents/skills` lists it. */
+export interface AgentSkill {
+  name: string
+  description?: string
+  source?: string
+}
+
+/** A Host slash command, as `GET /v1/agents/commands` lists it. */
+export interface AgentCommand {
+  name: string
+  description: string
+  /** Placeholder for the text after the name; absent when the command takes none. */
+  input_hint?: string
+  accepts_attachments: boolean
+}
+
+/** `GET /v1/agents/commands`: the commands of one session's agent (empty without `session_id`). */
+export interface AgentCommandList {
+  object: 'list'
+  data: AgentCommand[]
+}
+
+/** `GET /v1/agents/skills`: the skills Agentry can use (no paging fields). */
+export interface AgentSkillList {
+  object: 'list'
+  data: AgentSkill[]
+}
+
 export interface OAIListResponse<T> {
   object: 'list'
   data: T[]
@@ -241,6 +269,28 @@ export type OAISessionItem =
   | OAIMcpCallItem
   | OAICommandExecutionItem
   | OAIReasoningItem
+  | OAISlashCommandItem
+
+/** Result of a Host slash command; human-only (never reaches the model). `turn_id` is null between turns. */
+export interface OAISlashCommandItem {
+  id: string
+  type: 'slash_command'
+  command_id: string
+  name: string
+  args?: string
+  status: 'completed' | 'failed'
+  text?: string
+  turn_id: string | null
+}
+
+/** `POST .../commands/{name}`: the outcome and the item it produced. */
+export interface CommandRunResponse {
+  command_id: string
+  name: string
+  status: 'success' | 'error'
+  text?: string
+  item: OAISlashCommandItem
+}
 
 /** One saved item, with the child id when it belongs to a subagent (`GET .../items`). */
 export type StoredSessionItem = OAISessionItem & { subagent_id?: string }
@@ -283,19 +333,18 @@ export interface CreateSessionParams {
 }
 
 /**
- * A task's timing, DSH's tagged union passed through unchanged (scheduled-tasks
- * backend spec §4). `at` carries the UTC instant; the client always sends the
- * IANA zone it shows for the other kinds. Mirrors the backend until its OpenAPI
- * lands.
+ * A task's timing, DSH's tagged union (`ScheduleTiming` in the backend OpenAPI).
+ * Reads echo `at` as a UTC instant and `time` as `HH:mm:ss.SSS`; the client sends
+ * an RFC 3339 instant for `at` and an explicit IANA zone for the other kinds.
  */
 export type ScheduleTiming =
-  | { kind: 'after'; after: { after_seconds: number } }
+  | { kind: 'after'; after_seconds: number }
   | { kind: 'at'; at: string }
-  | { kind: 'every'; every: { every_seconds: number } }
+  | { kind: 'every'; every_seconds: number }
   | { kind: 'daily'; daily: { time: string; time_zone: string } }
   | { kind: 'weekly'; weekly: { time: string; time_zone: string; weekdays: number[] } }
   | { kind: 'cron'; cron: { expression: string; time_zone: string } }
-  | { kind: 'rrule'; rrule: { rrule: string } }
+  | { kind: 'rrule'; rrule: string }
 
 export type ScheduleStatus = 'active' | 'paused' | 'ended'
 
@@ -322,8 +371,6 @@ export interface AgentSchedule {
   session_id: string
   running: boolean
   last_run: AgentScheduleRun | null
-  /** `chat` when the agent created it inside a conversation. */
-  source?: 'api' | 'chat'
 }
 
 /** Delivery history page (`GET …/schedules/{id}/runs`). */
@@ -342,14 +389,16 @@ export interface CreateScheduleParams {
   session_id?: string
   agent_id?: string
   agent?: { model?: string; reasoning?: { effort?: ReasoningEffort }; instructions?: string }
+  /** `EnvironmentConfig`; ignored by the server when `session_id` is set. No UI sets it. */
+  environment?: OAIEnvironmentConfig
 }
 
-/** Body for `POST /v1/agents/schedules/{id}`; `revision` is the record's `updated_at`. */
+/** Body for `POST /v1/agents/schedules/{id}`; optional `revision` (the record's `updated_at`) guards against concurrent edits (409). */
 export interface UpdateScheduleParams {
   title?: string
   prompt?: string
   timing?: ScheduleTiming
-  revision: string
+  revision?: string
 }
 
 /** Output event written on the session SSE stream. */
@@ -366,6 +415,7 @@ export type OAISessionEvent =
   | { type: 'agent.session.turn.cancelled'; event_id: string; session_id: string; turn_id: string; turn: OAITurn; usage?: OAITokenUsage | null }
   | { type: 'agent.session.turn.item.added'; event_id: string; session_id: string; turn_id: string; item: OAISessionItem }
   | { type: 'agent.session.turn.item.done'; event_id: string; session_id: string; turn_id: string; item: OAISessionItem }
+  | { type: 'agent.session.item.done'; event_id: string; session_id: string; turn_id: string | null; item: OAISlashCommandItem }
   | { type: 'agent.session.turn.output_text.delta'; event_id: string; item_id: string; output_index: number; content_index: number; session_id: string; turn_id: string; delta: string }
   | { type: 'agent.session.turn.output_text.done'; event_id: string; item_id: string; output_index: number; content_index: number; session_id: string; turn_id: string; text: string }
   | { type: 'error'; event_id: string; session_id?: string; error: { message: string; type?: string; code?: string } }
@@ -376,4 +426,35 @@ export type OAISessionStatusEvent = Extract<OAISessionEvent, { session: OAIAgent
 /** Error body Agentry answers with (`{ error: { type, message, code } }`). */
 export interface OAIErrorBody {
   error: { type?: string; message?: string; code?: string }
+}
+
+/** One file under a session's workspace (or S3 artifact store), as the backend lists it (`GET /v1/agents/sessions/{id}/artifacts`). */
+export interface SessionArtifactEntry {
+  path: string
+  size?: number
+  last_modified?: string
+}
+
+export interface SessionArtifactList {
+  object: 'list'
+  data: SessionArtifactEntry[]
+}
+
+/**
+ * An artifact the Artifacts page shows — a `SessionArtifactEntry` enriched by
+ * `src/artifacts/artifact.ts` with its session's context. `content_url` holds
+ * the `/v1`-prefixed API path of the bytes,
+ * `/v1/agents/sessions/{id}/artifacts/{path}`; the BFF streams them and
+ * `?download=1` forces an attachment.
+ */
+export interface Artifact {
+  id: string
+  name: string
+  path: string
+  size: number
+  mime_type: string
+  session_id: string
+  session_title?: string
+  updated_at: string
+  content_url: string
 }

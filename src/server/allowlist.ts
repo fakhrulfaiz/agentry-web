@@ -2,9 +2,9 @@
 export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 
 /** Names under `/agents/` that are routes, never an agent id. */
-const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules'])
+const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -22,10 +22,16 @@ const SCHEDULE = { id: 'schedule' } as const
 const RULES: readonly Rule[] = [
   { methods: ['GET'], segments: ['agents'] },
   { methods: ['GET'], segments: ['agents', 'tools'] },
+  { methods: ['GET'], segments: ['agents', 'skills'] },
+  { methods: ['GET'], segments: ['agents', 'commands'] },
+  // Artifacts listing; the bytes live under session workspace paths and their
+  // dedicated route validates those segments itself (see artifact-bytes).
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'artifacts'] },
   { methods: ['GET'], segments: ['agents', AGENT] },
   { methods: ['GET', 'POST'], segments: ['agents', 'sessions'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'sessions', SESSION] },
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'events'] },
+  { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'commands', { id: 'command' }] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'items'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'turns'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents'] },

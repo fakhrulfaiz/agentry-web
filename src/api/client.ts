@@ -6,6 +6,10 @@
  */
 import type {
   AgentSchedule,
+  AgentCommandList,
+  AgentSkillList,
+  CommandRunResponse,
+  SessionArtifactList,
   CreateScheduleParams,
   CreateSessionParams,
   OAIAgentSession,
@@ -55,6 +59,11 @@ export function isSignedOut(error: unknown): boolean {
 export function csrfToken(): string {
   if (typeof document === 'undefined') return ''
   return document.querySelector('meta[name="agentry-csrf"]')?.getAttribute('content') ?? ''
+}
+
+/** `?session_id=<id>`, or nothing without an id. */
+function sessionQuery(sessionId: string | undefined): string {
+  return sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
 }
 
 function seg(id: string): string {
@@ -266,6 +275,26 @@ export const api = {
   async models(): Promise<string[]> {
     const body = await request<{ models: string[] }>('GET', '/api/models')
     return body.models
+  },
+
+  /** The skills Agentry can use (the composer's `/` menu); with `sessionId`, that chat's. */
+  listSkills(sessionId?: string): Promise<AgentSkillList> {
+    return request('GET', `${AGENTRY}/agents/skills${sessionQuery(sessionId)}`)
+  },
+
+  /** The Host slash commands of a chat (the composer's `/` menu); empty without `sessionId`. */
+  listCommands(sessionId?: string): Promise<AgentCommandList> {
+    return request('GET', `${AGENTRY}/agents/commands${sessionQuery(sessionId)}`)
+  },
+
+  /** Runs one Host slash command in a chat, outside any turn. 409 `session_busy` while a turn runs. */
+  runCommand(sessionId: string, name: string, input?: string): Promise<CommandRunResponse> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(sessionId)}/commands/${seg(name)}`, input ? { input } : {})
+  },
+
+  /** Files the agent created in one chat, newest first (`GET /v1/agents/sessions/{id}/artifacts`). */
+  listSessionArtifacts(id: string): Promise<SessionArtifactList> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/artifacts`)
   },
 
   /** The user's scheduled tasks, in the backend's order (active by next run, then paused/ended newest first). */
