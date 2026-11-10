@@ -23,6 +23,7 @@ import { SESSIONS_CHANGED } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
 import type { UserFile } from '@/chat/attachments'
 import { Message } from './Message'
+import { RecentFiles } from './RecentFiles'
 import { Thinking } from './Thinking'
 import { Composer, type EffortChoice } from './Composer'
 import { pickModel, readModelCookie } from './model-cookie'
@@ -144,6 +145,7 @@ export function NewChat() {
             }
             settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId }}
           />
+          {!pending && <RecentFiles />}
         </VStack>
       </Center>
     </VStack>

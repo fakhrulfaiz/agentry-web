@@ -54,7 +54,7 @@ export const agentryTheme = defineTheme({
     '--radius-inner': '0.25rem',
     '--radius-element': '0.375rem',
     '--radius-container': '0.5rem',
-    '--radius-chat': 'var(--radius-container)',
+    '--radius-chat': '1rem',
     '--radius-page': '0.75rem',
     '--font-family-body': SANS,
     '--font-family-heading': SANS,
