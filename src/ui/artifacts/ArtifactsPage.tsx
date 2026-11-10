@@ -40,6 +40,7 @@ import { toArtifact } from "@/artifacts/artifact";
 import {
   artifactKind,
   artifactUrl,
+  isPresentedArtifact,
   previewMode,
   type ArtifactKind,
 } from "@/artifacts/kind";
@@ -228,7 +229,8 @@ export function ArtifactsPage() {
       page.data.forEach((session, index) => {
         const result = lists[index];
         if (result.status === "fulfilled") {
-          for (const entry of result.value.data) rows.push(toArtifact(session, entry));
+          for (const entry of result.value.data)
+            if (isPresentedArtifact(entry.path)) rows.push(toArtifact(session, entry));
         }
       });
       rows.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));

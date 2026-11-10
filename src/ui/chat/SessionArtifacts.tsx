@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import type { Artifact } from '@/api/types'
 import { artifactContentUrl } from '@/artifacts/artifact'
-import { contentTypeForName } from '@/artifacts/kind'
+import { contentTypeForName, isPresentedArtifact } from '@/artifacts/kind'
 import { ArtifactPreview } from '@/ui/artifacts/ArtifactPreview'
 
 export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; enabled: boolean }) {
@@ -26,7 +26,10 @@ export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; en
     try {
       const list = await api.listSessionArtifacts(sessionId)
       setItems(
-        list.data.map((entry) => {
+        list.data
+          // Dependency installs into the workspace are the agent's tooling, not output.
+          .filter((entry) => isPresentedArtifact(entry.path))
+          .map((entry) => {
           const name = entry.path.split('/').pop() ?? entry.path
           return {
             id: `${sessionId}:${entry.path}`,

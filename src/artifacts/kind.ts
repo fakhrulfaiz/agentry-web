@@ -45,6 +45,21 @@ export function contentTypeForName(name: string): string {
   return CONTENT_TYPES[extension(name)] ?? 'application/octet-stream'
 }
 
+/**
+ * Whether a workspace listing entry is a file worth showing the user. The
+ * backend enumerates the whole session workspace, including the agent's tooling
+ * — Python dependencies installed into the workspace (`.pylibs`, `.venv`), C
+ * caches and builds (`__pycache__`), other dot directories and dot files. Those
+ * were never servable (the bytes route refuses dot-files), so the Artifacts
+ * page and the chat file strip hide them instead of drowning the two files the
+ * turn actually made.
+ */
+export function isPresentedArtifact(path: string): boolean {
+  return !path
+    .split('/')
+    .some((segment) => segment.startsWith('.') || segment === '__pycache__')
+}
+
 const CODE_EXTENSIONS = new Set([
   'md', 'txt', 'json', 'yaml', 'yml', 'xml', 'csv', 'log', 'js', 'jsx', 'ts', 'tsx', 'py', 'sh',
   'html', 'css', 'sql', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'rb', 'toml',
