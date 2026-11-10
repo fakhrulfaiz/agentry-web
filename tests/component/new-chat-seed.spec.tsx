@@ -63,3 +63,20 @@ describe('New chat prefill from the URL', () => {
     expect(input()).toHaveTextContent('')
   })
 })
+
+describe('New chat send', () => {
+  it('shows the message and thinking state before the session exists, and restores the composer on failure', async () => {
+    nav.query = ''
+    let fail!: (e: Error) => void
+    apiMock.createSession.mockReturnValue(new Promise((_, reject) => { fail = reject }))
+    render(<NewChat />)
+    await waitFor(() => expect(input()).toBeInTheDocument())
+    const { userEvent } = await import('@testing-library/user-event').then((m) => ({ userEvent: m.default }))
+    await userEvent.type(input(), 'hello world{Enter}')
+    await waitFor(() => expect(screen.getByText('Agentry is thinking…')).toBeInTheDocument())
+    expect(screen.getAllByText('hello world').length).toBeGreaterThan(0)
+    fail(new Error('boom'))
+    await waitFor(() => expect(screen.queryByText('Agentry is thinking…')).not.toBeInTheDocument())
+    expect(input()).toHaveTextContent('hello world')
+  })
+})

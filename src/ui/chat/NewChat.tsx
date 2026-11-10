@@ -21,6 +21,8 @@ import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { SESSIONS_CHANGED } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
 import type { UserFile } from '@/chat/attachments'
+import { Message } from './Message'
+import { Thinking } from './Thinking'
 import { Composer, type EffortChoice } from './Composer'
 import { pickModel, readModelCookie } from './model-cookie'
 
@@ -43,6 +45,8 @@ export function NewChat() {
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<EffortChoice>('auto')
   const [failure, setFailure] = useState<Failure | null>(null)
+  // The message being sent, shown with a thinking state until the session exists and the chat opens.
+  const [pending, setPending] = useState<{ text: string; files?: UserFile[] } | null>(null)
 
   const loadModels = useCallback(async () => {
     try {
@@ -61,12 +65,14 @@ export function NewChat() {
   }, [loadModels])
 
   async function start(text: string, files?: UserFile[]) {
+    setPending({ text, ...(files?.length ? { files } : {}) })
     try {
       const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }) })
       setPendingFirst(session.id, { text, ...(files?.length ? { files } : {}) })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
     } catch (error) {
+      setPending(null)
       if (isSignedOut(error)) goToLogin()
       else setFailure({ message: error instanceof ApiError ? error.message : 'Could not start the chat.', unavailable: isUnavailable(error), retry: () => setFailure(null) })
       throw error
@@ -100,9 +106,16 @@ export function NewChat() {
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={failure.retry} />}
       <Center axis="both" padding={6} minHeight="70%">
         <VStack gap={6} width="100%" maxWidth={760} hAlign="stretch">
-          <Center>
-            <Wordmark size="lg" />
-          </Center>
+          {pending ? (
+            <>
+              <Message view={{ kind: 'user', id: 'pending', text: pending.text, ...(pending.files ? { files: pending.files } : {}) }} answer={async () => undefined} />
+              <Thinking label="Agentry is thinking…" />
+            </>
+          ) : (
+            <Center>
+              <Wordmark size="lg" />
+            </Center>
+          )}
           <Composer
             onSend={start}
             autoFocus
