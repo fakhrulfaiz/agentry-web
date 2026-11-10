@@ -134,7 +134,8 @@ export function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () 
   )
 }
 
-export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; enabled: boolean }) {
+/** `idle` is false while a turn runs; the list is re-read each time it turns true again. */
+export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionId: string; enabled: boolean; idle?: boolean }) {
   const [items, setItems] = useState<Artifact[]>([])
   const [selected, setSelected] = useState<Artifact | null>(null)
 
@@ -169,8 +170,8 @@ export function SessionArtifacts({ sessionId, enabled }: { sessionId: string; en
 
   useEffect(() => {
     // Files only change when a turn runs; reload on every return to idle.
-    if (enabled) void load()
-  }, [enabled, load])
+    if (enabled && idle) void load()
+  }, [enabled, idle, load])
 
   if (!enabled || items.length === 0) return null
 

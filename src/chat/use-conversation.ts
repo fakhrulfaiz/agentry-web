@@ -50,10 +50,12 @@ import {
   applySubagents,
   applyTurns,
   initialState,
+  LOCAL_PREFIX,
   removeLocalUserMessage,
   type ConversationState,
   type SubagentActivity,
 } from './reducer'
+import { clearPendingFirst, peekPendingFirst } from './pending-first'
 import { readSse } from './sse'
 
 export type Connection = 'live' | 'reconnecting' | 'closed'
@@ -95,10 +97,17 @@ type Action =
   | { type: 'local-user'; text: string; files?: UserFile[] }
   | { type: 'drop-local'; text: string }
 
+/** Initial state; a first message sent from the new-chat page is already on screen. */
+function seededState(sessionId: string): ConversationState {
+  const first = peekPendingFirst(sessionId)
+  const empty = initialState(sessionId)
+  return first ? appendLocalUserMessage(empty, first.text, first.files) : empty
+}
+
 function reducer(s: ConversationState, a: Action): ConversationState {
   switch (a.type) {
     case 'reset':
-      return s.sessionId === a.sessionId && s.lastEventId === null && s.items.length === 0 ? s : initialState(a.sessionId)
+      return s.sessionId === a.sessionId && s.lastEventId === null && s.items.every((v) => v.id.startsWith(LOCAL_PREFIX)) ? s : initialState(a.sessionId)
     case 'event':
       return applyEvent(s, a.id === undefined ? { event: a.event } : { id: a.id, event: a.event })
     case 'items':
@@ -156,7 +165,7 @@ export function useConversation(
   /** Runs a backend slash command and shows its result item at once (the stream carries the same item). */
   runCommand(name: string, input: string): Promise<void>
 } {
-  const [state, dispatch] = useReducer(reducer, sessionId, initialState)
+  const [state, dispatch] = useReducer(reducer, sessionId, seededState)
   // Optimistic until the first connection fails, so opening a chat does not flash "Reconnecting…".
   const [connection, setConnection] = useState<Connection>('live')
   const [closedReason, setClosedReason] = useState<ClosedReason | null>(null)
@@ -171,6 +180,7 @@ export function useConversation(
 
   useEffect(() => {
     dispatch({ type: 'reset', sessionId })
+    clearPendingFirst(sessionId)
     setConnection('live')
     setClosedReason(null)
     setLoaded(false)

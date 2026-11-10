@@ -609,3 +609,15 @@ describe('useConversation', () => {
     })
   })
 })
+
+describe('useConversation first message', () => {
+  it('shows the message sent from the new-chat page before the history loads', async () => {
+    const { setPendingFirst } = await import('@/chat/pending-first')
+    setPendingFirst(SID, { text: 'hello there' })
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    expect(result.current.state.items.map((v) => v.kind)).toEqual(['user'])
+    await flush()
+    expect(result.current.state.items.some((v) => v.kind === 'user')).toBe(true)
+    unmount()
+  })
+})

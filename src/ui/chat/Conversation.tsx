@@ -389,10 +389,10 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                     />
                   )
                 })}
-                {waiting && <Thinking label={loading ? 'Loading conversation…' : 'Agentry is thinking…'} />}
+                {waiting && <Thinking label={loading && state.items.length === 0 ? 'Loading conversation…' : 'Agentry is thinking…'} />}
                 {/* The files the agent created, as a card at the end of the chat (claude.ai's
                     artifacts), not pinned to the composer. */}
-                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} />}
+                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}
               </ChatMessageList>
             </SubagentItems.Provider>
           </ChatLayout>

@@ -125,7 +125,7 @@ export interface SubagentActivity {
   items?: StoredSessionItem[]
 }
 
-const LOCAL_PREFIX = 'local:'
+export const LOCAL_PREFIX = 'local:'
 
 export function initialState(sessionId: string): ConversationState {
   return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [], subagents: [] }

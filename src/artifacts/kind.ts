@@ -55,9 +55,10 @@ export function contentTypeForName(name: string): string {
  * turn actually made.
  */
 export function isPresentedArtifact(path: string): boolean {
-  return !path
-    .split('/')
-    .some((segment) => segment.startsWith('.') || segment === '__pycache__')
+  const segments = path.split('/')
+  // `uploads/` holds the user's own attachments, which already render on their message.
+  if (segments.length > 1 && segments[0] === 'uploads') return false
+  return !segments.some((segment) => segment.startsWith('.') || segment === '__pycache__')
 }
 
 const CODE_EXTENSIONS = new Set([

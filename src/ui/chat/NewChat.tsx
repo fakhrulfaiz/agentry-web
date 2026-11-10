@@ -14,6 +14,7 @@ import { seedText } from '@/artifacts/seed'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
 import { scheduleSeedText } from '@/schedule/seed'
 import { useSkillCommands } from '@/skills/skills-store'
+import { setPendingFirst } from '@/chat/pending-first'
 import { goToLogin } from '@/chat/use-conversation'
 import { Wordmark } from '@/ui/brand/Wordmark'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
@@ -62,6 +63,7 @@ export function NewChat() {
   async function start(text: string, files?: UserFile[]) {
     try {
       const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }) })
+      setPendingFirst(session.id, { text, ...(files?.length ? { files } : {}) })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
     } catch (error) {

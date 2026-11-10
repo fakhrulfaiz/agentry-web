@@ -18,3 +18,11 @@ describe('isPresentedArtifact', () => {
     expect(isPresentedArtifact('outputs/__pycache__/build.pyc')).toBe(false)
   })
 })
+
+describe('isPresentedArtifact uploads', () => {
+  it('hides the user attachments under the top-level uploads folder only', () => {
+    expect(isPresentedArtifact('uploads/report.docx')).toBe(false)
+    expect(isPresentedArtifact('outputs/uploads/report.docx')).toBe(true)
+    expect(isPresentedArtifact('uploads')).toBe(true)
+  })
+})
