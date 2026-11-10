@@ -12,14 +12,12 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { StackItem } from '@astryxdesign/core/Layout'
-import { Link } from '@astryxdesign/core/Link'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
-import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } from '@astryxdesign/core/Table'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
-import { MagnifyingGlassIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon, PuzzlePieceIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
@@ -27,6 +25,7 @@ import type { OAIAgent } from '@/api/types'
 import { agentToForm } from '@/agents/form'
 import { STARTERS } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
+import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 
 const COLUMN_WIDTH = 880
 
@@ -108,34 +107,39 @@ export function AgentsPage() {
             {rows.length === 0 ? (
               <Text type="supporting" color="secondary" role="status">No agents match your search.</Text>
             ) : (
-              <Table density="compact" hasHover>
-                <TableHeader>
-                  <TableRow>
-                    <TableHeaderCell>Name</TableHeaderCell>
-                    <TableHeaderCell>Model</TableHeaderCell>
-                    <TableHeaderCell>Tools</TableHeaderCell>
-                    <TableHeaderCell>Apps</TableHeaderCell>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((agent) => {
-                    const form = agentToForm(agent)
-                    return (
-                      <TableRow key={agent.id}>
-                        <TableCell>
-                          <VStack gap={0}>
-                            <Link href={`/agents/${agent.id}`}>{agent.name || 'Untitled agent'}</Link>
-                            {summary(agent) && <Text type="supporting" color="secondary" maxLines={1}>{summary(agent)}</Text>}
-                          </VStack>
-                        </TableCell>
-                        <TableCell><Text type="supporting">{agent.model}</Text></TableCell>
-                        <TableCell><Text type="supporting">{form.allTools ? 'All' : form.tools.length}</Text></TableCell>
-                        <TableCell><Text type="supporting">{form.connectors.length || 'Any'}</Text></TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+              <CardGrid label="Your agents">
+                {rows.map((agent) => {
+                  const form = agentToForm(agent)
+                  const apps = form.connectors
+                  return (
+                    <EntityCard
+                      key={agent.id}
+                      href={`/agents/${agent.id}`}
+                      title={agent.name || 'Untitled agent'}
+                      trailing={<Text type="supporting" color="secondary" maxLines={1}>{agent.model}</Text>}
+                      footer={
+                        <>
+                          <Fact icon={<Icon icon={WrenchScrewdriverIcon} size="sm" color="secondary" />}>
+                            {form.allTools ? 'All tools' : `${form.tools.length} ${form.tools.length === 1 ? 'tool' : 'tools'}`}
+                          </Fact>
+                          <Fact icon={<Icon icon={PuzzlePieceIcon} size="sm" color="secondary" />}>
+                            {apps.length === 0 ? 'Any app' : apps.length <= 2 ? apps.join(', ') : `${apps.slice(0, 2).join(', ')} +${apps.length - 2}`}
+                          </Fact>
+                          {form.subagents && (
+                            <Fact icon={<Icon icon={UsersIcon} size="sm" color="secondary" />}>Subagents</Fact>
+                          )}
+                        </>
+                      }
+                    >
+                      {summary(agent) ? (
+                        <Text type="supporting" color="secondary" maxLines={2}>{summary(agent)}</Text>
+                      ) : (
+                        <Text type="supporting" color="secondary">No instructions yet.</Text>
+                      )}
+                    </EntityCard>
+                  )
+                })}
+              </CardGrid>
             )}
           </VStack>
         )}

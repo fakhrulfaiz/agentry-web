@@ -16,18 +16,9 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { StackItem } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Switch } from "@astryxdesign/core/Switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
-} from "@astryxdesign/core/Table";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -35,6 +26,7 @@ import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { VStack } from "@astryxdesign/core/VStack";
 import {
+  ArrowPathIcon,
   CalendarDaysIcon,
   ClockIcon,
   EyeIcon,
@@ -55,6 +47,7 @@ import {
   templateValues,
   type ScheduleTemplate,
 } from "@/schedule/templates";
+import { CardGrid, EntityCard, Fact } from "@/ui/cards/EntityCard";
 import { DeleteScheduleDialog } from "@/ui/scheduled/ScheduleDialogs";
 import { SESSIONS_CHANGED } from "@/ui/shell/session-actions";
 
@@ -262,45 +255,17 @@ export function ScheduledPage() {
         {rows.length === 0 ? (
           <Text type="supporting">No tasks match “{query.trim()}”.</Text>
         ) : (
-          <Table density="compact" hasHover>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Name</TableHeaderCell>
-                <TableHeaderCell>Schedule</TableHeaderCell>
-                <TableHeaderCell>Next run</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((task) => (
-                <TableRow key={task.id}>
-                  <TableCell>
-                    <Link href={`/scheduled/${task.id}`}>{task.title}</Link>
-                  </TableCell>
-                  <TableCell>
-                    <Text type="supporting">
-                      {describeTiming(
-                        task.timing,
-                        undefined,
-                        browserTimeZone(),
-                      )}
-                    </Text>
-                  </TableCell>
-                  <TableCell>
-                    {task.next_run_at ? (
-                      <Timestamp
-                        value={task.next_run_at}
-                        format="date_time"
-                        type="supporting"
-                      />
-                    ) : (
-                      <Text type="supporting">—</Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
+          <CardGrid label="Scheduled tasks">
+            {rows.map((task) => (
+              <EntityCard
+                key={task.id}
+                href={`/scheduled/${task.id}`}
+                title={task.title}
+                dimmed={task.status !== "active"}
+                trailing={
+                  <>
                     {task.status === "ended" ? (
-                      <Text type="supporting">Ended</Text>
+                      <Text type="supporting" color="secondary">Ended</Text>
                     ) : (
                       <Switch
                         label={`${task.status === "active" ? "Pause" : "Resume"} ${task.title}`}
@@ -311,8 +276,6 @@ export function ScheduledPage() {
                         isDisabled={pending === task.id}
                       />
                     )}
-                  </TableCell>
-                  <TableCell>
                     <MoreMenu
                       label={`More options for ${task.title}`}
                       size="sm"
@@ -321,8 +284,7 @@ export function ScheduledPage() {
                         { label: "Run now", onClick: () => void runNow(task) },
                         {
                           label: "Edit",
-                          onClick: () =>
-                            router.push(`/scheduled/${task.id}/edit`),
+                          onClick: () => router.push(`/scheduled/${task.id}/edit`),
                         },
                         { type: "divider" },
                         {
@@ -332,11 +294,33 @@ export function ScheduledPage() {
                         },
                       ]}
                     />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </>
+                }
+                footer={
+                  <>
+                    <Fact icon={<Icon icon={ArrowPathIcon} size="sm" color="secondary" />}>
+                      {task.running
+                        ? "Running now"
+                        : task.status === "paused"
+                          ? "Paused"
+                          : task.status === "ended"
+                            ? "No more runs"
+                            : "Waiting"}
+                    </Fact>
+                    {task.next_run_at && (
+                      <Fact icon={<Icon icon={ClockIcon} size="sm" color="secondary" />}>
+                        <Timestamp value={task.next_run_at} format="date_time" type="supporting" />
+                      </Fact>
+                    )}
+                  </>
+                }
+              >
+                <Text type="supporting" color="secondary" maxLines={2}>
+                  {describeTiming(task.timing, undefined, browserTimeZone())}
+                </Text>
+              </EntityCard>
+            ))}
+          </CardGrid>
         )}
       </VStack>
     ) : (
