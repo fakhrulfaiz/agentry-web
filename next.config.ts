@@ -26,6 +26,13 @@ const csp = [
   "frame-ancestors 'none'",
 ].join('; ')
 
+/**
+ * Artifact bytes are untrusted agent output. They may be framed by this origin
+ * (the preview dialog's PDF), and run no script even when served as HTML.
+ */
+const artifactCsp = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"
+const ARTIFACT_CONTENT = '/api/agentry/agents/artifacts/:id/content'
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // The e2e run builds into its own directory, so it can run beside a `next dev` on `.next`.
@@ -33,7 +40,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: ARTIFACT_CONTENT,
+        headers: [
+          { key: 'Content-Security-Policy', value: artifactCsp },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        ],
+      },
+      {
+        source: '/:path((?!api/agentry/agents/artifacts/[^/]+/content$).*)',
         headers: [
           { key: 'Content-Security-Policy', value: csp },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
