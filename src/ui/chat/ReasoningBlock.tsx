@@ -6,6 +6,7 @@ import { StackItem } from '@astryxdesign/core/Layout'
 import { Text } from '@astryxdesign/core/Text'
 import * as stylex from '@stylexjs/stylex'
 import { useState } from 'react'
+import './shimmer.css'
 
 const styles = stylex.create({
   prose: { whiteSpace: 'pre-wrap' },
@@ -45,9 +46,11 @@ export function ReasoningBlock({ text, streaming }: { text: string; streaming: b
       trigger={
         <HStack gap={2} vAlign="center" xstyle={styles.header} data-testid="reasoning-header">
           <StackItem xstyle={styles.label}>
-            <Text type="supporting" weight="medium" textWrap="nowrap">
-              {streaming ? 'Thinking…' : 'Thought'}
-            </Text>
+            <span data-shimmer={streaming ? 'text' : undefined}>
+              <Text type="supporting" weight="medium" textWrap="nowrap">
+                {streaming ? 'Thinking…' : 'Thought'}
+              </Text>
+            </span>
           </StackItem>
           {!open && summary && (
             <StackItem size="fill" xstyle={styles.summary}>

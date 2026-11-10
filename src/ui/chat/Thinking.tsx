@@ -9,6 +9,7 @@ import { ChatMessage, ChatMessageBubble } from '@astryxdesign/core/Chat'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
+import './shimmer.css'
 
 export function Thinking({ label }: { label: string }) {
   return (
@@ -16,7 +17,9 @@ export function Thinking({ label }: { label: string }) {
       <ChatMessageBubble variant="ghost" width="100%">
         <HStack gap={2} vAlign="center">
           <Spinner size="sm" shade="subtle" aria-hidden="true" />
-          <Text type="supporting">{label}</Text>
+          <span data-shimmer="text">
+            <Text type="supporting">{label}</Text>
+          </span>
         </HStack>
       </ChatMessageBubble>
     </ChatMessage>

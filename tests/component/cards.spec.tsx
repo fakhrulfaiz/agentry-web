@@ -163,6 +163,18 @@ describe('views', () => {
     expect(document.body).toHaveTextContent('"limit": 5')
   })
 
+  it('shows a running timer while a call has no result and "No output" only once it completed empty', async () => {
+    const user = userEvent.setup()
+    const base = { kind: 'tool', id: 't2', callId: 'c2', name: 'command', args: { command: 'sleep 90' } } as const
+    const { rerender } = render(<Message view={{ ...base, status: 'running' }} answer={noAnswer} />)
+    await user.click(screen.getByRole('button', { name: /command/ }))
+    expect(await screen.findByText(/Running… 0s/)).toBeInTheDocument()
+    expect(screen.queryByText('No output')).not.toBeInTheDocument()
+    rerender(<Message view={{ ...base, status: 'done' }} answer={noAnswer} />)
+    expect(await screen.findByText('No output')).toBeInTheDocument()
+    expect(screen.queryByText(/Running…/)).not.toBeInTheDocument()
+  })
+
   it('summarizes long or structured arguments', () => {
     expect(summarizeArgs({ path: '/tmp/x' })).toBe('/tmp/x')
     expect(summarizeArgs('{"n":1}')).toBe('{"n":1}')
