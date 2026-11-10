@@ -7,9 +7,13 @@
 import { Center } from '@astryxdesign/core/Center'
 import { VStack } from '@astryxdesign/core/VStack'
 import * as stylex from '@stylexjs/stylex'
-import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
+import { seedText } from '@/artifacts/seed'
+import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
+import { scheduleSeedText } from '@/schedule/seed'
+import { useSkillCommands } from '@/skills/skills-store'
 import { goToLogin } from '@/chat/use-conversation'
 import { Wordmark } from '@/ui/brand/Wordmark'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
@@ -24,6 +28,15 @@ type Failure = { message: string; unavailable: boolean; retry: () => void }
 
 export function NewChat() {
   const router = useRouter()
+  const params = useSearchParams()
+  // `?seed=docs|slides|data` (Artifacts tiles) and `?schedule=1` (Scheduled page) prefill the composer once.
+  const seed = params.get('seed')
+  const schedule = params.get('schedule')
+  const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : ''))
+  useEffect(() => {
+    if (seed !== null || schedule !== null) router.replace('/')
+  }, [seed, schedule, router])
+  const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<EffortChoice>('auto')
@@ -57,6 +70,26 @@ export function NewChat() {
     }
   }
 
+  const appHandlers = useMemo<AppCommandHandlers>(
+    () => ({
+      new: (arg) => (arg ? start(arg) : undefined),
+      clear: () => undefined,
+      model: (arg, { openMenu }) => {
+        if (!arg) return openMenu('model') ? undefined : `Model: ${model}`
+        setModel(chooseModel(arg, models))
+        return `Model set to ${arg}.`
+      },
+      effort: (arg, { openMenu }) => {
+        if (!arg) return openMenu('effort') ? undefined : `Reasoning effort: ${effort}`
+        const chosen = chooseEffort(arg, undefined)
+        setEffort(chosen)
+        return `Reasoning effort set to ${chosen}.`
+      },
+    }),
+    // `start` reads the model and effort chosen at call time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [model, models, effort],
+  )
   const noModels = models !== null && models.length === 0 && !failure
   return (
     <VStack xstyle={styles.page}>
@@ -71,6 +104,9 @@ export function NewChat() {
             onSend={start}
             autoFocus
             isDisabled={!model}
+            commands={commands}
+            appHandlers={appHandlers}
+            initialValue={initialValue}
             placeholder="How can Agentry help today?"
             status={
               failure && !failure.unavailable

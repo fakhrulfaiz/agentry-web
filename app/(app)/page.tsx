@@ -1,5 +1,10 @@
+import { Suspense } from 'react'
 import { NewChat } from '@/ui/chat/NewChat'
 
 export default function Home() {
-  return <NewChat />
+  return (
+    <Suspense>
+      <NewChat />
+    </Suspense>
+  )
 }
