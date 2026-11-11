@@ -51,3 +51,11 @@ export function templateSummary(template: SandboxTemplate): string {
 export function shortDate(seconds: number): string {
   return new Date(seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
+
+/** Base64 of a file's bytes, in chunks so a large file does not overflow the call stack. */
+export async function toBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binary)
+}

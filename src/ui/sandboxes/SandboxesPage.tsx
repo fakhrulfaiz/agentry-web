@@ -9,6 +9,7 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
+import { FileInput } from '@astryxdesign/core/FileInput'
 import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
@@ -18,17 +19,16 @@ import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
-import { TextArea } from '@astryxdesign/core/TextArea'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import { CircleStackIcon, CommandLineIcon, DocumentDuplicateIcon, ExclamationTriangleIcon, FolderOpenIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { SandboxEnvironment, SandboxProvider, SandboxTemplate } from '@/api/types'
+import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
-import { providerAbilities, shortDate, splitList, statusLook, templateSummary } from './format'
+import { formatBytes, providerAbilities, shortDate, statusLook, templateSummary, toBase64 } from './format'
 
 const COLUMN_WIDTH = 880
 type View = 'environments' | 'templates' | 'providers'
@@ -96,39 +96,44 @@ function NewEnvironmentDialog({
   )
 }
 
+const MAX_STARTER_FILE = 1024 * 1024
+const MAX_STARTER_FILES = 20
+
 function NewTemplateDialog({
   isOpen, onClose, providers, onCreated,
 }: { isOpen: boolean; onClose(): void; providers: SandboxProvider[]; onCreated(): void }) {
   const [name, setName] = useState('')
   const [provider, setProvider] = useState(DEFAULT_PROVIDER)
-  const [network, setNetwork] = useState<'enabled' | 'disabled'>('enabled')
-  const [npm, setNpm] = useState('')
-  const [python, setPython] = useState('')
-  const [system, setSystem] = useState('')
+  const [starters, setStarters] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const target = providers.find((p) => (provider ? p.name === provider : p.default))
-  const asks = [
-    ...(network === 'disabled' ? ['network'] : []),
-    ...(splitList(`${npm},${python},${system}`).length > 0 ? ['packages'] : []),
-  ]
-  const unsupported = target ? asks.filter((field) => !target.capabilities.templateFields.includes(field)) : []
+  const cannotHoldFiles = target !== undefined && !target.capabilities.templateFields.includes('files')
+
+  function pick(value: File | File[] | null) {
+    const files = value === null ? [] : Array.isArray(value) ? value : [value]
+    setStarters(files.slice(0, MAX_STARTER_FILES))
+  }
 
   async function create() {
     if (name.trim() === '') return setError('Give the template a name.')
+    const tooBig = starters.find((f) => f.size > MAX_STARTER_FILE)
+    if (tooBig) return setError(`${tooBig.name} is larger than ${formatBytes(MAX_STARTER_FILE)}.`)
     setBusy(true)
     setError(null)
     try {
       await api.createSandboxTemplate({
         name: name.trim(),
         ...(provider ? { provider } : {}),
-        network: { access: network },
-        packages: { npm: splitList(npm), python: splitList(python), system: splitList(system) },
+        ...(starters.length > 0
+          ? { files: await Promise.all(starters.map(async (f) => ({ type: 'inline' as const, path: `/workspace/${f.name}`, data: await toBase64(f) }))) }
+          : {}),
       })
       onCreated()
       onClose()
       setName('')
+      setStarters([])
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
       setError(err instanceof ApiError ? err.message : 'Could not save the template.')
@@ -139,24 +144,24 @@ function NewTemplateDialog({
 
   return (
     <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={520}>
-      <DialogHeader title="New template" subtitle="A setup you can start environments from." onOpenChange={(open: boolean) => !open && onClose()} />
+      <DialogHeader title="New template" subtitle="Starter files every new environment begins with." onOpenChange={(open: boolean) => !open && onClose()} />
       <VStack gap={3} padding={4}>
         {error !== null && <Banner status="error" title={error} />}
         <TextInput label="Name" value={name} onChange={setName} />
-        <HStack gap={3}>
-          <StackItem size="fill">
-            <Selector label="Provider" options={providerOptions(providers)} value={provider} onChange={setProvider} />
-          </StackItem>
-          <StackItem size="fill">
-            <Selector label="Network" options={[{ value: 'enabled', label: 'Allowed' }, { value: 'disabled', label: 'Blocked' }]} value={network} onChange={(v) => setNetwork(v as 'enabled' | 'disabled')} />
-          </StackItem>
-        </HStack>
-        <TextArea label="Python packages" isOptional rows={2} description="Separate with commas or new lines." value={python} onChange={setPython} />
-        <TextArea label="npm packages" isOptional rows={2} value={npm} onChange={setNpm} />
-        <TextArea label="System packages" isOptional rows={2} value={system} onChange={setSystem} />
-        {unsupported.length > 0 && target && (
-          <Banner status="warning" title={`${target.name} cannot apply ${unsupported.join(' and ')}. You can still save the template, but environments from it will not start.`} />
-        )}
+        <Selector label="Provider" options={providerOptions(providers)} value={provider} onChange={setProvider} />
+        <FileInput
+          label="Starter files"
+          isOptional
+          isMultiple
+          description={`Copied into /workspace. Up to ${MAX_STARTER_FILES} files of ${formatBytes(MAX_STARTER_FILE)} each.`}
+          value={starters}
+          onChange={pick}
+          isDisabled={cannotHoldFiles}
+          disabledMessage={cannotHoldFiles ? `${target?.name} cannot hold starter files.` : undefined}
+        />
+        <Text type="supporting" color="secondary">
+          Node, Python and the Office tools are already available to every agent; you do not need to install them here.
+        </Text>
         <HStack gap={2} hAlign="end">
           <Button label="Cancel" onClick={onClose} />
           <Button label="Save template" variant="primary" isLoading={busy} onClick={() => void create()} />
@@ -166,11 +171,42 @@ function NewTemplateDialog({
   )
 }
 
+/** What the host bundles for every agent, in plain terms. */
+function RuntimesCard({ runtimes }: { runtimes: SandboxRuntimes | null }) {
+  if (runtimes === null || !runtimes.available) {
+    return (
+      <EntityCard title="Bundled runtimes" footer={<Meta icon={CommandLineIcon}>Not installed on this server</Meta>}>
+        <Text type="supporting" color="secondary">Agents use whatever Node and Python the server itself has.</Text>
+      </EntityCard>
+    )
+  }
+  const packages = Object.keys(runtimes.python_packages ?? {})
+  return (
+    <EntityCard
+      title="Bundled runtimes"
+      trailing={<Text type="supporting" color="secondary">Shared by every chat</Text>}
+      footer={
+        <>
+          {runtimes.node && <Meta icon={CommandLineIcon}>{`Node ${runtimes.node}`}</Meta>}
+          {runtimes.python && <Meta icon={CommandLineIcon}>{`Python ${runtimes.python}`}</Meta>}
+          {runtimes.pnpm && <Meta icon={CommandLineIcon}>{`pnpm ${runtimes.pnpm}`}</Meta>}
+        </>
+      }
+    >
+      <Text type="supporting" color="secondary">
+        Agents pick Node or Python themselves, and the Office tools (Word, PowerPoint, Excel, PDF) use the same bundle.
+        {packages.length > 0 ? ` Python includes ${packages.slice(0, 6).join(', ')}${packages.length > 6 ? ` and ${packages.length - 6} more` : ''}.` : ''}
+      </Text>
+    </EntityCard>
+  )
+}
+
 export function SandboxesPage() {
   const [view, setView] = useState<View>('environments')
   const [environments, setEnvironments] = useState<SandboxEnvironment[] | null>(null)
   const [templates, setTemplates] = useState<SandboxTemplate[] | null>(null)
   const [providers, setProviders] = useState<SandboxProvider[] | null>(null)
+  const [runtimes, setRuntimes] = useState<SandboxRuntimes | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)
@@ -182,6 +218,8 @@ export function SandboxesPage() {
       setTemplates(tpls.data)
       setProviders(provs.data)
       setError(null)
+      // The runtimes card is informative; an older backend without the endpoint just shows the fallback.
+      api.listSandboxRuntimes().then(setRuntimes, () => undefined)
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
       setError(err instanceof ApiError ? err.message : 'Could not load sandboxes.')
@@ -218,7 +256,7 @@ export function SandboxesPage() {
             <HStack gap={1} vAlign="center" role="group" aria-label="Sandboxes view">
               <ToggleButton label="Environments" size="sm" isPressed={view === 'environments'} onPressedChange={() => setView('environments')} />
               <ToggleButton label="Templates" size="sm" isPressed={view === 'templates'} onPressedChange={() => setView('templates')} />
-              <ToggleButton label="Providers" size="sm" isPressed={view === 'providers'} onPressedChange={() => setView('providers')} />
+              <ToggleButton label="Runtimes" size="sm" isPressed={view === 'providers'} onPressedChange={() => setView('providers')} />
             </HStack>
           </StackItem>
           {view === 'environments' && <Button label="New environment" variant="primary" onClick={() => setDialog('environment')} />}
@@ -266,7 +304,7 @@ export function SandboxesPage() {
             <EmptyState
               icon={<Icon icon={DocumentDuplicateIcon} size="lg" color="secondary" />}
               title="No templates yet."
-              description="A template saves a setup (packages, network access) so every environment starts the same way."
+              description="A template saves starter files so every new environment begins with the same workspace."
               actions={<Button label="New template" onClick={() => setDialog('template')} />}
             />
           ) : (
@@ -295,7 +333,8 @@ export function SandboxesPage() {
         ) : providers.length === 0 ? (
           <EmptyState icon={<Icon icon={CommandLineIcon} size="lg" color="secondary" />} title="No providers registered." description="The server has no sandbox provider configured." />
         ) : (
-          <CardGrid label="Providers">
+          <CardGrid label="Providers and runtimes">
+            <RuntimesCard runtimes={runtimes} />
             {providers.map((p) => (
               <EntityCard
                 key={p.name}

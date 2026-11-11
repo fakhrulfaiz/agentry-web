@@ -14,6 +14,7 @@ const apiMock = vi.hoisted(() => ({
   listSandboxEnvironments: vi.fn(),
   listSandboxTemplates: vi.fn(),
   listSandboxProviders: vi.fn(),
+  listSandboxRuntimes: vi.fn(),
   createSandboxEnvironment: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
 }))
@@ -34,6 +35,7 @@ beforeEach(() => {
   apiMock.listSandboxEnvironments.mockResolvedValue(page([env]))
   apiMock.listSandboxTemplates.mockResolvedValue(page([template]))
   apiMock.listSandboxProviders.mockResolvedValue(page([provider]))
+  apiMock.listSandboxRuntimes.mockResolvedValue({ object: 'sandbox.runtimes', available: true, node: '24.21.0', python: '3.12.14', pnpm: '11.28.5', python_packages: { pandas: '3.0.1' } })
 })
 afterEach(() => {
   cleanup()
@@ -53,7 +55,9 @@ describe('SandboxesPage', () => {
     expect(screen.getByText('local cannot apply network, packages')).toBeInTheDocument()
     expect(screen.getByText('1 package, network disabled')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Providers' }))
+    await user.click(screen.getByRole('button', { name: 'Runtimes' }))
+    expect(await screen.findByText('Node 24.21.0')).toBeInTheDocument()
+    expect(screen.getByText('Python 3.12.14')).toBeInTheDocument()
     expect(screen.getByText('Default')).toBeInTheDocument()
     expect(screen.getByText('Runs agent tools')).toBeInTheDocument()
   })

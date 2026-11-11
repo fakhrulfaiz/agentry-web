@@ -89,10 +89,9 @@ export interface ComposerSettings {
   onEnvironmentChange?(id: string): void
 }
 
-function SettingsMenus({ settings }: { settings: ComposerSettings }) {
-  const { models, model, onModelChange, effort, onEffortChange, efforts, hint, agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange } = settings
-  // A disabled menu still names its current value.
-  const modelOptions = models && models.length > 0 ? models : model ? [model] : []
+/** Left of the footer: who runs the chat and where (new chats only). Renders nothing without any choice. */
+function ContextMenus({ settings }: { settings: ComposerSettings }) {
+  const { agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange } = settings
   return (
     <>
       {agents && agents.length > 0 && onAgentChange && (
@@ -119,6 +118,17 @@ function SettingsMenus({ settings }: { settings: ComposerSettings }) {
           onChange={onEnvironmentChange}
         />
       )}
+    </>
+  )
+}
+
+/** Right of the footer, beside the send button: the model and its reasoning effort. */
+function ModelMenus({ settings }: { settings: ComposerSettings }) {
+  const { models, model, onModelChange, effort, onEffortChange, efforts, hint } = settings
+  // A disabled menu still names its current value.
+  const modelOptions = models && models.length > 0 ? models : model ? [model] : []
+  return (
+    <>
       <Selector
         label="Model"
         isLabelHidden
@@ -348,9 +358,10 @@ export function Composer({
       footerActions={
         <>
           <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly onClick={() => picker.current?.click()} />
-          {settings && <SettingsMenus settings={settings} />}
+          {settings && <ContextMenus settings={settings} />}
         </>
       }
+      sendActions={settings ? <ModelMenus settings={settings} /> : undefined}
       status={attachments.error ? { type: 'error', message: attachments.error } : attachments.failed ? { type: 'error', message: 'Remove the failed upload to send.' } : status}
     />
     </div>

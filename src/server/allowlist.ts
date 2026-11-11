@@ -37,6 +37,7 @@ const RULES: readonly Rule[] = [
   { methods: ['DELETE'], segments: ['agents', 'files', FILE] },
   // Sandboxes: providers, templates, environments and their files. File bytes have their own route.
   { methods: ['GET'], segments: ['agents', 'environments', 'providers'] },
+  { methods: ['GET'], segments: ['agents', 'environments', 'runtimes'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', 'templates'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'environments', 'templates', TEMPLATE] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments'] },

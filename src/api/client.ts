@@ -19,6 +19,7 @@ import type {
   SandboxEnvironment,
   SandboxPage,
   SandboxProvider,
+  SandboxRuntimes,
   SandboxTemplate,
   CreateSessionParams,
   OAIAgentSession,
@@ -354,6 +355,9 @@ export const api = {
   /** Sandbox providers and what each supports. */
   listSandboxProviders(): Promise<SandboxPage<SandboxProvider>> {
     return request('GET', `${AGENTRY}/agents/environments/providers`)
+  },
+  listSandboxRuntimes(): Promise<SandboxRuntimes> {
+    return request('GET', `${AGENTRY}/agents/environments/runtimes`)
   },
   listSandboxTemplates(): Promise<SandboxPage<SandboxTemplate>> {
     return request('GET', `${AGENTRY}/agents/environments/templates?limit=100`)

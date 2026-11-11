@@ -24,7 +24,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { EnvironmentFile, SandboxEnvironment } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
-import { formatBytes, shortDate, statusLook } from './format'
+import { formatBytes, shortDate, statusLook, toBase64 } from './format'
 
 const COLUMN_WIDTH = 880
 const WORKSPACE = '/workspace/'
@@ -35,14 +35,6 @@ const fileHref = (environmentId: string, path: string, download: boolean): strin
   const relative = path.startsWith(WORKSPACE) ? path.slice(WORKSPACE.length) : path.replace(/^\/+/u, '')
   const encoded = relative.split('/').map(encodeURIComponent).join('/')
   return `/api/agentry/agents/environments/${encodeURIComponent(environmentId)}/files/${encoded}${download ? '?download' : ''}`
-}
-
-/** Base64 of a file's bytes, in chunks so a large file does not overflow the call stack. */
-async function toBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return btoa(binary)
 }
 
 export function EnvironmentDetail({ environmentId }: { environmentId: string }) {

@@ -18,6 +18,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/agent_123'],
     ['GET', '/agents/tools'],
     ['GET', '/agents/environments/providers'],
+    ['GET', '/agents/environments/runtimes'],
     ['GET', '/agents/environments/templates'],
     ['POST', '/agents/environments/templates'],
     ['DELETE', '/agents/environments/templates/tpl_1'],

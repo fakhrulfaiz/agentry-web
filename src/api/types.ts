@@ -578,6 +578,17 @@ export interface SandboxPage<T> {
 export interface CreateTemplateParams {
   name: string
   provider?: string
-  network?: { access: 'enabled' | 'disabled' | 'restricted'; allowed_domains?: string[] }
-  packages?: { npm?: string[]; python?: string[]; system?: string[] }
+  /** Starter files copied into every environment made from the template. */
+  files?: Array<{ type: 'inline'; path: string; data: string }>
+}
+
+/** The script runtimes the host bundles for every agent (`GET /agents/environments/runtimes`). */
+export interface SandboxRuntimes {
+  object: 'sandbox.runtimes'
+  available: boolean
+  node?: string
+  python?: string
+  pnpm?: string
+  platform?: string
+  python_packages?: Record<string, string>
 }
