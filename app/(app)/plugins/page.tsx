@@ -38,7 +38,7 @@ export default async function Plugins({ searchParams }: { searchParams: Promise<
   const skills = <SkillsTab />
   return (
     <VStack>
-      <TopBar title="Plugins" />
+      <TopBar />
       <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
         <VStack gap={5}>
           <Heading level={1} type="display-2">

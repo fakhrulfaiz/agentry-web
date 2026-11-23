@@ -9,6 +9,7 @@ import type {
   AgentSchedule,
   InstalledSkill,
   SkillManifest,
+  SkillView,
   OAIFileObject,
   AgentCommandList,
   AgentSkillList,
@@ -247,6 +248,16 @@ export const api = {
   listInstalledSkills(scope?: 'library' | 'agent', agentId?: string): Promise<InstalledSkill[]> {
     const params = new URLSearchParams({ ...(scope ? { scope } : {}), ...(agentId ? { agent_id: agentId } : {}) })
     return request<{ data: InstalledSkill[] }>('GET', `${AGENTRY}/agents/skills/installed${params.size > 0 ? `?${params}` : ''}`).then((r) => r.data)
+  },
+
+  /** A skill's files and SKILL.md by name (your installed skills and Agentry built-ins). */
+  viewSkill(name: string): Promise<SkillView> {
+    return request('GET', `${AGENTRY}/agents/skills/view/${seg(name)}`)
+  },
+
+  /** One skill file as text. */
+  readSkillFile(name: string, path: string): Promise<{ path: string; bytes: number; content: string }> {
+    return request('GET', `${AGENTRY}/agents/skills/view/${seg(name)}/files/${path.split('/').map(encodeURIComponent).join('/')}`)
   },
 
   getSkill(id: string): Promise<SkillManifest> {

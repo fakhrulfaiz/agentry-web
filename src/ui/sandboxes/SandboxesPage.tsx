@@ -4,6 +4,8 @@
  * The Sandboxes page: Environments (where agents run, with status and files),
  * Templates (reusable setups) and Providers (what each backend can do).
  */
+import { CpuChipIcon, ServerStackIcon, Square3Stack3DIcon } from '@heroicons/react/24/outline'
+import { IconTile } from '@/ui/shared/IconTile'
 import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
@@ -186,6 +188,7 @@ function RuntimesCard({ runtimes }: { runtimes: SandboxRuntimes | null }) {
   return (
     <EntityCard
       title="Bundled runtimes"
+      leading={<IconTile icon={CommandLineIcon} hue="teal" />}
       trailing={<Text type="supporting" color="secondary">Shared by every chat</Text>}
       footer={
         <>
@@ -286,6 +289,7 @@ export function SandboxesPage() {
                     key={env.id}
                     href={`/sandboxes/${env.id}`}
                     title={env.id}
+                    leading={<IconTile icon={ServerStackIcon} hue={env.status === 'connected' ? 'green' : 'slate'} />}
                     trailing={<HStack gap={2} vAlign="center"><StatusDot variant={look.variant} label={look.text} /><Text type="supporting" color="secondary">{look.text}</Text></HStack>}
                     footer={
                       <>
@@ -315,6 +319,7 @@ export function SandboxesPage() {
                 <EntityCard
                   key={tpl.id}
                   title={tpl.name || 'Untitled template'}
+                  leading={<IconTile icon={Square3Stack3DIcon} hue="violet" />}
                   trailing={<IconButton label={`Delete ${tpl.name || 'template'}`} size="sm" variant="ghost" icon={<Icon icon={TrashIcon} />} onClick={() => setRemoving(tpl)} />}
                   footer={
                     <>
@@ -341,6 +346,7 @@ export function SandboxesPage() {
               <EntityCard
                 key={p.name}
                 title={p.name}
+                leading={<IconTile icon={CpuChipIcon} hue="blue" />}
                 trailing={p.default ? <Text type="supporting" color="secondary">Default</Text> : undefined}
                 footer={providerAbilities(p).map((ability) => <Meta key={ability} icon={CommandLineIcon}>{ability}</Meta>)}
               >

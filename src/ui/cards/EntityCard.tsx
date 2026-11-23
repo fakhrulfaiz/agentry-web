@@ -45,7 +45,8 @@ const styles = stylex.create({
     '::after': { content: '""', position: 'absolute', inset: 0, borderRadius: radiusVars['--radius-container'] },
   },
   trailing: { position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 },
-  footer: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, marginTop: 'auto', paddingTop: 4 },
+  // Above the stretched title link, so footer buttons stay clickable.
+  footer: { position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, marginTop: 'auto', paddingTop: 4 },
 })
 
 export function CardGrid({ label, children }: { label: string; children: ReactNode }) {

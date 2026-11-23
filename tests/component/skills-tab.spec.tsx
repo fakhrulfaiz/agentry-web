@@ -18,8 +18,12 @@ const apiMock = vi.hoisted(() => ({
   deleteSkill: vi.fn(),
   updateSkill: vi.fn(),
   editSkill: vi.fn(),
+  viewSkill: vi.fn(),
+  readSkillFile: vi.fn(),
 }))
 vi.mock('@/api/client', async (orig) => ({ ...(await orig<object>()), api: apiMock }))
+const nav = vi.hoisted(() => ({ replace: vi.fn(), query: '' }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn(), refresh: vi.fn() }), useSearchParams: () => new URLSearchParams(nav.query) }))
 
 const { SkillsTab } = await import('@/ui/plugins/SkillsTab')
 
@@ -29,6 +33,7 @@ const row = (extra: Partial<InstalledSkill> = {}): InstalledSkill => ({
 })
 
 beforeEach(() => {
+  nav.query = ''
   for (const fn of Object.values(apiMock)) fn.mockReset()
   apiMock.listSkills.mockResolvedValue({ object: 'list', data: [
     { name: 'create-agent', description: 'Agents', kind: 'builtin', enabled: true },
@@ -83,6 +88,18 @@ describe('SkillsTab', () => {
     await user.click(await screen.findByRole('button', { name: 'Library' }))
     await user.click(await screen.findByRole('button', { name: 'Delete haiku' }))
     expect(await screen.findByText(/Writer/u)).toBeInTheDocument()
+  })
+
+  it('a skill opened from the URL shows SKILL.md, and a script with highlighting', async () => {
+    nav.query = 'tab=skills&skill=haiku'
+    apiMock.viewSkill.mockResolvedValue({ name: 'haiku', description: 'Writes haiku', kind: 'library', files: [{ path: 'SKILL.md', bytes: 40 }, { path: 'scripts/run.sh', bytes: 9 }], skill_md: '---\nname: haiku\n---\nCount the syllables.' })
+    apiMock.readSkillFile.mockResolvedValue({ path: 'scripts/run.sh', bytes: 9, content: 'echo five' })
+    const user = userEvent.setup()
+    render(<SkillsTab />)
+    expect(await screen.findByText('Count the syllables.')).toBeInTheDocument()
+    await user.click(screen.getByText('scripts/run.sh'))
+    await waitFor(() => expect(document.body.textContent).toContain('echo five'))
+    expect(apiMock.readSkillFile).toHaveBeenCalledWith('haiku', 'scripts/run.sh')
   })
 
   it('the editor creates a skill with the entered fields', async () => {

@@ -65,6 +65,7 @@ describe('isAllowed', () => {
     ['POST', `/agents/schedules/${SCHEDULE}/run`],
     ['GET', `/agents/schedules/${SCHEDULE}/runs`],
     ['GET', '/agents/skills/installed'],
+    ['GET', '/agents/skills/view/create-agent'],
     ['POST', '/agents/skills'],
     ['POST', '/agents/skills/import'],
     ['GET', `/agents/skills/${SKILL}`],

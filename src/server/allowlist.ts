@@ -65,6 +65,7 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'schedules', SCHEDULE, 'run'] },
   { methods: ['GET'], segments: ['agents', 'schedules', SCHEDULE, 'runs'] },
   { methods: ['GET'], segments: ['agents', 'skills', 'installed'] },
+  { methods: ['GET'], segments: ['agents', 'skills', 'view', { id: 'agent' }] },
   { methods: ['POST'], segments: ['agents', 'skills'] },
   { methods: ['POST'], segments: ['agents', 'skills', 'import'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'skills', SKILL] },

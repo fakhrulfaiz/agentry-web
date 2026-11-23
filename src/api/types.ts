@@ -73,6 +73,16 @@ export interface SkillManifest {
   skill_md: string
 }
 
+/** `GET /v1/agents/skills/view/{name}`: a skill's files for the viewer. */
+export interface SkillView {
+  name: string
+  description: string
+  kind: 'builtin' | 'library' | 'private'
+  id?: string
+  files: { path: string; bytes: number }[]
+  skill_md: string
+}
+
 /** Which skills a saved agent uses; absent or null uses every built-in. */
 export interface AgentSkillSelection {
   builtin: string[]
