@@ -1,10 +1,15 @@
 /** Agents page logic: saved agent <-> form <-> request body. Client-safe and pure. */
+import { avatarOf, defaultAvatar } from './avatar'
+import type { HueName } from '@/ui/brand/palette'
 import type { AgentAppGrants, AgentSkillSelection, CreateAgentParams, OAIAgent, ReasoningEffort } from '@/api/types'
 
 export type EffortChoice = 'auto' | Extract<ReasoningEffort, 'low' | 'medium' | 'high'>
 
 export interface AgentForm {
   name: string
+  /** Avatar icon name (`AGENT_ICONS`) and colour, saved in metadata. */
+  icon: string
+  color: HueName
   model: string
   effort: EffortChoice
   instructions: string
@@ -28,7 +33,7 @@ export const MAX_SUBAGENTS = 8
 export const CONNECTORS_KEY = 'connectors'
 
 export const emptyForm = (model = ''): AgentForm => ({
-  name: '', model, effort: 'auto', instructions: '', allTools: true, tools: [],
+  name: '', ...defaultAvatar(`new-${String(Date.now())}`), model, effort: 'auto', instructions: '', allTools: true, tools: [],
   apps: null, skills: null, sendPolicy: 'ask', subagents: false, maxSubagents: 3, extraMetadata: {},
 })
 
@@ -40,11 +45,12 @@ export function grantsOf(agent: Pick<OAIAgent, 'apps' | 'metadata'>): AgentAppGr
 }
 
 export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
-  const { [CONNECTORS_KEY]: _legacy, ...extraMetadata } = agent.metadata ?? {}
+  const { [CONNECTORS_KEY]: _legacy, icon: _icon, color: _color, ...extraMetadata } = agent.metadata ?? {}
   const allow = agent.host_tools?.allow
   const effort = agent.reasoning?.effort
   return {
     name: agent.name ?? '',
+    ...avatarOf(agent),
     model: agent.model || defaultModel,
     effort: effort === 'low' || effort === 'medium' || effort === 'high' ? effort : 'auto',
     instructions: agent.instructions ?? '',
@@ -63,7 +69,7 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
 export function formToParams(form: AgentForm, catalog: string[] = []): CreateAgentParams {
   const everything = catalog.length > 0 && catalog.every((t) => form.tools.includes(t))
   const mask = form.allTools || form.tools.length === 0 || everything ? null : { allow: form.tools }
-  const metadata = { ...form.extraMetadata }
+  const metadata = { ...form.extraMetadata, icon: form.icon, color: form.color }
   return {
     model: form.model,
     name: form.name.trim(),

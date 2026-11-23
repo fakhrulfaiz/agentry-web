@@ -12,12 +12,17 @@ export interface Starter {
   instructions: string
   tools: ToolPreset
   subagents?: boolean
+  /** Avatar (`AGENT_ICONS` name and colour). */
+  icon: string
+  color: 'blue' | 'violet' | 'green' | 'orange' | 'pink' | 'teal' | 'amber' | 'red' | 'slate'
 }
 
 export const STARTERS: Starter[] = [
   {
     id: 'planner',
     name: 'Planner',
+    icon: 'ideas',
+    color: 'amber',
     summary: 'Turns a goal into a step-by-step plan before any work starts.',
     tools: 'read-only',
     instructions:
@@ -26,6 +31,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'code-reviewer',
     name: 'Code reviewer',
+    icon: 'code',
+    color: 'violet',
     summary: 'Reviews changes for bugs, clarity and risk, and says what to fix first.',
     tools: 'read-only',
     instructions:
@@ -34,6 +41,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'security-reviewer',
     name: 'Security reviewer',
+    icon: 'review',
+    color: 'red',
     summary: 'Looks for secrets, injection, unsafe input handling and weak access checks.',
     tools: 'read-only',
     instructions:
@@ -42,6 +51,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'test-writer',
     name: 'Test writer',
+    icon: 'review',
+    color: 'green',
     summary: 'Writes the failing test first, then the smallest change that makes it pass.',
     tools: 'edit',
     instructions:
@@ -50,6 +61,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'docs-writer',
     name: 'Documentation writer',
+    icon: 'writing',
+    color: 'blue',
     summary: 'Keeps READMEs and guides accurate by reading the code first.',
     tools: 'edit',
     instructions:
@@ -58,6 +71,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'docs-lookup',
     name: 'Library docs lookup',
+    icon: 'docs',
+    color: 'teal',
     summary: 'Answers how to use a library or API from its current documentation.',
     tools: 'read-only',
     instructions:
@@ -66,6 +81,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'seo-reviewer',
     name: 'SEO reviewer',
+    icon: 'web',
+    color: 'orange',
     summary: 'Audits a page for titles, structure, speed and search basics.',
     tools: 'read-only',
     instructions:
@@ -74,6 +91,8 @@ export const STARTERS: Starter[] = [
   {
     id: 'research-assistant',
     name: 'Research assistant',
+    icon: 'research',
+    color: 'pink',
     summary: 'Digs into a question, compares sources and reports what is and is not known.',
     tools: 'read-only',
     subagents: true,

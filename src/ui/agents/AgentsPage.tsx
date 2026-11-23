@@ -4,6 +4,8 @@
  * The Agents page: Yours (a dense table of the user's saved agents, or the empty
  * state) and Starters (agents to start from, which open the form prefilled).
  */
+import { avatarOf } from '@/agents/avatar'
+import { AgentAvatar } from './AgentAvatar'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { ClickableCard } from '@astryxdesign/core/ClickableCard'
@@ -116,6 +118,7 @@ export function AgentsPage() {
                       key={agent.id}
                       href={`/agents/${agent.id}`}
                       title={agent.name || 'Untitled agent'}
+                      leading={<AgentAvatar avatar={avatarOf(agent)} size="md" />}
                       trailing={<Text type="supporting" color="secondary" maxLines={1}>{agent.model}</Text>}
                       footer={
                         <>

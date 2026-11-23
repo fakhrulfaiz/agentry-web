@@ -33,18 +33,32 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('AgentForm avatar', () => {
+  it('picking an icon and a colour saves them on the agent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Inbox')
+    await userEvent.click(within(screen.getByRole('group', { name: 'Agent icon' })).getByRole('button', { name: 'Email' }))
+    await userEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Teal' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
+    expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ metadata: { icon: 'mail', color: 'teal' } })
+  })
+})
+
 describe('AgentForm skills and apps', () => {
   const LIB = `skill_${'a'.repeat(32)}`
   it('choosing skills saves every built-in plus the ticked library skill; office stays on', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Poet')
-    await userEvent.click(screen.getByRole('switch', { name: /Use all built-in skills/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^Skills/ }))
+    await userEvent.click(await screen.findByRole('switch', { name: /Use all built-in skills/ }))
     const office = await screen.findByRole('checkbox', { name: /office-docx/ })
     expect(office).toBeChecked()
     expect(office).toHaveAttribute('aria-disabled', 'true')
     await userEvent.click(screen.getByRole('checkbox', { name: /haiku/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ skills: { builtin: ['composio', 'create-agent'], library: [LIB] } })
   })
@@ -53,12 +67,13 @@ describe('AgentForm skills and apps', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: ['gmail', 'github'] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Mail')
+    await userEvent.click(await screen.findByRole('button', { name: /^Apps/ }))
     await userEvent.click(await screen.findByRole('switch', { name: /Limit this agent to specific apps/ }))
     await userEvent.click(within(screen.getByRole('group', { name: 'github access' })).getByRole('button', { name: 'Off' }))
     await userEvent.click(within(screen.getByRole('group', { name: 'gmail access' })).getByRole('button', { name: 'Choose tools' }))
     await userEvent.type(screen.getByRole('textbox', { name: /gmail tools/ }), 'GMAIL_FETCH_EMAILS, GMAIL_SEND_EMAIL')
     await userEvent.click(screen.getByRole('button', { name: 'Send without asking' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ apps: { gmail: ['GMAIL_FETCH_EMAILS', 'GMAIL_SEND_EMAIL'] }, send_policy: 'auto' })
   })
@@ -70,10 +85,10 @@ describe('AgentForm', () => {
     render(<AgentForm />)
     const name = await screen.findByRole('textbox', { name: /Name/ })
     await userEvent.type(name, ' Reviewer ')
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect(apiMock.createAgent).toHaveBeenCalledWith({
-      model: 'm1', name: 'Reviewer', instructions: '', metadata: {}, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask',
+      model: 'm1', name: 'Reviewer', instructions: '', metadata: { icon: expect.any(String), color: expect.any(String) }, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask',
     })
     expect(nav.push).toHaveBeenCalledWith('/agents')
   })
@@ -83,7 +98,7 @@ describe('AgentForm', () => {
     render(<AgentForm />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('Planner'))
     await userEvent.clear(screen.getByRole('textbox', { name: /Name/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     expect(await screen.findByText('Give the agent a name.')).toBeInTheDocument()
     expect(apiMock.createAgent).not.toHaveBeenCalled()
   })

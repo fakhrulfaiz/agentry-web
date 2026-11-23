@@ -38,7 +38,7 @@ const styles = stylex.create({
     backgroundColor: { default: colorVars['--color-background-card'], ':hover': colorVars['--color-overlay-hover'] },
   },
   dimmed: { opacity: 0.7 },
-  head: { display: 'flex', alignItems: 'flex-start', gap: 8 },
+  head: { display: 'flex', alignItems: 'center', gap: 12 },
   title: { flex: 1, minWidth: 0 },
   // The title link's click area covers the whole card.
   stretch: {
@@ -59,6 +59,7 @@ export function CardGrid({ label, children }: { label: string; children: ReactNo
 export function EntityCard({
   href,
   title,
+  leading,
   trailing,
   children,
   footer,
@@ -67,6 +68,8 @@ export function EntityCard({
   /** Where the card goes; without it the title is plain text (a card that only shows facts). */
   href?: string
   title: string
+  /** An icon tile or avatar before the title. */
+  leading?: ReactNode
   trailing?: ReactNode
   children?: ReactNode
   footer?: ReactNode
@@ -75,6 +78,7 @@ export function EntityCard({
   return (
     <li {...stylex.props(styles.card, dimmed && styles.dimmed)}>
       <div {...stylex.props(styles.head)}>
+        {leading}
         <div {...stylex.props(styles.title)}>
           {href === undefined ? (
             <Text weight="medium" maxLines={1}>{title}</Text>
