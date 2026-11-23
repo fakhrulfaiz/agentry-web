@@ -36,3 +36,7 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local data (connector keys)
+/.data/
+.data-e2e/

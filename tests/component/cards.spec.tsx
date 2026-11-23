@@ -212,6 +212,12 @@ describe('views', () => {
 })
 
 describe('ApprovalCard', () => {
+  it('warns about scripts on a skill install', () => {
+    const install = { ...approval, prompt: 'Install skill "tidy" (2 files, has scripts): Tidies', tool_name: 'skill_install' }
+    render(<Message view={{ kind: 'action', id: 'action:appr_1', action: install }} answer={vi.fn(async () => {})} />)
+    expect(screen.getByText(/includes scripts that run in your agent's sandbox/u)).toBeInTheDocument()
+  })
+
   it('Allow answers approve, and focus starts on Allow', async () => {
     const user = userEvent.setup()
     const answer = vi.fn(async () => {})

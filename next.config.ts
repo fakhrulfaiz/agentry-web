@@ -10,7 +10,7 @@ const isDev = process.env.NODE_ENV === 'development'
  * Baseline Content Security Policy (no nonces). Next's inline bootstrap scripts
  * need 'unsafe-inline' (and dev/HMR 'unsafe-eval'); KaTeX and astryx set inline
  * styles. Fonts: theme-neutral imports Figtree from Google Fonts. Images only
- * from this origin or data: URLs (assistant Markdown never loads remote images).
+ * from this origin, data: URLs and the connector logo host (assistant Markdown never loads remote images).
  * `form-action` is left unset: the Keycloak sign-in form redirects to the
  * realm's origin, which is only known at runtime.
  */
@@ -19,7 +19,7 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://logos.composio.dev",
   `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
   "object-src 'none'",
   "base-uri 'self'",

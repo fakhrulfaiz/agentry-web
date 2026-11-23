@@ -8,12 +8,14 @@
  * prompt-injected image URL cannot send conversation data anywhere without a
  * click.
  */
+import { ArrowUpRightIcon } from '@heroicons/react/16/solid'
+import { Button } from '@astryxdesign/core/Button'
 import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { Link } from '@astryxdesign/core/Link'
 import { Markdown as AstryxMarkdown, type MarkdownComponents } from '@astryxdesign/core/Markdown'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { useMemo } from 'react'
+import { Children, isValidElement, type ReactNode, useMemo } from 'react'
 
 function MathView({ value, display }: { value: string; display: 'inline' | 'block' }) {
   const html = useMemo(
@@ -39,7 +41,42 @@ function ImageView({ src, alt }: { src: string; alt: string }) {
   )
 }
 
-const COMPONENTS: MarkdownComponents = { math: MathView, code: CodeView, image: ImageView }
+/** True for a Composio Connect Link: https, host exactly `connect.composio.dev`, path under `/link/`. */
+export function isConnectLink(href: string): boolean {
+  try {
+    const url = new URL(href)
+    return url.protocol === 'https:' && url.hostname === 'connect.composio.dev' && url.pathname.startsWith('/link/')
+  } catch {
+    // Not an absolute URL, so it cannot be a connect link.
+    return false
+  }
+}
+
+function plainText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (isValidElement<{ children?: ReactNode }>(node)) return plainText(node.props.children)
+  return Children.toArray(node).map(plainText).join('')
+}
+
+/** Connect links become one primary button; every other link keeps the astryx Link styling. */
+function LinkView({ href, children }: { href: string; children: ReactNode }) {
+  if (isConnectLink(href)) {
+    const label = plainText(children).replace(/^[^\p{L}\p{N}]+/u, '').trim() || href
+    return (
+      <Button
+        label={label}
+        variant="primary"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        endContent={<ArrowUpRightIcon width={16} height={16} aria-hidden />}
+      />
+    )
+  }
+  return /^https?:\/\//.test(href) ? <Link href={href} isExternalLink>{children}</Link> : <Link href={href}>{children}</Link>
+}
+
+const COMPONENTS: MarkdownComponents = { math: MathView, code: CodeView, image: ImageView, link: LinkView }
 
 export function Markdown({ text, isStreaming = false }: { text: string; isStreaming?: boolean }) {
   return (

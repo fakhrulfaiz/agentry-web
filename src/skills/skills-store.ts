@@ -13,7 +13,7 @@ export { REFRESH_MS }
 
 const store = createKeyedStore<SlashCommand>(async (sessionId) => {
   const body = await api.listSkills(sessionId)
-  return body.data.map((s) => ({ name: s.name, ...(s.description ? { description: s.description } : {}) }))
+  return body.data.map((s) => ({ name: s.name, ...(s.description ? { description: s.description } : {}), ...(s.kind ? { kind: s.kind } : {}) }))
 })
 
 /** Replaces the skills of a chat (or of the new-chat page without `sessionId`). */

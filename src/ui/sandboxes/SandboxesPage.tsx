@@ -83,7 +83,9 @@ function NewEnvironmentDialog({
           value={templateId}
           onChange={setTemplateId}
         />
-        <Selector label="Provider" description="Where it runs. The template's provider is used when you pick the default." options={providerOptions(providers)} value={provider} onChange={setProvider} />
+        {providers.length > 1 && (
+          <Selector label="Provider" description="Where it runs. The template's provider is used when you pick the default." options={providerOptions(providers)} value={provider} onChange={setProvider} />
+        )}
         {chosen && chosen.unsupported_fields.length > 0 && (
           <Banner status="warning" title={`This template sets ${chosen.unsupported_fields.join(', ')}, which ${chosen.provider} cannot apply, so it will not start.`} />
         )}
@@ -148,7 +150,7 @@ function NewTemplateDialog({
       <VStack gap={3} padding={4}>
         {error !== null && <Banner status="error" title={error} />}
         <TextInput label="Name" value={name} onChange={setName} />
-        <Selector label="Provider" options={providerOptions(providers)} value={provider} onChange={setProvider} />
+        {providers.length > 1 && <Selector label="Provider" options={providerOptions(providers)} value={provider} onChange={setProvider} />}
         <FileInput
           label="Starter files"
           isOptional

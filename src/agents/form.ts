@@ -1,5 +1,5 @@
 /** Agents page logic: saved agent <-> form <-> request body. Client-safe and pure. */
-import type { CreateAgentParams, OAIAgent, ReasoningEffort } from '@/api/types'
+import type { AgentAppGrants, AgentSkillSelection, CreateAgentParams, OAIAgent, ReasoningEffort } from '@/api/types'
 
 export type EffortChoice = 'auto' | Extract<ReasoningEffort, 'low' | 'medium' | 'high'>
 
@@ -12,8 +12,12 @@ export interface AgentForm {
   allTools: boolean
   /** Allowed Host tool names, used when `allTools` is false. */
   tools: string[]
-  /** Composio app slugs the agent should prefer; empty means no preference. */
-  connectors: string[]
+  /** Connected-app grants; `null` lets the agent use every connected app. */
+  apps: AgentAppGrants | null
+  /** Skill selection; `null` uses every built-in skill. */
+  skills: AgentSkillSelection | null
+  /** Ask before each write on the user's behalf, or send without asking. */
+  sendPolicy: 'ask' | 'auto'
   subagents: boolean
   maxSubagents: number
   /** Other metadata keys on the record, kept as they were. */
@@ -25,11 +29,18 @@ export const CONNECTORS_KEY = 'connectors'
 
 export const emptyForm = (model = ''): AgentForm => ({
   name: '', model, effort: 'auto', instructions: '', allTools: true, tools: [],
-  connectors: [], subagents: false, maxSubagents: 3, extraMetadata: {},
+  apps: null, skills: null, sendPolicy: 'ask', subagents: false, maxSubagents: 3, extraMetadata: {},
 })
 
+/** Grants from a saved agent: `apps`, else the legacy `metadata.connectors` list (all tools each), else unrestricted. */
+export function grantsOf(agent: Pick<OAIAgent, 'apps' | 'metadata'>): AgentAppGrants | null {
+  if (agent.apps) return agent.apps
+  const legacy = (agent.metadata?.[CONNECTORS_KEY] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  return legacy.length === 0 ? null : Object.fromEntries(legacy.map((slug) => [slug, 'all' as const]))
+}
+
 export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
-  const { [CONNECTORS_KEY]: connectors = '', ...extraMetadata } = agent.metadata ?? {}
+  const { [CONNECTORS_KEY]: _legacy, ...extraMetadata } = agent.metadata ?? {}
   const allow = agent.host_tools?.allow
   const effort = agent.reasoning?.effort
   return {
@@ -39,7 +50,9 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
     instructions: agent.instructions ?? '',
     allTools: !allow || allow.length === 0,
     tools: allow ?? [],
-    connectors: connectors.split(',').map((s) => s.trim()).filter(Boolean),
+    apps: grantsOf(agent),
+    skills: agent.skills ?? null,
+    sendPolicy: agent.send_policy === 'auto' ? 'auto' : 'ask',
     subagents: agent.multi_agent?.enabled ?? false,
     maxSubagents: Math.min(MAX_SUBAGENTS, Math.max(1, agent.multi_agent?.max_concurrent_subagents ?? 3)),
     extraMetadata,
@@ -50,7 +63,7 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
 export function formToParams(form: AgentForm, catalog: string[] = []): CreateAgentParams {
   const everything = catalog.length > 0 && catalog.every((t) => form.tools.includes(t))
   const mask = form.allTools || form.tools.length === 0 || everything ? null : { allow: form.tools }
-  const metadata = { ...form.extraMetadata, ...(form.connectors.length > 0 ? { [CONNECTORS_KEY]: form.connectors.join(',') } : {}) }
+  const metadata = { ...form.extraMetadata }
   return {
     model: form.model,
     name: form.name.trim(),
@@ -59,6 +72,9 @@ export function formToParams(form: AgentForm, catalog: string[] = []): CreateAge
     host_tools: mask,
     multi_agent: { enabled: form.subagents, ...(form.subagents ? { max_concurrent_subagents: form.maxSubagents } : {}) },
     reasoning: form.effort === 'auto' ? null : { effort: form.effort },
+    apps: form.apps,
+    skills: form.skills,
+    send_policy: form.sendPolicy,
   }
 }
 

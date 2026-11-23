@@ -1,5 +1,6 @@
 'use client'
 
+import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { Code } from '@astryxdesign/core/Code'
@@ -48,6 +49,9 @@ export function ApprovalCard({
           {action.tool_name && <Code>{action.tool_name}</Code>}
         </HStack>
         <Text>{action.prompt}</Text>
+        {action.prompt.startsWith('Install skill') && action.prompt.includes('has scripts') && (
+          <Banner status="warning" title="This skill includes scripts that run in your agent's sandbox." />
+        )}
         <HStack gap={2}>
           <Button label="Allow" variant="primary" isLoading={busy === 'approve'} isDisabled={busy === 'deny'} onClick={() => void decide('approve')} />
           <Button label="Deny" isLoading={busy === 'deny'} isDisabled={busy === 'approve'} onClick={() => void decide('deny')} />

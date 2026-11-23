@@ -7,6 +7,8 @@
 import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
+  InstalledSkill,
+  SkillManifest,
   OAIFileObject,
   AgentCommandList,
   AgentSkillList,
@@ -238,6 +240,56 @@ export const api = {
   },
 
   uploadFile,
+
+  /** Your installed skills, optionally only the library or one agent's. */
+  listInstalledSkills(scope?: 'library' | 'agent', agentId?: string): Promise<InstalledSkill[]> {
+    const params = new URLSearchParams({ ...(scope ? { scope } : {}), ...(agentId ? { agent_id: agentId } : {}) })
+    return request<{ data: InstalledSkill[] }>('GET', `${AGENTRY}/agents/skills/installed${params.size > 0 ? `?${params}` : ''}`).then((r) => r.data)
+  },
+
+  getSkill(id: string): Promise<SkillManifest> {
+    return request('GET', `${AGENTRY}/agents/skills/${seg(id)}`)
+  },
+
+  /** Uploads a skill .zip for review. */
+  async uploadSkill(file: File, scope: 'library' | 'agent', agentId?: string): Promise<InstalledSkill> {
+    const form = new FormData()
+    form.append('scope', scope)
+    if (agentId) form.append('agent_id', agentId)
+    form.append('file', file, file.name)
+    const res = await fetch(`${AGENTRY}/agents/skills`, { method: 'POST', body: form, headers: { accept: 'application/json', [CSRF_HEADER]: csrfToken() }, credentials: 'same-origin' })
+    if (!res.ok) throw await toError(res)
+    return (await res.json()) as InstalledSkill
+  },
+
+  /** Writes a one-file skill; it is active at once. */
+  createSkill(input: { name: string; description: string; body: string; scope: 'library' | 'agent'; agentId?: string }): Promise<InstalledSkill> {
+    const { agentId, ...rest } = input
+    return request('POST', `${AGENTRY}/agents/skills`, { ...rest, ...(agentId ? { agent_id: agentId } : {}) })
+  },
+
+  /** Imports a public GitHub folder for review. */
+  importSkill(input: { repo: string; path: string; ref?: string; scope: 'library' | 'agent'; agentId?: string }): Promise<InstalledSkill> {
+    const { agentId, ref, ...rest } = input
+    return request('POST', `${AGENTRY}/agents/skills/import`, { ...rest, ...(ref ? { ref } : {}), ...(agentId ? { agent_id: agentId } : {}) })
+  },
+
+  activateSkill(id: string): Promise<InstalledSkill> {
+    return request('POST', `${AGENTRY}/agents/skills/${seg(id)}/activate`, {})
+  },
+
+  /** Re-imports a GitHub skill; changed content returns it to review. */
+  updateSkill(id: string): Promise<InstalledSkill> {
+    return request('POST', `${AGENTRY}/agents/skills/${seg(id)}/update`, {})
+  },
+
+  editSkill(id: string, input: { description?: string; body?: string }): Promise<InstalledSkill> {
+    return request('POST', `${AGENTRY}/agents/skills/${seg(id)}`, input)
+  },
+
+  deleteSkill(id: string): Promise<void> {
+    return request<unknown>('DELETE', `${AGENTRY}/agents/skills/${seg(id)}`).then(() => undefined)
+  },
 
   /** Removes a staged file (a removed attachment card). */
   deleteFile(id: string): Promise<void> {

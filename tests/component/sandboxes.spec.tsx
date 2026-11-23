@@ -69,6 +69,8 @@ describe('SandboxesPage', () => {
     render(<SandboxesPage />)
     expect(await screen.findByText('No environments yet.')).toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: 'New environment' })[0]!)
+    // One provider means nothing to choose, so the dialog does not ask.
+    expect(screen.queryByText('Provider')).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Create environment' }))
     await waitFor(() => expect(apiMock.createSandboxEnvironment).toHaveBeenCalledWith({}))
   })

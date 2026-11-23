@@ -12,9 +12,22 @@ const names = (items: { label: string }[]) => items.map((i) => i.label)
 const group = (item: { auxiliaryData?: { group: string } }) => item.auxiliaryData?.group
 
 describe('buildSlashItems', () => {
-  it('orders the groups Commands, App, Skills', () => {
+  it('orders the groups Commands, App, then skills (unkinded skills are Built-in)', () => {
     const items = buildSlashItems({ commands, app: APP_COMMANDS, skills, busy: false })
-    expect([...new Set(items.map(group))]).toEqual(['Commands', 'App', 'Skills'])
+    expect([...new Set(items.map(group))]).toEqual(['Commands', 'App', 'Built-in'])
+  })
+
+  it('groups skills by kind: bundled with Built-in, library, and private as This agent; empty groups vanish', () => {
+    const kinded = [
+      { name: 'haiku', kind: 'library' as const },
+      { name: 'office-docx', kind: 'bundled' as const },
+      { name: 'mine', kind: 'private' as const },
+      { name: 'create-agent', kind: 'builtin' as const },
+    ]
+    const items = buildSlashItems({ commands: [], app: [], skills: kinded, busy: false })
+    expect(items.map((i) => [group(i), i.label])).toEqual([
+      ['Built-in', 'create-agent'], ['Built-in', 'office-docx'], ['Library', 'haiku'], ['This agent', 'mine'],
+    ])
   })
 
   it('shows a name once: the command wins over the app command, which wins over the skill', () => {

@@ -205,7 +205,7 @@ describe('ScheduleDetail', () => {
     expect(within(drawer).getByLabelText('Task name')).toHaveValue('Standup')
     expect(within(drawer).getByLabelText('Task instruction')).toHaveValue('Summarise the standup and email it to me.')
     expect(within(drawer).getByLabelText('Time')).toBeInTheDocument()
-    expect(within(drawer).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+    expect(within(drawer).getByRole('button', { name: 'Save changes' })).toHaveAttribute('aria-disabled', 'true')
 
     await user.click(within(drawer).getByRole('button', { name: 'Discard' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit rule' })).not.toBeInTheDocument())

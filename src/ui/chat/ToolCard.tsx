@@ -8,6 +8,7 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState } from "react";
 import type { MessageView } from "@/chat/reducer";
+import { ConnectCard } from "./ConnectCard";
 import "./shimmer.css";
 
 type ToolView = Extract<MessageView, { kind: "tool" }>;
@@ -145,6 +146,7 @@ export function ToolCard({ view }: { view: ToolView }) {
           },
         ]}
       />
+      {view.connect && <ConnectCard request={view.connect} />}
     </div>
   );
 }

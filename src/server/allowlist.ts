@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -17,6 +17,9 @@ const SCHEDULE = { id: 'schedule' } as const
 const FILE = { id: 'file' } as const
 const TEMPLATE = { id: 'template' } as const
 const ENVIRONMENT = { id: 'environment' } as const
+const SKILL = { id: 'skill' } as const
+/** Installed skill ids Agentry issues. */
+const SKILL_ID = /^skill_[a-f0-9]{32}$/
 
 /**
  * F1's allow-list, relative to the upstream `/v1` prefix (spec §5), plus the
@@ -61,11 +64,18 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'schedules', SCHEDULE, 'resume'] },
   { methods: ['POST'], segments: ['agents', 'schedules', SCHEDULE, 'run'] },
   { methods: ['GET'], segments: ['agents', 'schedules', SCHEDULE, 'runs'] },
+  { methods: ['GET'], segments: ['agents', 'skills', 'installed'] },
+  { methods: ['POST'], segments: ['agents', 'skills'] },
+  { methods: ['POST'], segments: ['agents', 'skills', 'import'] },
+  { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'skills', SKILL] },
+  { methods: ['POST'], segments: ['agents', 'skills', SKILL, 'activate'] },
+  { methods: ['POST'], segments: ['agents', 'skills', SKILL, 'update'] },
 ]
 
 function matches(rule: Segment, part: string): boolean {
   if (typeof rule === 'string') return rule === part
   if (!ID_SEGMENT.test(part)) return false
+  if (rule.id === 'skill') return SKILL_ID.test(part)
   return rule.id !== 'agent' || !RESERVED_AGENT_IDS.has(part)
 }
 

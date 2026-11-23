@@ -51,6 +51,15 @@ describe('New chat prefill from the URL', () => {
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
   })
 
+  it('?prompt= prefills sanitized, length-limited text without sending, then clears the query', async () => {
+    nav.query = `prompt=${encodeURIComponent(`Connect my Gmail account\n\u0007${'x'.repeat(500)}`)}`
+    render(<NewChat />)
+    await waitFor(() => expect(input()).toHaveTextContent('Connect my Gmail account x'))
+    expect(input().textContent?.length).toBeLessThanOrEqual(200)
+    expect(apiMock.createSession).not.toHaveBeenCalled()
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
+  })
+
   it('an unknown seed or no query leaves the composer empty and does not rewrite the URL', async () => {
     nav.query = ''
     render(<NewChat />)

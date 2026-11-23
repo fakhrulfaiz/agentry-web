@@ -13,6 +13,7 @@ import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
+import { promptText } from '@/connectors/catalog'
 import { scheduleSeedText } from '@/schedule/seed'
 import { useSkillCommands } from '@/skills/skills-store'
 import { setPendingFirst } from '@/chat/pending-first'
@@ -38,10 +39,12 @@ export function NewChat() {
   // `?seed=docs|slides|data` (Artifacts tiles) and `?schedule=1` (Scheduled page) prefill the composer once.
   const seed = params.get('seed')
   const schedule = params.get('schedule')
-  const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : ''))
+  // `?prompt=` (Connectors page Connect) prefills sanitized, length-limited text; the user still presses send.
+  const prompt = params.get('prompt')
+  const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : promptText(prompt)))
   useEffect(() => {
-    if (seed !== null || schedule !== null) router.replace('/')
-  }, [seed, schedule, router])
+    if (seed !== null || schedule !== null || prompt !== null) router.replace('/')
+  }, [seed, schedule, prompt, router])
   const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')

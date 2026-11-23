@@ -12,6 +12,17 @@ const SUBAGENT_ROUTES = [
   `/agents/sessions/${ID}/subagents/${SUB}/turns`,
 ]
 
+const SKILL = `skill_${'a'.repeat(32)}`
+
+describe('skill routes', () => {
+  it('rejects other methods and malformed skill ids', () => {
+    expect(isAllowed('PUT', `/agents/skills/${SKILL}`)).toBe(false)
+    expect(isAllowed('DELETE', '/agents/skills/not-a-skill')).toBe(false)
+    expect(isAllowed('POST', `/agents/skills/${SKILL}/delete`)).toBe(false)
+    expect(isAllowed('DELETE', '/agents/skills')).toBe(false)
+  })
+})
+
 describe('isAllowed', () => {
   it.each([
     ['GET', '/agents'],
@@ -53,6 +64,14 @@ describe('isAllowed', () => {
     ['POST', `/agents/schedules/${SCHEDULE}/resume`],
     ['POST', `/agents/schedules/${SCHEDULE}/run`],
     ['GET', `/agents/schedules/${SCHEDULE}/runs`],
+    ['GET', '/agents/skills/installed'],
+    ['POST', '/agents/skills'],
+    ['POST', '/agents/skills/import'],
+    ['GET', `/agents/skills/${SKILL}`],
+    ['POST', `/agents/skills/${SKILL}`],
+    ['DELETE', `/agents/skills/${SKILL}`],
+    ['POST', `/agents/skills/${SKILL}/activate`],
+    ['POST', `/agents/skills/${SKILL}/update`],
   ])('allows %s %s', (method, path) => {
     expect(isAllowed(method, path)).toBe(true)
   })

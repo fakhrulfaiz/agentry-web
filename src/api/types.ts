@@ -39,6 +39,54 @@ export interface AgentSkill {
   name: string
   description?: string
   source?: string
+  /** `builtin` (Agentry's), `library` (yours), `private` (this agent's), `bundled` (always on). */
+  kind?: 'builtin' | 'library' | 'private' | 'bundled'
+  /** Installed skill id (library and private). */
+  id?: string
+  has_scripts?: boolean
+  enabled?: boolean
+}
+
+/** A library or agent-private skill, as `GET /v1/agents/skills/installed` lists it. */
+export interface InstalledSkill {
+  id: string
+  object: 'agent.skill'
+  scope: 'library' | 'agent'
+  agent_id: string | null
+  name: string
+  description: string
+  source: 'upload' | 'github' | 'editor' | 'chat'
+  origin: { repo: string; path: string; ref: string; commit: string } | null
+  content_hash: string
+  has_scripts: boolean
+  status: 'pending_review' | 'active'
+  created_at: number
+  updated_at: number
+  /** Ids of your agents that use it. */
+  used_by: string[]
+}
+
+/** `GET /v1/agents/skills/{id}`: what a review shows. */
+export interface SkillManifest {
+  skill: InstalledSkill
+  files: { path: string; bytes: number }[]
+  skill_md: string
+}
+
+/** Which skills a saved agent uses; absent or null uses every built-in. */
+export interface AgentSkillSelection {
+  builtin: string[]
+  library: string[]
+}
+
+/** Composio app grants: app slug to `all` or exact tool slugs. */
+export type AgentAppGrants = Record<string, 'all' | string[]>
+
+/** A connected-app sign-in link found in a tool output. */
+export interface ConnectRequest {
+  toolkit: string | null
+  url: string
+  status: 'initiated' | 'active' | 'unknown'
 }
 
 /** A Host slash command, as `GET /v1/agents/commands` lists it. */
@@ -93,6 +141,9 @@ export interface OAIAgent {
   multi_agent?: { enabled: boolean; max_concurrent_subagents?: number | null } | null
   reasoning?: { effort?: ReasoningEffort | null; summary?: 'auto' | 'none' | null } | null
   service_tier?: ServiceTier | null
+  skills?: AgentSkillSelection | null
+  apps?: AgentAppGrants | null
+  send_policy?: 'ask' | 'auto' | null
 }
 
 /** Body for `POST /v1/agents` (and, with every field optional, `POST /v1/agents/{id}`). */
@@ -104,6 +155,9 @@ export interface CreateAgentParams {
   host_tools?: { allow?: string[] | null; deny?: string[] | null } | null
   multi_agent?: { enabled: boolean; max_concurrent_subagents?: number | null } | null
   reasoning?: { effort?: ReasoningEffort | null } | null
+  skills?: AgentSkillSelection | null
+  apps?: AgentAppGrants | null
+  send_policy?: 'ask' | 'auto' | null
 }
 export type UpdateAgentParams = Partial<CreateAgentParams>
 
@@ -267,6 +321,8 @@ export interface OAIFunctionCallOutputItem {
   error?: string | null
   status: ToolCallStatus
   turn_id: string
+  /** A sign-in link for a connected app; shown as a Connect button. */
+  connect_request?: ConnectRequest
 }
 
 /** Saved MCP tool call. */

@@ -24,6 +24,8 @@ import type { HostToolInfo } from '@/api/types'
 import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, toolMask, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
 import { STARTERS } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
+import { AppsSection } from './AppsSection'
+import { SkillsSection } from './SkillsSection'
 
 const COLUMN_WIDTH = 720
 const EFFORTS: { value: EffortChoice; label: string }[] = [
@@ -129,7 +131,6 @@ export function AgentForm({ agentId }: { agentId?: string }) {
       </div>
     )
 
-  const appChoices = form ? [...new Set([...(apps ?? []), ...form.connectors])] : []
   const toolNames = tools.map((t) => t.name)
   return (
     <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
@@ -173,21 +174,9 @@ export function AgentForm({ agentId }: { agentId?: string }) {
                 ))}
             </VStack>
 
-            <VStack gap={2}>
-              <Text weight="medium">Apps</Text>
-              {apps === null && appChoices.length === 0 ? (
-                <Text type="supporting" color="secondary">Connect apps on the <Link href="/settings/connectors">Connectors page</Link> to choose which this agent should use.</Text>
-              ) : (
-                <>
-                  <Text type="supporting" color="secondary">The agent is told to use only these apps. Leave all unchecked for no preference.</Text>
-                  <CheckboxList label="Preferred apps" isLabelHidden density="compact" value={form.connectors} onChange={(connectors) => set({ connectors })}>
-                    {appChoices.map((slug) => (
-                      <CheckboxListItem key={slug} value={slug} label={slug} />
-                    ))}
-                  </CheckboxList>
-                </>
-              )}
-            </VStack>
+            <SkillsSection agentId={agentId} value={form.skills} onChange={(skills) => set({ skills })} />
+
+            <AppsSection connected={apps} value={form.apps} onChange={(grants) => set({ apps: grants })} sendPolicy={form.sendPolicy} onSendPolicy={(sendPolicy) => set({ sendPolicy })} />
 
             <VStack gap={2}>
               <Text weight="medium">Subagents</Text>

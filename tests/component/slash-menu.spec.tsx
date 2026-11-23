@@ -50,7 +50,7 @@ describe('grouped / menu', () => {
     await user.click(input())
     await user.keyboard('/')
     const list = await screen.findByRole('listbox', { name: 'Commands' })
-    expect(within(list).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Commands', 'App', 'Skills'])
+    expect(within(list).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Commands', 'App', 'Built-in'])
     // The skill named like a command is hidden; the command wins.
     expect(texts(list)).toEqual([
       '/compactCompact the conversation history',
@@ -77,7 +77,7 @@ describe('grouped / menu', () => {
     await user.keyboard('/pl')
     const list = await screen.findByRole('listbox', { name: 'Commands' })
     expect(texts(list)).toEqual(['/planWrite a plan'])
-    expect(within(list).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Skills'])
+    expect(within(list).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Built-in'])
   })
 
   it('greys the commands out while a turn runs', async () => {

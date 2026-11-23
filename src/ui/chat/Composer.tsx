@@ -49,7 +49,7 @@ import { APP_COMMANDS, AppCommandError, parseSlashLine, type AppCommandHandlers 
 import type { UserFile } from '@/chat/attachments'
 import { AttachmentCards, useAttachments } from './ComposerAttachments'
 import { focusEditor } from './focus'
-import { buildSlashItems, slashSource, type SlashItemData } from './slash-menu'
+import { buildSlashItems, SKILL_GROUPS, slashSource, type SlashItemData } from './slash-menu'
 
 /** Efforts offered; `auto` sends none (the agent's default). */
 export type EffortChoice = 'auto' | Extract<ReasoningEffort, 'low' | 'medium' | 'high'>
@@ -63,6 +63,8 @@ const EFFORTS: { value: EffortChoice; label: string }[] = [
 export interface SlashCommand {
   name: string
   description?: string
+  /** For skills: which `/` group it shows in (Built-in, Library, This agent). */
+  kind?: 'builtin' | 'library' | 'private' | 'bundled'
 }
 
 export interface ComposerSettings {
@@ -237,7 +239,7 @@ export function Composer({
       onSelect: (item) => {
         const data = item.auxiliaryData as SlashItemData
         // A row that needs no text runs at once; a skill or a row with a hint waits for the rest of the line.
-        if (data.group !== 'Skills' && !data.hint && !data.disabled) {
+        if (!SKILL_GROUPS.has(data.group) && !data.hint && !data.disabled) {
           void submitRef.current(`/${data.name}`)
           return ''
         }

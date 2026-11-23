@@ -110,7 +110,7 @@ export function AgentsPage() {
               <CardGrid label="Your agents">
                 {rows.map((agent) => {
                   const form = agentToForm(agent)
-                  const apps = form.connectors
+                  const apps = Object.keys(form.apps ?? {})
                   return (
                     <EntityCard
                       key={agent.id}

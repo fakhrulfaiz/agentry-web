@@ -8,8 +8,16 @@ import type { SearchableItem, SearchSource } from '@astryxdesign/core/Typeahead'
 import type { AgentCommand } from '@/api/types'
 import type { AppCommand } from '@/commands/app-commands'
 
-export const GROUPS = ['Commands', 'App', 'Skills'] as const
+export const GROUPS = ['Commands', 'App', 'Built-in', 'Library', 'This agent'] as const
 export type SlashGroup = (typeof GROUPS)[number]
+
+/** Groups whose rows are skills (they insert `/name `). */
+export const SKILL_GROUPS: ReadonlySet<SlashGroup> = new Set(['Built-in', 'Library', 'This agent'])
+
+/** The menu group of a skill: Agentry's and bundled skills are Built-in. */
+export function skillGroup(kind: 'builtin' | 'library' | 'private' | 'bundled' | undefined): SlashGroup {
+  return kind === 'library' ? 'Library' : kind === 'private' ? 'This agent' : 'Built-in'
+}
 
 export interface SlashItemData {
   group: SlashGroup
@@ -26,12 +34,12 @@ export type SlashItem = SearchableItem<SlashItemData>
 export interface SlashInputs {
   commands: readonly AgentCommand[]
   app: readonly AppCommand[]
-  skills: readonly { name: string; description?: string }[]
+  skills: readonly { name: string; description?: string; kind?: 'builtin' | 'library' | 'private' | 'bundled' }[]
   /** A turn is running: backend commands are greyed out. */
   busy: boolean
 }
 
-/** The menu rows in group order: Commands, App, Skills. */
+/** The menu rows in group order: Commands, App, then skills as Built-in, Library, This agent. */
 export function buildSlashItems({ commands, app, skills, busy }: SlashInputs): SlashItem[] {
   const taken = new Set<string>()
   const row = (group: SlashGroup, name: string, description: string, hint: string | undefined, disabled = false): SlashItem | null => {
@@ -42,7 +50,12 @@ export function buildSlashItems({ commands, app, skills, busy }: SlashInputs): S
   const rows = [
     ...commands.map((c) => row('Commands', c.name, c.description, c.input_hint, busy)),
     ...app.map((c) => row('App', c.name, c.description, c.hint)),
-    ...skills.map((s) => row('Skills', s.name, s.description ?? '', undefined)),
+    ...(['Built-in', 'Library', 'This agent'] as const).flatMap((g) =>
+      skills
+        .filter((s) => skillGroup(s.kind) === g)
+        // Agentry's own skills before the always-on bundled ones; otherwise the catalog order.
+        .sort((a, b) => Number(a.kind === 'bundled') - Number(b.kind === 'bundled'))
+        .map((s) => row(g, s.name, s.description ?? '', undefined))),
   ]
   return rows.filter((item): item is SlashItem => item !== null)
 }

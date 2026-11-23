@@ -42,6 +42,8 @@ export default defineConfig({
         AGENTRY_WEB_MODELS: 'mock-model,mock-large',
         // Its own build directory: `next dev` refuses to share `.next` with another dev server.
         AGENTRY_WEB_DIST_DIR: '.next-e2e',
+        // Its own connector-key store: the dev store is encrypted with another session secret.
+        AGENTRY_WEB_DATA_DIR: '.data-e2e',
       },
     },
   ],

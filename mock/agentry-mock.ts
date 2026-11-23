@@ -737,6 +737,48 @@ function runCommand(s: MockSession, name: string, input: string): Record<string,
   return { command_id: item.command_id, name, status: ok ? 'success' : 'error', text, item }
 }
 
+/** Installed skills (library), for the Plugins page journey. Uploads are not unzipped: the name is the file name. */
+interface MockSkill { id: string; object: 'agent.skill'; scope: 'library'; agent_id: null; name: string; description: string; source: 'upload' | 'editor'; origin: null; content_hash: string; has_scripts: boolean; status: 'pending_review' | 'active'; created_at: number; updated_at: number; used_by: string[] }
+const installedSkills = new Map<string, MockSkill>()
+const BUILTIN_SKILLS = [
+  { name: 'review', description: 'Review the open diff', source: 'builtin', kind: 'builtin', enabled: true },
+  { name: 'plan', description: 'Write a plan before changing code', source: 'builtin', kind: 'builtin', enabled: true },
+  { name: 'summarize', description: 'Summarize a long document', source: 'bundled', kind: 'bundled', enabled: true },
+]
+
+function mockSkill(name: string, source: MockSkill['source'], status: MockSkill['status']): MockSkill {
+  const id = `skill_${randomUUID().replaceAll('-', '')}`
+  const now = Math.floor(Date.now() / 1000)
+  return { id, object: 'agent.skill', scope: 'library', agent_id: null, name, description: `${name} skill`, source, origin: null, content_hash: 'mock', has_scripts: source === 'upload', status, created_at: now, updated_at: now, used_by: [] }
+}
+
+async function routeSkills(req: IncomingMessage, res: ServerResponse, method: string, parts: string[]): Promise<boolean> {
+  const [, , c, d] = parts
+  if (parts.length === 3 && c === 'installed' && method === 'GET') { send(res, 200, { object: 'list', data: [...installedSkills.values()] }); return true }
+  if (parts.length === 2 && method === 'POST') {
+    const type = req.headers['content-type'] ?? ''
+    if (type.startsWith('multipart/form-data')) {
+      const raw = await readBody(req)
+      const filename = /filename="([^"]+)"/.exec(raw.toString('latin1'))?.[1] ?? 'skill.zip'
+      const skill = mockSkill(filename.replace(/\.zip$/i, '').toLowerCase(), 'upload', 'pending_review')
+      installedSkills.set(skill.id, skill)
+      send(res, 201, skill)
+      return true
+    }
+    const body = await readJson(req)
+    const skill = mockSkill(String(body.name ?? 'skill'), 'editor', 'active')
+    installedSkills.set(skill.id, skill)
+    send(res, 201, skill)
+    return true
+  }
+  const skill = c ? installedSkills.get(c) : undefined
+  if (!skill) return false
+  if (parts.length === 3 && method === 'GET') { send(res, 200, { skill, files: [{ path: 'SKILL.md', bytes: 64 }, { path: 'scripts/run.sh', bytes: 12 }], skill_md: `---\nname: ${skill.name}\n---\nDo ${skill.name}.` }); return true }
+  if (parts.length === 4 && d === 'activate' && method === 'POST') { skill.status = 'active'; send(res, 200, skill); return true }
+  if (parts.length === 3 && method === 'DELETE') { installedSkills.delete(skill.id); send(res, 200, { id: skill.id, object: 'agent.skill.deleted', deleted: true }); return true }
+  return false
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://mock')
   const method = req.method ?? 'GET'
@@ -758,6 +800,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     sessions.clear()
     files.clear()
+    installedSkills.clear()
     return send(res, 200, { ok: true })
   }
 
@@ -812,15 +855,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return void res.end(found.body)
   }
   if (parts.length === 2 && b === 'skills' && method === 'GET') {
-    return send(res, 200, {
-      object: 'list',
-      data: [
-        { name: 'review', description: 'Review the open diff', source: 'builtin' },
-        { name: 'plan', description: 'Write a plan before changing code', source: 'builtin' },
-        { name: 'summarize', description: 'Summarize a long document', source: 'user' },
-      ],
-    })
+    const library = [...installedSkills.values()].filter((x) => x.status === 'active')
+      .map((x) => ({ name: x.name, description: x.description, source: x.source, kind: 'library', id: x.id, has_scripts: x.has_scripts, enabled: true }))
+    return send(res, 200, { object: 'list', data: [...BUILTIN_SKILLS, ...library] })
   }
+  if (b === 'skills' && (await routeSkills(req, res, method, parts))) return
   if (parts.length === 2 && b === 'commands' && method === 'GET') {
     const id = url.searchParams.get('session_id')
     if (id) getSession(id)
