@@ -17,6 +17,7 @@ import { VStack } from '@astryxdesign/core/VStack'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import type { AgentSkill, InstalledSkill, SkillManifest } from '@/api/types'
+import { announceSkillsChanged } from '@/skills/skills-store'
 import { AddSkillMenu } from './AddSkillMenu'
 import { SkillEditorDialog, SkillReviewDialog, type SkillDraft } from './SkillDialogs'
 
@@ -62,6 +63,7 @@ export function SkillsTab() {
     setBusy(true)
     try {
       await run()
+      announceSkillsChanged()
       await load()
     } catch (e) {
       setError(message(e))
@@ -89,6 +91,7 @@ export function SkillsTab() {
     setBusy(true)
     try {
       await api.editSkill(editing.skill.id, { description: draft.description, body: draft.body })
+      announceSkillsChanged()
       setEditing(null)
       await load()
     } catch (e) {
@@ -117,7 +120,7 @@ export function SkillsTab() {
         </List>
       ) : (
         <VStack gap={4}>
-          <AddSkillMenu target={{ scope: 'library' }} onStaged={(s) => { void load(); void openReview(s) }} onCreated={() => void load()} />
+          <AddSkillMenu target={{ scope: 'library' }} onStaged={(s) => { void load(); void openReview(s) }} onCreated={() => { announceSkillsChanged(); void load() }} />
           {installed !== null && installed.length === 0 ? (
             <EmptyState title="No skills yet" description="Upload a skill, import one from GitHub, write one here, or ask a chat to make one." />
           ) : (

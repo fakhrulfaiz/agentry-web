@@ -26,3 +26,17 @@ export const refreshSkills = store.refresh
 export const useSkillCommands = store.useList
 /** Loads the skills on mount, when the chat changes and on window focus. */
 export const useSkillsLoader = store.useLoader
+
+/** Fired (on `window`) when skills are installed, edited or removed, so every `/` menu reloads. */
+export const SKILLS_CHANGED = 'agentry:skills-changed'
+
+/** Tells every open `/` menu that the skills changed. */
+export function announceSkillsChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SKILLS_CHANGED))
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(SKILLS_CHANGED, () => {
+    void store.invalidate()
+  })
+}

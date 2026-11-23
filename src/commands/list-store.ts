@@ -23,6 +23,8 @@ export interface KeyedStore<T> {
   reset(): void
   /** Fetches `key` unless a fetch runs or the last attempt is under `REFRESH_MS` old. Never throws. */
   refresh(key?: string, now?: number): Promise<void>
+  /** Refetches every key loaded so far, ignoring the throttle (the lists changed elsewhere). Never throws. */
+  invalidate(): Promise<void>
   /** The list of `key`; empty until loaded or when loading failed. */
   useList(key?: string): T[]
   /** Loads `key` on mount, when it changes, and when the window regains focus (throttled). */
@@ -76,6 +78,11 @@ export function createKeyedStore<T>(fetchList: (key: string | undefined) => Prom
       notify()
     },
     refresh,
+    invalidate: async () => {
+      const keys = [...entries.keys()]
+      for (const key of keys) entry(key).lastAttempt = 0
+      await Promise.all(keys.map((key) => refresh(key)))
+    },
     useList: (key = '') => useSyncExternalStore(subscribe, () => entries.get(key)?.list ?? EMPTY, () => EMPTY),
     useLoader: (key = '') => {
       useEffect(() => {

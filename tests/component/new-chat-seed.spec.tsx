@@ -89,3 +89,19 @@ describe('New chat send', () => {
     await waitFor(() => expect(input()).toHaveTextContent('hello world'), { timeout: 5000 })
   })
 }, 15_000)
+
+describe('New chat first prompt', () => {
+  it('docks the composer under the sent message while the chat is created, like an open chat', async () => {
+    nav.query = ''
+    apiMock.createSession.mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    render(<NewChat />)
+    await waitFor(() => expect(input()).toBeInTheDocument())
+    await user.click(input())
+    await user.keyboard('Plan my week{Enter}')
+    const pane = await screen.findByTestId('new-chat-pending')
+    expect(pane).toHaveTextContent('Plan my week')
+    expect(pane).toContainElement(input())
+    expect(screen.queryByTestId('new-chat-start')).toBeNull()
+  })
+})

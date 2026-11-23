@@ -107,7 +107,7 @@ async function toError(res: Response): Promise<ApiError> {
 }
 
 /** Sends a request to the BFF and parses the JSON answer (`undefined` for an empty body). */
-export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json', [CSRF_HEADER]: csrfToken() }
   if (body !== undefined) headers['content-type'] = 'application/json'
   let res: Response
@@ -118,8 +118,10 @@ export async function request<T>(method: string, url: string, body?: unknown): P
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: 'same-origin',
       cache: 'no-store',
+      ...(signal ? { signal } : {}),
     })
   } catch (error) {
+    if (signal?.aborted) throw new ApiError(0, 'aborted', 'Request cancelled')
     throw new ApiError(0, 'network_error', error instanceof Error ? error.message : 'Network error')
   }
   if (!res.ok) throw await toError(res)
@@ -400,8 +402,8 @@ export const api = {
   },
 
   /** Files the agent delivered with `present` in one chat (`GET /v1/agents/sessions/{id}/deliverables`). */
-  listSessionDeliverables(id: string): Promise<SessionDeliverableList> {
-    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`)
+  listSessionDeliverables(id: string, signal?: AbortSignal): Promise<SessionDeliverableList> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`, undefined, signal)
   },
 
   /** Sandbox providers and what each supports. */

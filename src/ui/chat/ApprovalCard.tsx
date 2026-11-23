@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { ApiError } from '@/api/client'
 import type { OAIApprovalAction } from '@/api/types'
 import type { ActionAnswer } from '@/chat/use-conversation'
+import { announceSkillsChanged } from '@/skills/skills-store'
 import { useFocusFirstControl } from './focus'
 
 const TITLE = { tool_approval: 'Approval needed', sandbox_escalation: 'Permission needed', user_question: 'Question' } as const
@@ -33,6 +34,11 @@ export function ApprovalCard({
     setError(null)
     try {
       await answer(action.id, { decision })
+      // An approved skill install lands once the tool runs; refresh the `/` menus now and shortly after.
+      if (decision === 'approve' && action.prompt.startsWith('Install skill')) {
+        announceSkillsChanged()
+        setTimeout(announceSkillsChanged, 4000)
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not send your answer. Try again.')
       setBusy(null)

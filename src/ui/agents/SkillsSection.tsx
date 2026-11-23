@@ -14,6 +14,7 @@ import { VStack } from '@astryxdesign/core/VStack'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import type { AgentSkill, AgentSkillSelection, InstalledSkill, SkillManifest } from '@/api/types'
+import { announceSkillsChanged } from '@/skills/skills-store'
 import { AddSkillMenu } from '@/ui/plugins/AddSkillMenu'
 import { SkillReviewDialog } from '@/ui/plugins/SkillDialogs'
 
@@ -75,13 +76,13 @@ export function SkillsSection({ agentId, value, onChange }: { agentId?: string; 
               ))}
             </List>
           )}
-          <AddSkillMenu target={{ scope: 'agent', agentId }} onStaged={(s) => { void load(); void api.getSkill(s.id).then(setReview) }} onCreated={() => void load()} />
+          <AddSkillMenu target={{ scope: 'agent', agentId }} onStaged={(s) => { void load(); void api.getSkill(s.id).then(setReview) }} onCreated={() => { announceSkillsChanged(); void load() }} />
         </VStack>
       )}
       <SkillReviewDialog
         manifest={review}
-        onInstall={() => review && void api.activateSkill(review.skill.id).then(() => { setReview(null); void load() })}
-        onDiscard={() => review && void api.deleteSkill(review.skill.id).then(() => { setReview(null); void load() })}
+        onInstall={() => review && void api.activateSkill(review.skill.id).then(() => { setReview(null); announceSkillsChanged(); void load() })}
+        onDiscard={() => review && void api.deleteSkill(review.skill.id).then(() => { setReview(null); announceSkillsChanged(); void load() })}
         onClose={() => setReview(null)}
       />
     </VStack>
