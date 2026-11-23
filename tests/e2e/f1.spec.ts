@@ -19,7 +19,7 @@ async function signIn(page: Page) {
   await page.waitForURL('/')
 }
 
-const composer = (page: Page) => page.getByRole('textbox', { name: 'Message input' })
+const composer = (page: Page) => page.getByRole('combobox', { name: 'Message input' })
 const assistantMessages = (page: Page) => page.getByTestId('assistant-message')
 
 /** Starts a chat from `/` and waits for its page. */
