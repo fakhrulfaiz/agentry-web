@@ -25,6 +25,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { HostToolInfo } from '@/api/types'
+import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
 import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, toolMask, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
 import { STARTERS } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
@@ -37,15 +38,6 @@ import { SkillsSection } from './SkillsSection'
 const EFFORTS: { value: EffortChoice; label: string }[] = [
   { value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' },
 ]
-
-async function connectedApps(): Promise<string[] | null> {
-  try {
-    const res = await fetch('/api/agentry/connectors/status', { credentials: 'same-origin' })
-    return res.ok ? (((await res.json()) as { connected?: string[] | null }).connected ?? null) : null
-  } catch {
-    return null
-  }
-}
 
 const layout = stylex.create({
   page: { inlineSize: '100%', maxInlineSize: 1120, marginInline: 'auto', paddingBlock: 24, paddingInline: 16 },
@@ -91,9 +83,11 @@ export function AgentForm({ agentId }: { agentId?: string }) {
     let alive = true
     ;(async () => {
       try {
-        const [modelList, toolList, connected] = await Promise.all([api.models(), api.listHostTools().catch(() => []), connectedApps()])
+        const [modelList, toolList, connected, agent] = await Promise.all([
+          modelsMemo.get(), hostToolsMemo.get(), connectedAppsMemo.get(), agentId ? api.getAgent(agentId) : Promise.resolve(null),
+        ])
         const defaultModel = modelList[0] ?? ''
-        const base = agentId ? agentToForm(await api.getAgent(agentId), defaultModel) : emptyForm(defaultModel)
+        const base = agent ? agentToForm(agent, defaultModel) : emptyForm(defaultModel)
         if (!alive) return
         const starter = !agentId ? STARTERS.find((s) => s.id === starterId) : undefined
         if (starter) {
@@ -130,9 +124,11 @@ export function AgentForm({ agentId }: { agentId?: string }) {
       const params = formToParams(form, tools.map((t) => t.name))
       if (agentId) {
         await api.updateAgent(agentId, params)
+        modelsMemo.clear()
         setSaved(true)
       } else {
         await api.createAgent(params)
+        modelsMemo.clear()
         router.push('/agents')
       }
     } catch (err) {

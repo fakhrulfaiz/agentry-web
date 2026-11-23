@@ -69,6 +69,9 @@ export function AgentsPage() {
   useEffect(() => {
     void load()
   }, [load])
+  useEffect(() => {
+    router.prefetch('/agents/new')
+  }, [router])
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()

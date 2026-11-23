@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentForm } from '@/ui/agents/AgentForm'
+import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
 
 const { apiMock, nav } = vi.hoisted(() => ({
   apiMock: {
@@ -27,6 +28,7 @@ vi.mock('@/api/client', async (orig) => ({ ...(await orig<object>()), api: apiMo
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: nav.push }), useSearchParams: () => nav.params }))
 
 afterEach(() => {
+  for (const memo of [modelsMemo, hostToolsMemo, connectedAppsMemo]) memo.clear()
   cleanup()
   vi.clearAllMocks()
   nav.params = new URLSearchParams()
