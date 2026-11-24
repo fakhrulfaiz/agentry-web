@@ -58,6 +58,7 @@ import { SubagentItems } from './SubagentCard'
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
 import { TurnGroup } from './TurnGroup'
+import { readOpenFolds, writeOpenFolds } from '@/chat/open-folds'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
 type View = 'chat' | 'trajectory'
@@ -137,7 +138,18 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [reveal, setReveal] = useState<string | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
   // Finished turns whose process group the user expanded; the rest stay collapsed.
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  // Kept per chat for the browser session, so a remount or reload does not close them.
+  const [expanded, setExpandedState] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => setExpandedState(readOpenFolds(sessionId)), [sessionId])
+  const setExpanded = useCallback(
+    (update: (cur: ReadonlySet<string>) => ReadonlySet<string>) =>
+      setExpandedState((cur) => {
+        const next = update(cur)
+        writeOpenFolds(sessionId, next)
+        return next
+      }),
+    [sessionId],
+  )
   // A message was just sent: show the waiting row until the session reports its turn.
   const [sent, setSent] = useState(false)
   // Notices already shown: a turn that fails or is stopped after the send adds a new one and ends the wait.

@@ -10,7 +10,7 @@ import { Link } from '@astryxdesign/core/Link'
 import { Text } from '@astryxdesign/core/Text'
 import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
 const styles = stylex.create({
   grid: {
@@ -59,6 +59,7 @@ export function CardGrid({ label, children }: { label: string; children: ReactNo
 
 export function EntityCard({
   href,
+  onClick,
   title,
   leading,
   trailing,
@@ -68,6 +69,8 @@ export function EntityCard({
 }: {
   /** Where the card goes; without it the title is plain text (a card that only shows facts). */
   href?: string
+  /** Runs on a click of the card's link (call `preventDefault` to handle it in place). */
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void
   title: string
   /** An icon tile or avatar before the title. */
   leading?: ReactNode
@@ -84,7 +87,7 @@ export function EntityCard({
           {href === undefined ? (
             <Text weight="medium" maxLines={1}>{title}</Text>
           ) : (
-            <Link href={href}>
+            <Link href={href} onClick={onClick}>
               <span {...stylex.props(styles.stretch)}>
                 <Text weight="medium" maxLines={1}>{title}</Text>
               </span>

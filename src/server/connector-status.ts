@@ -48,18 +48,12 @@ async function rpc(key: string, body: unknown, session?: string): Promise<Respon
   })
 }
 
-/**
- * Which of `slugs` the key's owner has an active account for, or null when that cannot be
- * determined (network, auth, timeout or unexpected response). Uses only `action: "list"`,
- * which has no side effects; the default `add` action would create a connection link.
- * One call covers the whole catalog.
- */
-/**
- * The raw `COMPOSIO_MANAGE_CONNECTIONS` list result for `slugs` (JSON-RPC message), or null when
- * the service could not be reached. Uses only `action: "list"`, which has no side effects; the
- * default `add` action would create a connection link. One call covers the whole catalog.
- */
-export async function listConnections(key: string, slugs: string[]): Promise<unknown | null> {
+export type ListResult = { ok: true; message: unknown } | { ok: false; reason: 'rejected' | 'unavailable' }
+
+/** Composio answers 401/403 when the consumer key is wrong or revoked. */
+const refused = (res: Response) => res.status === 401 || res.status === 403
+
+export async function listConnectionsResult(key: string, slugs: string[]): Promise<ListResult> {
   try {
     const init = await rpc(key, {
       jsonrpc: '2.0',
@@ -67,7 +61,7 @@ export async function listConnections(key: string, slugs: string[]): Promise<unk
       method: 'initialize',
       params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'agentry-web', version: '1' } },
     })
-    if (!init.ok) return null
+    if (!init.ok) return { ok: false, reason: refused(init) ? 'rejected' : 'unavailable' }
     const session = init.headers.get('mcp-session-id') ?? undefined
     const res = await rpc(
       key,
@@ -82,11 +76,17 @@ export async function listConnections(key: string, slugs: string[]): Promise<unk
       },
       session,
     )
-    if (!res.ok) return null
-    return parseRpcBody(await res.text())
+    if (!res.ok) return { ok: false, reason: refused(res) ? 'rejected' : 'unavailable' }
+    return { ok: true, message: parseRpcBody(await res.text()) }
   } catch {
-    return null
+    return { ok: false, reason: 'unavailable' }
   }
+}
+
+/** `listConnectionsResult` as the message, or null on any failure. */
+export async function listConnections(key: string, slugs: string[]): Promise<unknown | null> {
+  const result = await listConnectionsResult(key, slugs)
+  return result.ok ? result.message : null
 }
 
 /**
@@ -102,20 +102,4 @@ export async function connectedToolkits(key: string, slugs: string[]): Promise<S
     // Any failure means status is unknown; the page then shows Connect, never a wrong status.
     return null
   }
-}
-
-const cache = new Map<string, { at: number; value: Set<string> }>()
-
-/** `connectedToolkits` cached per owner for a few minutes; failures are not cached. */
-export async function cachedConnectedToolkits(owner: string, key: string, slugs: string[]): Promise<Set<string> | null> {
-  const hit = cache.get(owner)
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value
-  const value = await connectedToolkits(key, slugs)
-  if (value) cache.set(owner, { at: Date.now(), value })
-  return value
-}
-
-/** Drops the owner's cached status; call when their key is replaced or removed. */
-export function forgetConnectedToolkits(owner: string): void {
-  cache.delete(owner)
 }

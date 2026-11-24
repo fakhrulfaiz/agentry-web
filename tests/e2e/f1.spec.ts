@@ -31,6 +31,18 @@ async function startChat(page: Page, text: string) {
   await page.waitForURL(/\/c\/[A-Za-z0-9_-]+$/)
 }
 
+/** The label of a finished turn's fold: "Used 2 tools" or "Thought for 8s · 5 steps". */
+const FOLD = /^(Used \d+ tools?|Thought( for [^·]+)? · \d+ steps?)$/
+/** One reasoning row, not the fold. */
+const THOUGHT = /^Thought(?!.* · \d+ steps?$)/
+
+/** A finished turn folds its thoughts, tools and subagents into "Used N tools"; open every fold. */
+async function openWork(page: Page) {
+  const folds = page.getByRole('button', { name: FOLD })
+  await expect(folds.first()).toBeVisible()
+  for (const fold of await folds.all()) if ((await fold.getAttribute('aria-expanded')) !== 'true') await fold.click()
+}
+
 async function sendInChat(page: Page, text: string) {
   await composer(page).click()
   await page.keyboard.type(text)
@@ -74,6 +86,7 @@ test('reopening a chat shows the full history once: user, tool and assistant', a
   const users = page.getByRole('article', { name: /user/i })
   await expect(users).toHaveCount(1)
   await expect(users).toHaveText('Use a tool please')
+  await openWork(page)
   await expect(page.getByRole('button', { name: /search/ })).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveText(/^I searched and found 3 results: alpha, beta and gamma\.$/)
@@ -157,7 +170,8 @@ test('a web lookup shows thinking, tool cards and a streamed answer as it happen
 
   // Done: reasoning collapses to one line each; it is never shown as the answer.
   await expect(page.getByRole('button', { name: /Thinking…/ })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Thought/ })).toHaveCount(3)
+  await openWork(page)
+  await expect(page.getByRole('button', { name: THOUGHT })).toHaveCount(3)
   await expect(assistantMessages(page)).toHaveCount(1)
   await expect(assistantMessages(page)).not.toContainText('Let me')
 
@@ -176,7 +190,8 @@ test('a web lookup shows thinking, tool cards and a streamed answer as it happen
   await page.reload()
   await expect(assistantMessages(page).last()).toContainText('v26.13.0')
   await page.waitForTimeout(1000) // let the replay settle
-  await expect(page.getByRole('button', { name: /^Thought/ })).toHaveCount(3)
+  await openWork(page)
+  await expect(page.getByRole('button', { name: THOUGHT })).toHaveCount(3)
   await expect(page.getByRole('button', { name: /web_search/ })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /web_fetch/ })).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveCount(1)
@@ -226,12 +241,16 @@ test('a delegated subagent shows live status, then expands to its own activity',
   await signIn(page)
   await startChat(page, 'Please delegate this to a subagent')
   await expect(assistantMessages(page).last()).toContainText('I asked a researcher')
+  await openWork(page)
   // The `subagent` tool card is there too; the subagent card is its own.
   await expect(page.getByRole('button', { name: /subagent Research the question/ })).toBeVisible()
   const header = page.getByTestId('subagent-card').getByRole('button', { name: /Research the question/ })
   // The parent turn is over; the child still works and the card follows it.
-  await expect(header).toContainText('Working')
-  await expect(header).toContainText('Done', { timeout: 15_000 })
+  // The fold can form while the child still works; open it again if it re-forms closed.
+  await expect(async () => {
+    await openWork(page)
+    await expect(header).toContainText('Done', { timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
   await expect(header).toContainText(/\d+s/)
 
   await header.click()
@@ -363,7 +382,11 @@ test('reconnect after background shows completed turn', async ({ page, request }
 
 test('sign-out returns to /login and ends the session', async ({ page }) => {
   await signIn(page)
-  await page.getByRole('button', { name: /API key user/ }).click()
+  // The first click can land before the shell hydrates; retry until the menu is open.
+  await expect(async () => {
+    await page.getByRole('button', { name: /API key user/ }).click()
+    await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
   await page.getByRole('menuitem', { name: 'Sign out' }).click()
   await page.waitForURL(/\/login$/)
   await page.goto('/')

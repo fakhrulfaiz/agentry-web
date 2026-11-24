@@ -20,7 +20,7 @@ import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import { MagnifyingGlassIcon, PuzzlePieceIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
-import { useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent } from '@/api/types'
@@ -28,6 +28,7 @@ import { agentToForm } from '@/agents/form'
 import { STARTERS } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
+import { AgentEditorDialog, editorTargetOf } from './AgentEditorDialog'
 
 const COLUMN_WIDTH = 880
 
@@ -49,8 +50,17 @@ function Starters({ onPick }: { onPick(id: string): void }) {
   )
 }
 
+/**
+ * Opens or closes the editor by changing the URL in place: no server round
+ * trip, the list stays mounted, and Back closes the dialog.
+ */
+function go(url: string) {
+  window.history.pushState(null, '', url)
+}
+
 export function AgentsPage() {
-  const router = useRouter()
+  const params = useSearchParams()
+  const target = editorTargetOf(new URLSearchParams(params.toString()))
   const [agents, setAgents] = useState<OAIAgent[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'yours' | 'starters'>('yours')
@@ -69,15 +79,12 @@ export function AgentsPage() {
   useEffect(() => {
     void load()
   }, [load])
-  useEffect(() => {
-    router.prefetch('/agents/new')
-  }, [router])
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (agents ?? []).filter((a) => !q || `${a.name ?? ''} ${a.instructions ?? ''}`.toLowerCase().includes(q))
   }, [agents, query])
-  const pick = (id: string) => router.push(`/agents/new?starter=${encodeURIComponent(id)}`)
+  const pick = (id: string) => go(`/agents?starter=${encodeURIComponent(id)}`)
 
   return (
     <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
@@ -90,7 +97,7 @@ export function AgentsPage() {
               <ToggleButton label="Starters" size="sm" isPressed={view === 'starters'} onPressedChange={() => setView('starters')} />
             </HStack>
           </StackItem>
-          <Button label="New agent" variant="primary" onClick={() => router.push('/agents/new')} />
+          <Button label="New agent" variant="primary" onClick={() => go('/agents?new=1')} />
         </HStack>
         {error !== null && (
           <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />
@@ -119,7 +126,12 @@ export function AgentsPage() {
                   return (
                     <EntityCard
                       key={agent.id}
-                      href={`/agents/${agent.id}`}
+                      href={`/agents?agent=${encodeURIComponent(agent.id)}`}
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+                        event.preventDefault()
+                        go(`/agents?agent=${encodeURIComponent(agent.id)}`)
+                      }}
                       title={agent.name || 'Untitled agent'}
                       leading={<AgentAvatar avatar={avatarOf(agent)} size="md" />}
                       trailing={<Text type="supporting" color="secondary" maxLines={1}>{agent.model}</Text>}
@@ -150,6 +162,14 @@ export function AgentsPage() {
           </VStack>
         )}
       </VStack>
+      <AgentEditorDialog
+        target={target}
+        onClose={() => go('/agents')}
+        onSaved={(change) => {
+          void load()
+          if (change !== 'updated') go('/agents')
+        }}
+      />
     </div>
   )
 }

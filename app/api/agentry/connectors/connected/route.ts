@@ -1,5 +1,4 @@
-import { getCatalog } from '@/server/connector-catalog'
-import { connectedAccounts } from '@/server/connector-inventory'
+import { connectionSnapshot } from '@/server/connections'
 import { getKey, ownerOf } from '@/server/connectors-store'
 import { authFailure, requireCredential } from '@/server/require-auth'
 
@@ -15,8 +14,7 @@ export async function GET(): Promise<Response> {
     const owner = ownerOf(session.identity)
     const key = await getKey(owner)
     if (!key) return Response.json({ data: null }, { headers: NO_STORE })
-    const catalog = await getCatalog()
-    return Response.json({ data: await connectedAccounts(owner, key, catalog.entries.map((e) => e.slug)) }, { headers: NO_STORE })
+    return Response.json({ data: (await connectionSnapshot(owner, key)).inventory }, { headers: NO_STORE })
   } catch (error) {
     return authFailure(error)
   }

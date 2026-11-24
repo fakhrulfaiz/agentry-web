@@ -1,10 +1,6 @@
-import { requirePageSession } from '@/server/require-auth'
-import { AgentForm } from '@/ui/agents/AgentForm'
+import { redirect } from 'next/navigation'
 
-export const dynamic = 'force-dynamic'
-
+/** Old link: the editor is a dialog on the Agents page now. */
 export default async function EditAgentRoute({ params }: { params: Promise<{ id: string }> }) {
-  await requirePageSession()
-  const { id } = await params
-  return <AgentForm agentId={id} />
+  redirect(`/agents?agent=${encodeURIComponent((await params).id)}`)
 }

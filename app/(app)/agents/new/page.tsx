@@ -1,9 +1,7 @@
-import { requirePageSession } from '@/server/require-auth'
-import { AgentForm } from '@/ui/agents/AgentForm'
+import { redirect } from 'next/navigation'
 
-export const dynamic = 'force-dynamic'
-
-export default async function NewAgentRoute() {
-  await requirePageSession()
-  return <AgentForm />
+/** Old link: the editor is a dialog on the Agents page now. */
+export default async function NewAgentRoute({ searchParams }: { searchParams: Promise<{ starter?: string | string[] }> }) {
+  const starter = (await searchParams).starter
+  redirect(typeof starter === 'string' ? `/agents?starter=${encodeURIComponent(starter)}` : '/agents?new=1')
 }

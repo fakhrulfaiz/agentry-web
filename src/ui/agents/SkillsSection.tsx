@@ -43,14 +43,19 @@ export function SkillsSection({ agentId, value, onChange }: { agentId?: string; 
   const pick = (values: string[]) => onChange({ builtin: builtins.filter((n) => values.includes(n)), library: values.filter((v) => libraryIds.has(v)) })
 
   return (
-    <VStack gap={2}>
-      <Text weight="medium">Skills</Text>
+    <VStack gap={4}>
       <Switch
         label="Use all built-in skills"
         description="Turn off to choose which built-in and library skills this agent loads."
         value={value === null}
         onChange={(all) => onChange(all ? null : { builtin: builtins, library: [] })}
       />
+      {value === null && builtins.length + bundled.length > 0 && (
+        <List hasDividers density="compact" header={<Text type="supporting" color="secondary">Included ({builtins.length + bundled.length})</Text>}>
+          {builtins.map((name) => <ListItem key={name} label={name} description="Built-in" />)}
+          {bundled.map((name) => <ListItem key={name} label={name} description="Always on" />)}
+        </List>
+      )}
       {value !== null && (
         <CheckboxList label="Skills" isLabelHidden density="compact" value={checked} onChange={pick}>
           {builtins.map((name) => <CheckboxListItem key={name} value={name} label={name} description="Built-in" />)}

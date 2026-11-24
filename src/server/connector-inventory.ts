@@ -1,5 +1,6 @@
 import 'server-only'
-import { listConnections } from './connector-status'
+import { listConnectionsResult } from './connector-status'
+import type { LoadResult } from './connection-cache'
 
 /** One connected account of an app. */
 export interface ConnectedAccount {
@@ -10,8 +11,6 @@ export interface ConnectedAccount {
 
 /** App slug to whether one account is active, and its accounts. */
 export type ConnectedInventory = Record<string, { connected: boolean; accounts: ConnectedAccount[] }>
-
-const CACHE_MS = 60_000
 
 /**
  * Accounts per app from a `COMPOSIO_MANAGE_CONNECTIONS` list result.
@@ -35,27 +34,18 @@ export function parseAccounts(message: unknown): ConnectedInventory {
   return out
 }
 
-const cache = new Map<string, { at: number; value: ConnectedInventory }>()
-
-/**
- * The owner's accounts per app, cached for a minute; `null` when unknown (failures are not cached).
- * @param now - clock in epoch milliseconds, injectable in tests.
- */
-export async function connectedAccounts(owner: string, key: string, slugs: string[], now = Date.now()): Promise<ConnectedInventory | null> {
-  const hit = cache.get(owner)
-  if (hit && now - hit.at < CACHE_MS) return hit.value
-  const message = await listConnections(key, slugs)
-  if (message === null) return null
+/** Accounts per app for `slugs`, or why they could not be read. */
+export async function loadInventory(key: string, slugs: string[]): Promise<LoadResult> {
+  const result = await listConnectionsResult(key, slugs)
+  if (!result.ok) return result
   try {
-    const value = parseAccounts(message)
-    cache.set(owner, { at: now, value })
-    return value
+    return { ok: true, inventory: parseAccounts(result.message) }
   } catch {
-    return null
+    return { ok: false, reason: 'unavailable' }
   }
 }
 
-/** Drops the owner's cached inventory; call when their key is replaced or removed. */
-export function forgetConnectedAccounts(owner: string): void {
-  cache.delete(owner)
+/** Slugs with an active account. */
+export function connectedSlugs(inventory: ConnectedInventory): string[] {
+  return Object.entries(inventory).flatMap(([slug, app]) => (app.connected ? [slug] : []))
 }

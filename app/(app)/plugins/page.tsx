@@ -2,7 +2,10 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
 import { getCatalog } from '@/server/connector-catalog'
+import { connectedSlugs } from '@/server/connector-inventory'
+import { connectionSnapshot, connections } from '@/server/connections'
 import { getKey, ownerOf } from '@/server/connectors-store'
+import type { ConnectionStatus } from '@/connectors/status'
 import { requirePageSession } from '@/server/require-auth'
 import { PluginsPage } from '@/ui/plugins/PluginsPage'
 import { SkillsTab } from '@/ui/plugins/SkillsTab'
@@ -24,8 +27,9 @@ const COLUMN_WIDTH = 880
 export default async function Plugins({ searchParams }: { searchParams: Promise<{ tab?: string | string[] }> }) {
   const { identity } = await requirePageSession()
   const tab = pluginsTabOf((await searchParams).tab)
-  const key = await getKey(ownerOf(identity))
-  const directory = key ? await loadDirectory() : null
+  const owner = ownerOf(identity)
+  const key = await getKey(owner)
+  const directory = key ? await loadDirectory(knownStatus(owner, key)) : null
   const connectors = (
     <VStack gap={5}>
       <Text type="supporting" color="secondary">
@@ -51,7 +55,21 @@ export default async function Plugins({ searchParams }: { searchParams: Promise<
   )
 }
 
-async function loadDirectory() {
+/**
+ * What the server already knows about the owner's connections, without waiting
+ * on Composio. When nothing is known yet the check starts now, so the browser's
+ * own request joins it instead of starting another.
+ */
+function knownStatus(owner: string, key: string): ConnectionStatus | undefined {
+  const snap = connections.peek(owner)
+  if (!snap || (snap.inventory === null && !snap.problem)) {
+    void connectionSnapshot(owner, key).catch(() => {})
+    return undefined
+  }
+  return { connected: snap.inventory ? connectedSlugs(snap.inventory) : null, checkedAt: snap.checkedAt, stale: snap.stale, ...(snap.problem ? { problem: snap.problem } : {}) }
+}
+
+async function loadDirectory(initialStatus: ConnectionStatus | undefined) {
   const catalog = await getCatalog()
-  return <ConnectorDirectory entries={catalog.entries} featured={catalog.featured} failed={catalog.failed} />
+  return <ConnectorDirectory entries={catalog.entries} featured={catalog.featured} failed={catalog.failed} initialStatus={initialStatus} />
 }

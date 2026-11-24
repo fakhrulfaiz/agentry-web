@@ -76,4 +76,34 @@ describe('ConnectorDirectory', () => {
     fireEvent.error(img)
     await waitFor(() => expect(container.querySelectorAll('img[src="https://logos.composio.dev/api/gmail"]')).toHaveLength(1))
   })
+
+  it('paints a fresh status from the server at once and does not ask again', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ connected: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ConnectorDirectory entries={entries} featured={featured} failed={false} initialStatus={{ connected: ['gmail'], checkedAt: Date.now(), stale: false }} />)
+    expect(screen.getByRole('heading', { name: 'Connected' })).toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps showing a stale status while it checks again', async () => {
+    stubStatus([])
+    render(<ConnectorDirectory entries={entries} featured={featured} failed={false} initialStatus={{ connected: ['gmail'], checkedAt: Date.now() - 120_000, stale: true }} />)
+    expect(screen.getByRole('heading', { name: 'Connected' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Connected' })).not.toBeInTheDocument())
+  })
+
+  it('says when Composio rejected the key', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: null, checkedAt: 0, stale: false, problem: 'rejected' })))
+    render(<ConnectorDirectory entries={entries} featured={featured} failed={false} />)
+    expect(await screen.findByText(/Composio rejected your key/)).toBeInTheDocument()
+  })
+
+  it('Refresh checks Composio now', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ connected: [], checkedAt: Date.now(), stale: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ConnectorDirectory entries={entries} featured={featured} failed={false} initialStatus={{ connected: [], checkedAt: Date.now(), stale: false }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh status' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/agentry/connectors/status?refresh=1', expect.anything()))
+  })
 })
