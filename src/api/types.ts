@@ -616,6 +616,11 @@ export interface SandboxProvider {
   name: string
   default: boolean
   capabilities: { templateFields: string[]; files: boolean; exec: boolean }
+  /** Whether the provider can create environments now; `reason` says why not. */
+  available?: boolean
+  reason?: string
+  /** The service version (Agentry Sandbox). */
+  version?: string
 }
 
 /** An environment template (`agent.environment.template`). */
@@ -645,6 +650,17 @@ export interface SandboxEnvironment {
   session_id?: string
   error?: string
   created_at: number
+  /** Display name given at create. */
+  name?: string
+  /** Agentry Sandbox environments: the sandbox's live state. */
+  sandbox?: SandboxState
+}
+
+export interface SandboxState {
+  state: 'provisioning' | 'running' | 'stopped' | 'failed' | 'deleting' | 'gone' | 'unknown'
+  image?: string
+  started_at?: number | null
+  last_used_at?: number | null
 }
 
 /** A file in an environment (`agent.environment.file`). */
@@ -669,6 +685,12 @@ export interface CreateTemplateParams {
   provider?: string
   /** Starter files copied into every environment made from the template. */
   files?: Array<{ type: 'inline'; path: string; data: string }>
+  /** Container image (container providers). */
+  image?: string
+  packages?: { npm: string[]; python: string[]; system: string[] }
+  setup_commands?: Array<{ command: string }>
+  env?: Record<string, string>
+  network?: { access: 'enabled' | 'disabled' }
 }
 
 /** The script runtimes the host bundles for every agent (`GET /agents/environments/runtimes`). */

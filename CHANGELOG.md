@@ -2,6 +2,15 @@
 
 All notable changes to Agentry Web are recorded here.
 
+
+## 2026-11-24 — Sandboxes UI for Agentry Sandbox
+
+- Environments have names and show a sandbox's live state (Running, Stopped, Setting up, Failed, Gone, Unreachable), its image and when it was last used. The New environment dialog asks for an optional name, lists providers that are down as disabled with the reason, and keeps itself open with the reason when the sandbox is refused (for example a sandbox limit).
+- Environment detail: New chat here (opens a new chat with the environment chosen), Start and Stop, Reset with a confirmation that keeps or deletes workspace files, and banners when Agentry Sandbox is not answering or the sandbox no longer exists.
+- The template editor covers image, system/Python/npm packages, setup commands, environment variables (`NAME=value` lines), internet access and starter files; fields the chosen provider does not apply are disabled with the reason and left out of the request.
+- The Runtimes tab is now Providers: each provider shows whether it is available (with the reason when not) and its version.
+- The new-chat environment menu names each environment with its provider and state (`Data box · sandbox · Stopped`) and includes stopped sandboxes, which start on send. The BFF allow-list adds `POST /agents/environments/{id}/start|stop|reset`.
+
 ## Unreleased
 
 - 2026-11-24: Docs: Agentry Sandbox status and dev setup in the agent guide (the backend integration lives in the API and `agentry-sandbox`; no web change yet).
