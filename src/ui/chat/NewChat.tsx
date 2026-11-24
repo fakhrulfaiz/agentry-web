@@ -28,6 +28,7 @@ import { Message } from './Message'
 import { RecentFiles } from './RecentFiles'
 import { Thinking } from './Thinking'
 import { Composer, type EffortChoice } from './Composer'
+import { canChatIn, environmentMenuLabel } from '@/ui/sandboxes/format'
 import { pickModel, readModelCookie } from './model-cookie'
 
 const styles = stylex.create({
@@ -45,10 +46,12 @@ export function NewChat() {
   const schedule = params.get('schedule')
   // `?prompt=` (Connectors page Connect) prefills sanitized, length-limited text; the user still presses send.
   const prompt = params.get('prompt')
+  // `?environment=` (an environment's "New chat here") preselects it in the environment menu.
+  const [wantedEnvironment] = useState(() => params.get('environment'))
   const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : promptText(prompt)))
   useEffect(() => {
-    if (seed !== null || schedule !== null || prompt !== null) router.replace('/')
-  }, [seed, schedule, prompt, router])
+    if (seed !== null || schedule !== null || prompt !== null || wantedEnvironment !== null) router.replace('/')
+  }, [seed, schedule, prompt, wantedEnvironment, router])
   const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
@@ -87,8 +90,13 @@ export function NewChat() {
       .then((list) => setAgents(list.data), () => undefined)
     Promise.resolve()
       .then(() => api.listSandboxEnvironments())
-      .then((list) => setEnvironments(list.data.filter((e) => e.status === 'connected').map((e) => ({ id: e.id, name: e.id }))), () => undefined)
-  }, [])
+      .then((list) => {
+        // Running and stopped sandboxes (a stopped one starts on send) and ready local environments.
+        const usable = list.data.filter(canChatIn)
+        setEnvironments(usable.map((e) => ({ id: e.id, name: environmentMenuLabel(e) })))
+        if (wantedEnvironment && usable.some((e) => e.id === wantedEnvironment)) setEnvironmentId(wantedEnvironment)
+      }, () => undefined)
+  }, [wantedEnvironment])
 
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })

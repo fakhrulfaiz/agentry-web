@@ -440,11 +440,22 @@ export const api = {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}`)
   },
   /** Provisions an environment; `templateId` and `provider` are optional (the default provider is used without them). */
-  createSandboxEnvironment(input: { templateId?: string; provider?: string } = {}): Promise<SandboxEnvironment> {
+  createSandboxEnvironment(input: { templateId?: string; provider?: string; name?: string } = {}): Promise<SandboxEnvironment> {
     return request('POST', `${AGENTRY}/agents/environments`, {
       ...(input.templateId ? { template_id: input.templateId } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
+      ...(input.name ? { name: input.name } : {}),
     })
+  },
+  /** Starts, stops or rebuilds an Agentry Sandbox environment; answers the environment. */
+  startSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/start`, {})
+  },
+  stopSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/stop`, {})
+  },
+  resetSandboxEnvironment(id: string, keepWorkspace: boolean): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/reset`, { keep_workspace: keepWorkspace })
   },
   async deleteSandboxEnvironment(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}`)

@@ -55,7 +55,7 @@ describe('SandboxesPage', () => {
     expect(screen.getByText('local cannot apply network, packages')).toBeInTheDocument()
     expect(screen.getByText('1 package, network disabled')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Runtimes' }))
+    await user.click(screen.getByRole('button', { name: 'Providers' }))
     expect(await screen.findByText('Node 24.21.0')).toBeInTheDocument()
     expect(screen.getByText('Python 3.12.14')).toBeInTheDocument()
     expect(screen.getByText('Default')).toBeInTheDocument()
@@ -73,5 +73,32 @@ describe('SandboxesPage', () => {
     expect(screen.queryByText('Provider')).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Create environment' }))
     await waitFor(() => expect(apiMock.createSandboxEnvironment).toHaveBeenCalledWith({}))
+  })
+
+  it('shows a named sandbox with its live state, image and last use; an unavailable provider says why', async () => {
+    const sandboxEnv = { ...env, id: 'env_sbx', name: 'Data box', provider: 'sandbox', type: 'openai_hosted', template_id: undefined, sandbox: { state: 'stopped', image: 'python:3.13', last_used_at: Math.floor(Date.now() / 1000) - 120 } }
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([sandboxEnv]))
+    apiMock.listSandboxProviders.mockResolvedValue(page([provider, { object: 'sandbox.provider', name: 'sandbox', default: false, available: false, reason: 'Agentry Sandbox is not reachable', capabilities: { templateFields: ['image', 'packages', 'setup_commands', 'env', 'network', 'files'], files: true, exec: true } }]))
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    expect(await screen.findByText('Data box')).toBeInTheDocument()
+    expect(screen.getByText('Stopped')).toBeInTheDocument()
+    expect(screen.getByText('python:3.13')).toBeInTheDocument()
+    expect(screen.getByText('Used 2 min ago')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Providers' }))
+    expect(screen.getAllByText('Agentry Sandbox is not reachable').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
+  })
+
+  it('creates a named environment and keeps the dialog open with the reason when the sandbox is refused', async () => {
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([]))
+    apiMock.createSandboxEnvironment.mockResolvedValue({ ...env, status: 'failed', error: 'sandbox limit reached: owner-a has 5 sandboxes (limit 5)' })
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    await user.click((await screen.findAllByRole('button', { name: 'New environment' }))[0]!)
+    await user.type(await screen.findByRole('textbox', { name: /Name/ }), 'Data box')
+    await user.click(screen.getByRole('button', { name: 'Create environment' }))
+    await waitFor(() => expect(apiMock.createSandboxEnvironment).toHaveBeenCalledWith({ name: 'Data box' }))
+    expect(await screen.findByText(/limit 5/)).toBeInTheDocument()
   })
 })

@@ -19,18 +19,20 @@ import { IconButton } from '@astryxdesign/core/IconButton'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { Switch } from '@astryxdesign/core/Switch'
+import { TextArea } from '@astryxdesign/core/TextArea'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
-import { CircleStackIcon, CommandLineIcon, DocumentDuplicateIcon, ExclamationTriangleIcon, FolderOpenIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { CircleStackIcon, ClockIcon, CommandLineIcon, CubeIcon, DocumentDuplicateIcon, ExclamationTriangleIcon, FolderOpenIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
-import { formatBytes, providerAbilities, shortDate, statusLook, templateSummary, toBase64 } from './format'
+import { environmentLook, environmentName, formatBytes, lastUsed, providerAbilities, shortDate, templateBody, templateSummary, toBase64, type TemplateForm } from './format'
 
 const COLUMN_WIDTH = 880
 type View = 'environments' | 'templates' | 'providers'
@@ -45,13 +47,18 @@ function providerOptions(providers: SandboxProvider[]) {
   const standard = providers.find((p) => p.default)
   return [
     { value: DEFAULT_PROVIDER, label: standard ? `Default (${standard.name})` : 'Default' },
-    ...providers.map((p) => ({ value: p.name, label: p.name })),
+    ...providers.map((p) => ({
+      value: p.name,
+      label: p.name,
+      ...(p.available === false ? { disabled: true, description: p.reason ?? 'Not available right now' } : p.version ? { description: `Version ${p.version}` } : {}),
+    })),
   ]
 }
 
 function NewEnvironmentDialog({
   isOpen, onClose, templates, providers, onCreated,
 }: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreated(): void }) {
+  const [name, setName] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [provider, setProvider] = useState(DEFAULT_PROVIDER)
   const [busy, setBusy] = useState(false)
@@ -62,9 +69,15 @@ function NewEnvironmentDialog({
     setBusy(true)
     setError(null)
     try {
-      await api.createSandboxEnvironment({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}) })
+      const created = await api.createSandboxEnvironment({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
+      // A refused sandbox (a limit, a failed setup) is recorded as failed: show why here instead of closing.
+      if (created.status === 'failed' && created.error) {
+        onCreated()
+        return setError(created.error)
+      }
       onCreated()
       onClose()
+      setName('')
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
       setError(err instanceof ApiError ? err.message : 'Could not create the environment.')
@@ -78,6 +91,7 @@ function NewEnvironmentDialog({
       <DialogHeader title="New environment" subtitle="A workspace an agent can run in." onOpenChange={(open: boolean) => !open && onClose()} />
       <VStack gap={3} padding={4}>
         {error !== null && <Banner status="error" title={error} />}
+        <TextInput label="Name" isOptional description="Shown in the list and the chat's environment menu." value={name} onChange={setName} />
         <Selector
           label="Template"
           description="Start from a saved setup, or leave it empty."
@@ -103,17 +117,21 @@ function NewEnvironmentDialog({
 const MAX_STARTER_FILE = 1024 * 1024
 const MAX_STARTER_FILES = 20
 
+const EMPTY_TEMPLATE: TemplateForm = { name: '', provider: DEFAULT_PROVIDER, image: '', system: '', python: '', npm: '', setup: '', env: '', network: true }
+
 function NewTemplateDialog({
   isOpen, onClose, providers, onCreated,
 }: { isOpen: boolean; onClose(): void; providers: SandboxProvider[]; onCreated(): void }) {
-  const [name, setName] = useState('')
-  const [provider, setProvider] = useState(DEFAULT_PROVIDER)
+  const [form, setForm] = useState<TemplateForm>(EMPTY_TEMPLATE)
   const [starters, setStarters] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const set = <K extends keyof TemplateForm>(key: K) => (value: TemplateForm[K]) => setForm((f) => ({ ...f, [key]: value }))
 
-  const target = providers.find((p) => (provider ? p.name === provider : p.default))
-  const cannotHoldFiles = target !== undefined && !target.capabilities.templateFields.includes('files')
+  const target = providers.find((p) => (form.provider ? p.name === form.provider : p.default))
+  const fields = target?.capabilities.templateFields ?? []
+  // Why a field is off: the chosen provider does not apply it.
+  const off = (field: string) => (target !== undefined && !fields.includes(field) ? `${target.name} does not apply this; choose a provider that does.` : undefined)
 
   function pick(value: File | File[] | null) {
     const files = value === null ? [] : Array.isArray(value) ? value : [value]
@@ -121,22 +139,22 @@ function NewTemplateDialog({
   }
 
   async function create() {
-    if (name.trim() === '') return setError('Give the template a name.')
+    const built = templateBody(form, fields)
+    if ('error' in built) return setError(built.error)
     const tooBig = starters.find((f) => f.size > MAX_STARTER_FILE)
     if (tooBig) return setError(`${tooBig.name} is larger than ${formatBytes(MAX_STARTER_FILE)}.`)
     setBusy(true)
     setError(null)
     try {
       await api.createSandboxTemplate({
-        name: name.trim(),
-        ...(provider ? { provider } : {}),
-        ...(starters.length > 0
+        ...built.body,
+        ...(starters.length > 0 && !off('files')
           ? { files: await Promise.all(starters.map(async (f) => ({ type: 'inline' as const, path: `/workspace/${f.name}`, data: await toBase64(f) }))) }
           : {}),
       })
       onCreated()
       onClose()
-      setName('')
+      setForm(EMPTY_TEMPLATE)
       setStarters([])
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
@@ -147,25 +165,33 @@ function NewTemplateDialog({
   }
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={520}>
-      <DialogHeader title="New template" subtitle="Starter files every new environment begins with." onOpenChange={(open: boolean) => !open && onClose()} />
+    <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={600}>
+      <DialogHeader title="New template" subtitle="A reusable setup: image, packages, commands and starter files." onOpenChange={(open: boolean) => !open && onClose()} />
       <VStack gap={3} padding={4}>
         {error !== null && <Banner status="error" title={error} />}
-        <TextInput label="Name" value={name} onChange={setName} />
-        {providers.length > 1 && <Selector label="Provider" options={providerOptions(providers)} value={provider} onChange={setProvider} />}
+        <HStack gap={3} vAlign="start">
+          <StackItem size="fill"><TextInput label="Name" value={form.name} onChange={set('name')} /></StackItem>
+          {providers.length > 1 && <StackItem size="fill"><Selector label="Provider" options={providerOptions(providers)} value={form.provider} onChange={set('provider')} /></StackItem>}
+        </HStack>
+        <TextInput label="Image" isOptional placeholder="agentry/sandbox:1" description="The container image. Empty uses the service's default image." value={form.image} onChange={set('image')} isDisabled={off('image') !== undefined} disabledMessage={off('image')} />
+        <HStack gap={3} vAlign="start">
+          <StackItem size="fill"><TextInput label="System packages" isOptional placeholder="jq, ffmpeg" value={form.system} onChange={set('system')} isDisabled={off('packages') !== undefined} disabledMessage={off('packages')} /></StackItem>
+          <StackItem size="fill"><TextInput label="Python packages" isOptional placeholder="pandas, rich" value={form.python} onChange={set('python')} isDisabled={off('packages') !== undefined} disabledMessage={off('packages')} /></StackItem>
+          <StackItem size="fill"><TextInput label="npm packages" isOptional placeholder="typescript" value={form.npm} onChange={set('npm')} isDisabled={off('packages') !== undefined} disabledMessage={off('packages')} /></StackItem>
+        </HStack>
+        <TextArea label="Setup commands" isOptional rows={3} placeholder="One command per line, run in order in the workspace" value={form.setup} onChange={set('setup')} isDisabled={off('setup_commands') !== undefined} disabledMessage={off('setup_commands')} />
+        <TextArea label="Environment variables" isOptional rows={3} placeholder={'NAME=value, one per line'} value={form.env} onChange={set('env')} isDisabled={off('env') !== undefined} disabledMessage={off('env')} />
+        <Switch label="Internet access" description="Off blocks all outbound traffic. Private networks are always blocked." value={form.network} onChange={set('network')} isDisabled={off('network') !== undefined} disabledMessage={off('network')} />
         <FileInput
           label="Starter files"
           isOptional
           isMultiple
-          description={`Copied into /workspace. Up to ${MAX_STARTER_FILES} files of ${formatBytes(MAX_STARTER_FILE)} each.`}
+          description={`Copied into the workspace. Up to ${MAX_STARTER_FILES} files of ${formatBytes(MAX_STARTER_FILE)} each.`}
           value={starters}
           onChange={pick}
-          isDisabled={cannotHoldFiles}
-          disabledMessage={cannotHoldFiles ? `${target?.name} cannot hold starter files.` : undefined}
+          isDisabled={off('files') !== undefined}
+          disabledMessage={off('files')}
         />
-        <Text type="supporting" color="secondary">
-          Node, Python and the Office tools are already available to every agent; you do not need to install them here.
-        </Text>
         <HStack gap={2} hAlign="end">
           <Button label="Cancel" onClick={onClose} />
           <Button label="Save template" variant="primary" isLoading={busy} onClick={() => void create()} />
@@ -261,7 +287,7 @@ export function SandboxesPage() {
             <HStack gap={1} vAlign="center" role="group" aria-label="Sandboxes view">
               <ToggleButton label="Environments" size="sm" isPressed={view === 'environments'} onPressedChange={() => setView('environments')} />
               <ToggleButton label="Templates" size="sm" isPressed={view === 'templates'} onPressedChange={() => setView('templates')} />
-              <ToggleButton label="Runtimes" size="sm" isPressed={view === 'providers'} onPressedChange={() => setView('providers')} />
+              <ToggleButton label="Providers" size="sm" isPressed={view === 'providers'} onPressedChange={() => setView('providers')} />
             </HStack>
           </StackItem>
           {view === 'environments' && <Button label="New environment" variant="primary" onClick={() => setDialog('environment')} />}
@@ -282,20 +308,22 @@ export function SandboxesPage() {
           ) : (
             <CardGrid label="Environments">
               {environments.map((env) => {
-                const look = statusLook(env.status)
+                const look = environmentLook(env)
                 const from = templateName(env.template_id)
+                const used = lastUsed(env.sandbox?.last_used_at)
                 return (
                   <EntityCard
                     key={env.id}
                     href={`/sandboxes/${env.id}`}
-                    title={env.id}
-                    leading={<IconTile icon={ServerStackIcon} hue={env.status === 'connected' ? 'green' : 'slate'} />}
+                    title={environmentName(env)}
+                    leading={<IconTile icon={ServerStackIcon} hue={look.variant === 'success' ? 'green' : look.variant === 'error' ? 'red' : 'slate'} />}
                     trailing={<HStack gap={2} vAlign="center"><StatusDot variant={look.variant} label={look.text} /><Text type="supporting" color="secondary">{look.text}</Text></HStack>}
                     footer={
                       <>
                         <Meta icon={CommandLineIcon}>{env.provider}</Meta>
                         <Meta icon={DocumentDuplicateIcon}>{from ?? 'No template'}</Meta>
-                        <Meta icon={FolderOpenIcon}>{shortDate(env.created_at)}</Meta>
+                        {env.sandbox?.image && <Meta icon={CubeIcon}>{env.sandbox.image}</Meta>}
+                        {used ? <Meta icon={ClockIcon}>{used}</Meta> : <Meta icon={FolderOpenIcon}>{`Created ${shortDate(env.created_at)}`}</Meta>}
                       </>
                     }
                   >
@@ -347,9 +375,19 @@ export function SandboxesPage() {
                 key={p.name}
                 title={p.name}
                 leading={<IconTile icon={CpuChipIcon} hue="blue" />}
-                trailing={p.default ? <Text type="supporting" color="secondary">Default</Text> : undefined}
-                footer={providerAbilities(p).map((ability) => <Meta key={ability} icon={CommandLineIcon}>{ability}</Meta>)}
+                trailing={
+                  <HStack gap={2} vAlign="center">
+                    {p.default && <Text type="supporting" color="secondary">Default</Text>}
+                    <StatusDot variant={p.available === false ? 'error' : 'success'} label={p.available === false ? 'Unavailable' : 'Available'} />
+                    <Text type="supporting" color="secondary">{p.available === false ? 'Unavailable' : 'Available'}</Text>
+                  </HStack>
+                }
+                footer={[
+                  ...providerAbilities(p).map((ability) => <Meta key={ability} icon={CommandLineIcon}>{ability}</Meta>),
+                  ...(p.version ? [<Meta key="version" icon={CubeIcon}>{`Version ${p.version}`}</Meta>] : []),
+                ]}
               >
+                {p.available === false && <Banner status="error" title={p.reason ?? 'Not available right now.'} />}
                 <Text type="supporting" color="secondary">
                   {p.capabilities.templateFields.length > 0 ? `Applies ${p.capabilities.templateFields.join(', ')} from templates.` : 'Applies no template fields.'}
                 </Text>
