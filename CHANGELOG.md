@@ -4,6 +4,11 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+
+## 2026-11-24 — sandbox guide
+
+- `docs/sandboxes.md`: how to set up, start and use sandboxes (concepts, one-time setup, a first-chat tutorial, templates, lifecycle and states, limits, security, API examples, troubleshooting).
+
 ## 2026-11-24 — Sandboxes UI redesign and plan 3 completion
 
 - Where an environment or template runs is now a plain choice, "This server" or "Isolated sandbox", each with one line on what it means; one that is down is disabled with the reason. The New environment dialog lists only templates made for the chosen place.
