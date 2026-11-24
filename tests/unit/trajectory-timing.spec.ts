@@ -34,10 +34,6 @@ describe('trajectory timing from item timing', () => {
     expect(records.find((r) => r.kind === 'user')).toMatchObject({ startedAt: 10.01, endedAt: 10.01 })
   })
 
-  it('adds up step usage for a turn that reported none', () => {
-    expect(t.turns[0]!.usage).toEqual({ input_tokens: 250, input_tokens_details: { cached_tokens: 0 }, output_tokens: 25, output_tokens_details: { reasoning_tokens: 8 }, total_tokens: 275 })
-  })
-
   it('draws assistant and tool lanes next to turns', () => {
     const spans = timelineSpans(t)
     expect(spans.map((s) => s.lane)).toEqual(['turn', 'assistant', 'tool', 'assistant'])
@@ -59,5 +55,30 @@ describe('formatSeconds', () => {
     expect(formatSeconds(1.25)).toBe('1.3 s')
     expect(formatSeconds(13)).toBe('13 s')
     expect(formatSeconds(125)).toBe('2 m 5 s')
+  })
+})
+
+describe('review fixes', () => {
+  it('a turn shows the last step’s input (its context), and adds up output, thinking and cache', () => {
+    const t = buildTrajectory([turn], items)
+    expect(t.turns[0]!.usage).toMatchObject({ input_tokens: 150, output_tokens: 25, output_tokens_details: { reasoning_tokens: 8 }, total_tokens: 175 })
+  })
+
+  it('a subagent still running is drawn running, not ended at its spawn', () => {
+    const spawn = [
+      ...items.slice(0, 3),
+      { id: 'item_fn_9', type: 'function_call', name: 'subagent', call_id: 'c9', arguments: { description: 'Research' }, status: 'in_progress', turn_id: 'turn_1', step: 1, timing: { started_at_ms: 10_950, completed_at_ms: 10_960 } },
+      { id: 'item_fn_out_10', type: 'function_call_output', call_id: 'c9', output: 'started subagent sub_1', status: 'completed', turn_id: 'turn_1', timing: { completed_at_ms: 10_960 } },
+    ] as unknown as StoredSessionItem[]
+    const run = {
+      subagent: { id: 'sub_1', object: 'agent.session.subagent', session_id: 's', parent_session_id: 's', status: 'active', created_at: 10 },
+      turns: [{ id: 'turn_c1', object: 'agent.session.turn', session_id: 's', status: 'in_progress', created_at: 11, started_at: 11, completed_at: null, usage: null }],
+      items: [],
+    }
+    const t = buildTrajectory([turn], spawn, [run as never])
+    const call = t.turns[0]!.records.find((r) => r.subagentId === 'sub_1')!
+    expect(call.status).toBe('pending')
+    expect(call.endedAt).toBeUndefined()
+    expect(timelineSpans(t).find((s) => s.lane === 'subagent')).not.toHaveProperty('end')
   })
 })

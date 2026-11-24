@@ -147,17 +147,26 @@ function applyTiming(record: TrajectoryRecord, timing: OAIItemTiming | undefined
   if (ended !== undefined) record.endedAt = ended
 }
 
-/** Token usage added up over steps; undefined when no step reported any. */
-export function sumUsage(list: (OAITokenUsage | undefined)[]): OAITokenUsage | undefined {
+/**
+ * A turn's usage from its steps, the way DeepSeek Harness counts it: Input is
+ * the context of the last step that reported usage (each step re-sends the
+ * whole conversation, so adding inputs would count it again per step), while
+ * Output and Think, produced once per step, are added up. Undefined when no
+ * step reported any.
+ */
+export function turnUsageOf(list: (OAITokenUsage | undefined)[]): OAITokenUsage | undefined {
   const present = list.filter((u): u is OAITokenUsage => u !== undefined)
-  if (present.length === 0) return undefined
-  return present.reduce((a, u) => ({
-    input_tokens: a.input_tokens + u.input_tokens,
-    input_tokens_details: { cached_tokens: a.input_tokens_details.cached_tokens + u.input_tokens_details.cached_tokens },
-    output_tokens: a.output_tokens + u.output_tokens,
-    output_tokens_details: { reasoning_tokens: a.output_tokens_details.reasoning_tokens + u.output_tokens_details.reasoning_tokens },
-    total_tokens: a.total_tokens + u.total_tokens,
-  }))
+  const last = present.at(-1)
+  if (!last) return undefined
+  const output = present.reduce((n, u) => n + u.output_tokens, 0)
+  const reasoning = present.reduce((n, u) => n + u.output_tokens_details.reasoning_tokens, 0)
+  return {
+    input_tokens: last.input_tokens,
+    input_tokens_details: { cached_tokens: last.input_tokens_details.cached_tokens },
+    output_tokens: output,
+    output_tokens_details: { reasoning_tokens: reasoning },
+    total_tokens: last.input_tokens + output,
+  }
 }
 
 function stepNumberOf(id: string): string | null {
@@ -320,7 +329,10 @@ export function buildTrajectory(turns: OAITurn[], items: StoredSessionItem[], su
     if (start) record.startedAt = start
     const status = runStatus(run)
     const end = status === 'pending' ? undefined : (last?.completed_at ?? run.subagent.closed_at)
+    // The run, not the spawn call (which returns at once), decides when it ends: a running one has no end yet.
     if (end) record.endedAt = end
+    else delete record.endedAt
+    delete record.firstTokenAt
     // The call's own status follows the run it started.
     record.status = status
   }
@@ -344,8 +356,8 @@ export function buildTrajectory(turns: OAITurn[], items: StoredSessionItem[], su
       startedAt: turn.started_at ?? turn.created_at,
       ...(turn.completed_at ? { endedAt: turn.completed_at } : {}),
       ...((): { usage?: OAITokenUsage } => {
-        // A turn that reported no usage still has its steps'.
-        const usage = turn.usage ?? sumUsage((byTurn.get(turn.id) ?? []).filter((r) => r.kind === 'assistant').map((r) => r.usage))
+        // DeepSeek Harness turns report no usage of their own; their steps do.
+        const usage = turn.usage ?? turnUsageOf((byTurn.get(turn.id) ?? []).filter((r) => r.kind === 'assistant').map((r) => r.usage))
         return usage ? { usage } : {}
       })(),
       records: byTurn.get(turn.id) ?? [],
