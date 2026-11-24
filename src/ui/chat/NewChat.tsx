@@ -11,7 +11,7 @@ import * as stylex from '@stylexjs/stylex'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { OAIAgent } from '@/api/types'
+import type { OAIAgent, SandboxProvider, SandboxTemplate } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
 import { promptText } from '@/connectors/catalog'
@@ -28,7 +28,7 @@ import { Message } from './Message'
 import { RecentFiles } from './RecentFiles'
 import { Thinking } from './Thinking'
 import { Composer, type EffortChoice } from './Composer'
-import { canChatIn, environmentMenuLabel } from '@/ui/sandboxes/format'
+import { canChatIn, environmentMenuLabel, NEW_SANDBOX, templateSummary } from '@/ui/sandboxes/format'
 import { pickModel, readModelCookie } from './model-cookie'
 
 const styles = stylex.create({
@@ -60,7 +60,7 @@ export function NewChat() {
   const [agents, setAgents] = useState<OAIAgent[]>([])
   const [agentId, setAgentId] = useState('')
   // Ready sandbox environments for the environment menu; '' is the default workspace. A failed load hides the menu.
-  const [environments, setEnvironments] = useState<{ id: string; name: string }[]>([])
+  const [environments, setEnvironments] = useState<{ id: string; name: string; group?: 'new'; description?: string }[]>([])
   const [environmentId, setEnvironmentId] = useState('')
   const [failure, setFailure] = useState<Failure | null>(null)
   // The message being sent, shown with a thinking state until the session exists and the chat opens.
@@ -89,11 +89,25 @@ export function NewChat() {
       .then(() => api.listAgents())
       .then((list) => setAgents(list.data), () => undefined)
     Promise.resolve()
-      .then(() => api.listSandboxEnvironments())
-      .then((list) => {
+      .then(() => Promise.all([
+        api.listSandboxEnvironments(),
+        // Fresh sandboxes are offered only while the isolated sandbox is up; either list failing just offers less.
+        Promise.resolve().then(() => api.listSandboxProviders()).catch(() => ({ data: [] as SandboxProvider[] })),
+        Promise.resolve().then(() => api.listSandboxTemplates()).catch(() => ({ data: [] as SandboxTemplate[] })),
+      ]))
+      .then(([list, providers, templates]) => {
         // Running and stopped sandboxes (a stopped one starts on send) and ready local environments.
         const usable = list.data.filter(canChatIn)
-        setEnvironments(usable.map((e) => ({ id: e.id, name: environmentMenuLabel(e) })))
+        const sandboxUp = providers.data.some((p) => p.name === 'sandbox' && p.available !== false && p.capabilities.exec)
+        const fresh = sandboxUp
+          ? [
+              { id: NEW_SANDBOX, name: 'Empty sandbox', group: 'new' as const, description: 'Standard image; deleted with the chat.' },
+              ...templates.data
+                .filter((t) => t.provider === 'sandbox' && t.unsupported_fields.length === 0)
+                .map((t) => ({ id: `${NEW_SANDBOX}${t.id}`, name: t.name || 'Untitled template', group: 'new' as const, description: `${templateSummary(t)}; deleted with the chat.` })),
+            ]
+          : []
+        setEnvironments([...usable.map((e) => ({ id: e.id, name: environmentMenuLabel(e) })), ...fresh])
         if (wantedEnvironment && usable.some((e) => e.id === wantedEnvironment)) setEnvironmentId(wantedEnvironment)
       }, () => undefined)
   }, [wantedEnvironment])
