@@ -21,7 +21,7 @@ describe('sandbox environment format', () => {
 
   it('names and last use', () => {
     expect(environmentName(env({ name: 'Data box' }))).toBe('Data box')
-    expect(environmentName(env())).toBe('env_1')
+    expect(environmentName(env())).toBe('Unnamed environment')
     const now = 10_000_000_000
     expect(lastUsed(null, now)).toBeNull()
     expect(lastUsed(now / 1000 - 300, now)).toBe('Used 5 min ago')
@@ -30,15 +30,15 @@ describe('sandbox environment format', () => {
 })
 
 describe('template editor body', () => {
-  const form = { name: ' Data ', provider: 'sandbox', image: 'python:3.13', system: 'jq, curl', python: 'pandas\nrich', npm: '', setup: 'echo a\n\necho b', env: 'A=1\n# note\nB = two', network: false }
-  const all = ['image', 'packages', 'setup_commands', 'env', 'network', 'files']
+  const form = { name: ' Data ', provider: 'sandbox', image: 'python:3.13', system: 'jq, curl', python: 'pandas\nrich', npm: '', setup: 'echo a\n\necho b', env: 'A=1\n# note\nB = two', network: false, cpus: '2', memoryGb: '4' }
+  const all = ['image', 'packages', 'setup_commands', 'env', 'network', 'files', 'resources']
 
   it('builds every field the provider applies', () => {
     expect(templateBody(form, all)).toEqual({ body: {
       name: 'Data', provider: 'sandbox', image: 'python:3.13',
       packages: { system: ['jq', 'curl'], python: ['pandas', 'rich'], npm: [] },
       setup_commands: [{ command: 'echo a' }, { command: 'echo b' }],
-      env: { A: '1', B: 'two' }, network: { access: 'disabled' },
+      env: { A: '1', B: 'two' }, network: { access: 'disabled' }, resources: { cpus: 2, memory_mb: 4096 },
     } })
   })
 
@@ -51,12 +51,13 @@ describe('template editor body', () => {
     expect(templateBody({ ...form, env: '1BAD=x' }, all)).toMatchObject({ error: expect.stringContaining('1BAD=x') })
     expect(templateBody({ ...form, image: 'a b' }, all)).toMatchObject({ error: expect.stringContaining('one name') })
     expect(parseEnvLines('NOEQUALS')).toEqual({ bad: 'NOEQUALS' })
+    expect(templateBody({ ...form, cpus: '100' }, all)).toMatchObject({ error: expect.stringContaining('CPU') })
   })
 })
 
 describe('environment menu label', () => {
   it('names the provider and state', async () => {
     const { environmentMenuLabel } = await import('@/ui/sandboxes/format')
-    expect(environmentMenuLabel(env({ name: 'Data box', sandbox: { state: 'stopped' } }))).toBe('Data box · sandbox · Stopped')
+    expect(environmentMenuLabel(env({ name: 'Data box', sandbox: { state: 'stopped' } }))).toBe('Data box (Isolated sandbox, stopped)')
   })
 })
