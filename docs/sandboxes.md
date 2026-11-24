@@ -41,53 +41,43 @@ Prerequisites:
    docker exec agentry-postgres createdb -U agentry agentry_sandbox
    ```
 
-3. **Make a key and a secret, and keep both.** The secret derives every sandbox's access token, so changing it locks you out of existing sandboxes.
+3. **Put the keys in Agentry's `.env`.** All dev keys live in the API's git-ignored `~/code/dsh-agents-api/.env`. Make each value with `openssl rand -hex 24` (the secret with `-hex 32`):
 
    ```sh
-   mkdir -p ~/.config/agentry
-   openssl rand -hex 24 > ~/.config/agentry/sandbox-key
-   openssl rand -hex 32 > ~/.config/agentry/sandbox-secret
-   ```
-
-4. **Save a launcher**, for example `~/.config/agentry/sandbox.sh`:
-
-   ```sh
-   #!/usr/bin/env bash
-   set -eo pipefail
-   export PATH=$HOME/.nvm/versions/node/v24.19.0/bin:$PATH
-   C=$HOME/.config/agentry
-   PGPASS=$(docker inspect agentry-postgres --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^POSTGRES_PASSWORD=//p')
-   ENC=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$PGPASS")
-   export AGENTRY_SANDBOX_DATABASE_URL="postgres://agentry:${ENC}@127.0.0.1:55432/agentry_sandbox"
-   export AGENTRY_SANDBOX_API_KEYS="sha256:$(printf %s "$(cat $C/sandbox-key)" | sha256sum | cut -d' ' -f1)"
-   export AGENTRY_SANDBOX_SECRET=$(cat $C/sandbox-secret)
-   cd ~/code/agentry-sandbox && exec pnpm dev
-   ```
-
-5. **Point the API at it.** Add these to the API's environment (its `.env` or its launcher):
-
-   ```sh
+   AGENTRY_DEV_KEY=…              # your sign-in key for the web app and API
    AGENTRY_SANDBOX_URL=http://127.0.0.1:3090
-   AGENTRY_SANDBOX_KEY=$(cat ~/.config/agentry/sandbox-key)
+   AGENTRY_SANDBOX_KEY=…          # the API's key for the sandbox service
+   AGENTRY_SANDBOX_SECRET=…       # keep it stable: every sandbox's access token derives from it
+   AGENTRY_SANDBOX_ADMIN_KEY=…    # sign-in for the admin page (optional)
    ```
 
-   If only one of the two is set, the API refuses to start and names the missing one. With neither set, "Isolated sandbox" doesn't appear and everything runs on this server.
+   The sandbox service only ever receives the SHA-256 hashes of the two keys, and the API's launcher keeps the secret and the admin key out of the API's own environment. If only one of `AGENTRY_SANDBOX_URL` and `AGENTRY_SANDBOX_KEY` is set, the API refuses to start and names the missing one. With neither, "Isolated sandbox" doesn't appear and everything runs on this server.
+
+4. **The launchers are in the repos.** `~/code/agentry-sandbox/scripts/dev.sh` and `~/code/dsh-agents-api/scripts/dev.sh` both read that `.env`, and find the database password from the `agentry-postgres` container. To keep the keys elsewhere, set `AGENTRY_ENV_FILE` for the sandbox launcher.
 
 ## Start it (every time)
 
 Start the sandbox service before the API, in herdr:
 
 ```sh
-hc run --bg --no-parent --outlive-parent --name agentry-sandbox bash ~/.config/agentry/sandbox.sh
-hc run --bg --no-parent --outlive-parent --name agentry-api --cwd ~/code/dsh-agents-api <your API launcher>
+hc run --bg --no-parent --outlive-parent --name agentry-sandbox --cwd ~/code/agentry-sandbox bash scripts/dev.sh
+hc run --bg --no-parent --outlive-parent --name agentry-api --cwd ~/code/dsh-agents-api bash scripts/dev.sh
 hc run --bg --no-parent --outlive-parent --name agentry-web --cwd ~/code/agentry-web pnpm dev
 ```
 
 Check it:
-- `hc read agentry-sandbox` shows the service listening on 3090.
+- `hc read agentry-sandbox` shows the service listening on 3090, plus the admin page line when an admin key is set.
 - In the web app, **Sandboxes → Providers** shows "Isolated sandbox" as **Available**, with its Docker version and the standard image's software.
 
 After pulling new API code, restart the API; it rebuilds when it starts. After changing the sandbox images, run `pnpm images:build` again.
+
+## The admin page
+
+Open `http://127.0.0.1:3090/admin` and sign in with `AGENTRY_SANDBOX_ADMIN_KEY` from the `.env`. The key stays in that browser tab and is forgotten when you close it. It's a page for whoever runs the service, separate from Agentry Web:
+
+- **Overview:** how many sandboxes are running, stopped, setting up or failed; the Docker version; the standard image and its software; what each sandbox gets by default; idle stop time; whether the network guard is on.
+- **Sandboxes:** every user's sandboxes, filterable by name, user, image or state, with **Start**, **Stop** and **Delete**. A sandbox deleted here shows as **Gone** in that user's Agentry environment.
+- **Limits:** every limit with its environment default, editable. **Save limits** applies them at once, with no restart, and they survive restarts. **Per-user limits** give one user more or less. **Reset to defaults** returns to the environment settings.
 
 ## Tutorial: your first sandbox chat
 
@@ -133,7 +123,7 @@ Environments on **This server** have no Start, Stop or Reset. They are just a fo
 
 ## Limits (so an agent can't run away with resources)
 
-Agentry Sandbox enforces these. Going over one refuses the request with the reason, for example "sandbox limit reached: … (limit 5)", and the web app shows that message in the dialog. Set them in the sandbox service's environment and restart it:
+Agentry Sandbox enforces these. Going over one refuses the request with the reason, for example "sandbox limit reached: … (limit 5)", and the web app shows that message in the dialog. The easiest way to change them is the admin page, which applies changes live. The environment variables below set the defaults; changing those needs a restart:
 
 | Setting | Default | Limits |
 |---|---|---|
@@ -217,6 +207,8 @@ The full contract is in `~/code/dsh-agents-api/openapi/agentry.yaml`. The sandbo
 | A chat on a sandbox answers 409 `environment_failed` | The environment failed. Open it to see why, then Reset or recreate it |
 | Pip or apt can't download | The template has internet off, or the site is in a blocked range |
 | Images missing after a Docker reset | Run `pnpm images:build` in `~/code/agentry-sandbox` again |
+| The agent says it runs on WSL, or its path looks like a host path | It is in the container. The workspace path is deliberately the same as an (empty) folder on the server, because DeepSeek Harness checks the folder there. `uname` shows the WSL2 kernel because Docker Desktop runs containers on it. `/.dockerenv`, Debian 12 and the `agent` user are the giveaways. `load_workspace_dependencies` reports `"environment": "sandbox"` |
+| Admin page says it is off | Set `AGENTRY_SANDBOX_ADMIN_KEY` in the `.env` and restart the sandbox service |
 
 ## Where things live
 
