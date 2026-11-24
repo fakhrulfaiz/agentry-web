@@ -5,6 +5,13 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+
+## 2026-11-24 — a fresh sandbox per chat
+
+- `docs/sandboxes.md` covers a fresh sandbox per chat and the agent's sandbox tools (create and delete ask first).
+
+- The new-chat environment menu has a "New sandbox for this chat" section while the isolated sandbox is up: "Empty sandbox" (the standard image) and one entry per sandbox template. Sending creates the sandbox with the chat (`environment: { type: "openai_hosted", provider: "sandbox" }` or `{ type: "sandbox", template_id }`), and deleting the chat deletes it. Existing environments are listed under "Your environments".
+
 ## 2026-11-24 — sandbox guide
 
 - `docs/sandboxes.md`: how to set up, start and use sandboxes (concepts, one-time setup, a first-chat tutorial, templates, lifecycle and states, limits, security, API examples, troubleshooting).

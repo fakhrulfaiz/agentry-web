@@ -4,6 +4,7 @@
  * browser. Each request carries the session's CSRF token, read from
  * `<meta name="agentry-csrf">`, in `x-agentry-csrf`.
  */
+import { sessionEnvironment } from '@/ui/sandboxes/format'
 import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
@@ -219,7 +220,8 @@ export const api = {
     const body: CreateSessionParams = {
       ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
-      ...(input.environmentId ? { environment: { type: 'sandbox', environment_id: input.environmentId } } : {}),
+      // An environment id, or `new:` / `new:<template id>` for a fresh sandbox that belongs to this chat.
+      ...(sessionEnvironment(input.environmentId ?? '') ? { environment: sessionEnvironment(input.environmentId ?? '') } : {}),
       input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
       metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
     }

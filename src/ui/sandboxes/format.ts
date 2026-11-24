@@ -193,3 +193,17 @@ export function templateBody(form: TemplateForm, fields: string[]): { body: Omit
   }
   return { body }
 }
+
+/** Environment-menu values that ask for a fresh sandbox for the chat: `new:` (empty) or `new:<template id>`. */
+export const NEW_SANDBOX = 'new:'
+
+/**
+ * The session's `environment` for an environment-menu choice: nothing (the default workspace), an
+ * existing environment, or a fresh sandbox (from a template, or empty) that belongs to the chat.
+ */
+export function sessionEnvironment(choice: string): Record<string, string> | undefined {
+  if (!choice) return undefined
+  if (choice === NEW_SANDBOX) return { type: 'openai_hosted', provider: 'sandbox' }
+  if (choice.startsWith(NEW_SANDBOX)) return { type: 'sandbox', template_id: choice.slice(NEW_SANDBOX.length) }
+  return { type: 'sandbox', environment_id: choice }
+}

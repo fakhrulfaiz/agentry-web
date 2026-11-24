@@ -94,6 +94,25 @@ Open `http://127.0.0.1:3090/admin` and sign in with `AGENTRY_SANDBOX_ADMIN_KEY` 
 5. **Ask for something that runs code**, for example: "Make a chart of 100 random points with matplotlib and save it as chart.png." Every command, file edit and terminal runs inside the container. The file appears in the chat's artifacts and in the environment's **Files** list, where you can open or download it.
 6. **Come back later.** An idle sandbox stops itself after 30 minutes, keeping its files and installed software. Sending a message in a chat on it, or clicking **Start**, wakes it up.
 
+## A fresh sandbox for one chat
+
+When the isolated sandbox is available, the new-chat environment menu has a **New sandbox for this chat** section. It offers **Empty sandbox** (the standard image) and one entry per sandbox template. Pick one and send: the sandbox is created with the chat, and **deleting the chat deletes it**. It suits throwaway work, like trying a library, running untrusted code or a one-off scrape. Your existing environments are listed above it under **Your environments**.
+
+## Sandboxes the agent manages itself
+
+Every chat's agent has sandbox tools (when the sandbox service is configured), so it can spin up a separate sandbox mid-chat, for example to test something risky without touching the chat's own workspace:
+
+| Tool | What it does | Asks you first |
+|---|---|---|
+| `sandbox_list` | Your sandboxes and their state (`this_chat` marks the one the chat runs in) | No |
+| `sandbox_templates` | Your sandbox templates | No |
+| `sandbox_create` | A new sandbox from a template, or with an image, Python/system/npm packages, setup commands and internet on or off | **Yes**: "Create sandbox "…" (…)" |
+| `sandbox_exec` | Runs a shell command in one of your sandboxes and returns the exit code and output | No |
+| `sandbox_start` / `sandbox_stop` | Starts or stops one (files and software are kept) | No |
+| `sandbox_delete` | Deletes one and all its files | **Yes**: "Delete sandbox "…" and all its files" |
+
+The approval appears as a card in the chat; deny it and nothing is created or deleted. The tools only see your sandboxes, never stop or delete the one the chat itself runs in, and stay within your limits: going over one comes back to the agent as an error it reports to you. Sandboxes the agent creates also appear on the Sandboxes page, and stay until you or the agent delete them.
+
 ## Managing environments
 
 The environment page (**Sandboxes → click a card**) shows its state, image, last use and files, plus these actions:
@@ -205,6 +224,7 @@ The full contract is in `~/code/dsh-agents-api/openapi/agentry.yaml`. The sandbo
 | Card says **Unreachable** | The service is down or slow; the environment is fine. Restart the service |
 | Card says **Gone** | The container was removed outside Agentry (for example `docker rm`). Delete the environment and make a new one |
 | A chat on a sandbox answers 409 `environment_failed` | The environment failed. Open it to see why, then Reset or recreate it |
+| An environment shows Failed with a setup error | Fix the template (or the agent's `sandbox_create` arguments) and create it again; **Delete environment** removes the failed one. A failed create no longer counts against your limits |
 | Pip or apt can't download | The template has internet off, or the site is in a blocked range |
 | Images missing after a Docker reset | Run `pnpm images:build` in `~/code/agentry-sandbox` again |
 | The agent says it runs on WSL, or its path looks like a host path | It is in the container. The workspace path is deliberately the same as an (empty) folder on the server, because DeepSeek Harness checks the folder there. `uname` shows the WSL2 kernel because Docker Desktop runs containers on it. `/.dockerenv`, Debian 12 and the `agent` user are the giveaways. `load_workspace_dependencies` reports `"environment": "sandbox"` |

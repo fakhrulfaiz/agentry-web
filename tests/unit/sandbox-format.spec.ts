@@ -61,3 +61,13 @@ describe('environment menu label', () => {
     expect(environmentMenuLabel(env({ name: 'Data box', sandbox: { state: 'stopped' } }))).toBe('Data box (Isolated sandbox, stopped)')
   })
 })
+
+describe('session environment for a menu choice', () => {
+  it('maps the default, an existing environment, an empty sandbox and a template sandbox', async () => {
+    const { sessionEnvironment, NEW_SANDBOX } = await import('@/ui/sandboxes/format')
+    expect(sessionEnvironment('')).toBeUndefined()
+    expect(sessionEnvironment('env_1')).toEqual({ type: 'sandbox', environment_id: 'env_1' })
+    expect(sessionEnvironment(NEW_SANDBOX)).toEqual({ type: 'openai_hosted', provider: 'sandbox' })
+    expect(sessionEnvironment(`${NEW_SANDBOX}tpl_9`)).toEqual({ type: 'sandbox', template_id: 'tpl_9' })
+  })
+})

@@ -85,7 +85,7 @@ export interface ComposerSettings {
   agentId?: string
   onAgentChange?(id: string): void
   /** Ready sandbox environments for the environment menu (new chats only); hidden without any. */
-  environments?: { id: string; name: string }[]
+  environments?: { id: string; name: string; group?: 'new'; description?: string }[]
   /** The chosen environment's id; `''` is the default workspace. */
   environmentId?: string
   onEnvironmentChange?(id: string): void
@@ -115,13 +115,25 @@ function ContextMenus({ settings }: { settings: ComposerSettings }) {
           size="sm"
           variant="ghost"
           startIcon={ServerStackIcon}
-          options={[{ value: '', label: 'Default workspace' }, ...environments.map((e) => ({ value: e.id, label: e.name }))]}
+          options={environmentOptions(environments)}
           value={environmentId}
           onChange={onEnvironmentChange}
         />
       )}
     </>
   )
+}
+
+/** The environment menu: the default workspace, existing environments, then fresh sandboxes for this chat. */
+function environmentOptions(environments: NonNullable<ComposerSettings['environments']>) {
+  const option = (e: (typeof environments)[number]) => ({ value: e.id, label: e.name, ...(e.description ? { description: e.description } : {}) })
+  const existing = environments.filter((e) => e.group !== 'new')
+  const fresh = environments.filter((e) => e.group === 'new')
+  return [
+    { value: '', label: 'Default workspace' },
+    ...(existing.length > 0 ? [{ type: 'section' as const, title: 'Your environments', options: existing.map(option) }] : []),
+    ...(fresh.length > 0 ? [{ type: 'section' as const, title: 'New sandbox for this chat', options: fresh.map(option) }] : []),
+  ]
 }
 
 /** Right of the footer, beside the send button: the model and its reasoning effort. */
