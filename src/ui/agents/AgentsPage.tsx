@@ -21,7 +21,7 @@ import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import { MagnifyingGlassIcon, PuzzlePieceIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 import { useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent } from '@/api/types'
 import { agentToForm } from '@/agents/form'
@@ -51,16 +51,35 @@ function Starters({ onPick }: { onPick(id: string): void }) {
 }
 
 /**
- * Opens or closes the editor by changing the URL in place: no server round
- * trip, the list stays mounted, and Back closes the dialog.
+ * The editor is opened and closed by changing the URL in place: no server
+ * round trip, and the list stays mounted. Opening adds one history entry, so
+ * Back closes the dialog; closing never adds one. An editor the page opened is
+ * closed with Back; one that came from a link replaces its URL.
  */
-function go(url: string) {
-  window.history.pushState(null, '', url)
+export function closeEditor(openedHere: boolean) {
+  if (openedHere) window.history.back()
+  else window.history.replaceState(null, '', '/agents')
 }
 
 export function AgentsPage() {
   const params = useSearchParams()
   const target = editorTargetOf(new URLSearchParams(params.toString()))
+  const editorOpen = useRef(target !== null)
+  editorOpen.current = target !== null
+  // Whether this page pushed the editor's URL (then closing goes Back).
+  const openedHere = useRef(false)
+  useEffect(() => {
+    if (target === null) openedHere.current = false
+  }, [target])
+  const go = (url: string) => {
+    window.history.pushState(null, '', url)
+    openedHere.current = true
+  }
+  const close = () => {
+    const pushed = openedHere.current
+    openedHere.current = false
+    closeEditor(pushed)
+  }
   const [agents, setAgents] = useState<OAIAgent[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'yours' | 'starters'>('yours')
@@ -164,10 +183,11 @@ export function AgentsPage() {
       </VStack>
       <AgentEditorDialog
         target={target}
-        onClose={() => go('/agents')}
+        onClose={close}
         onSaved={(change) => {
           void load()
-          if (change !== 'updated') go('/agents')
+          // A save that lands after the dialog closed (Cancel during create) closes nothing again.
+          if (change !== 'updated' && editorOpen.current) close()
         }}
       />
     </div>

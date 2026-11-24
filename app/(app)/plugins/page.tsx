@@ -61,7 +61,7 @@ export default async function Plugins({ searchParams }: { searchParams: Promise<
  * own request joins it instead of starting another.
  */
 function knownStatus(owner: string, key: string): ConnectionStatus | undefined {
-  const snap = connections.peek(owner)
+  const snap = connections.peek(owner, key)
   if (!snap || (snap.inventory === null && !snap.problem)) {
     void connectionSnapshot(owner, key).catch(() => {})
     return undefined

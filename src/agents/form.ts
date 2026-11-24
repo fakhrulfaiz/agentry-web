@@ -17,6 +17,8 @@ export interface AgentForm {
   allTools: boolean
   /** Allowed Host tool names, used when `allTools` is false. */
   tools: string[]
+  /** Host tools the saved agent hides (an agent made in chat cannot write agents); kept as saved. */
+  deniedTools: string[]
   /** Connected-app grants; `null` lets the agent use every connected app. */
   apps: AgentAppGrants | null
   /** Skill selection; `null` uses every built-in skill. */
@@ -33,7 +35,7 @@ export const MAX_SUBAGENTS = 8
 export const CONNECTORS_KEY = 'connectors'
 
 export const emptyForm = (model = ''): AgentForm => ({
-  name: '', ...defaultAvatar(`new-${String(Date.now())}`), model, effort: 'auto', instructions: '', allTools: true, tools: [],
+  name: '', ...defaultAvatar(`new-${String(Date.now())}`), model, effort: 'auto', instructions: '', allTools: true, tools: [], deniedTools: [],
   apps: null, skills: null, sendPolicy: 'ask', subagents: false, maxSubagents: 3, extraMetadata: {},
 })
 
@@ -56,6 +58,7 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
     instructions: agent.instructions ?? '',
     allTools: !allow || allow.length === 0,
     tools: allow ?? [],
+    deniedTools: agent.host_tools?.deny ?? [],
     apps: grantsOf(agent),
     skills: agent.skills ?? null,
     sendPolicy: agent.send_policy === 'auto' ? 'auto' : 'ask',
@@ -68,7 +71,9 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
 /** The request body for create or update. `catalog` is the Host tool list; a mask naming every tool is no mask. */
 export function formToParams(form: AgentForm, catalog: string[] = []): CreateAgentParams {
   const everything = catalog.length > 0 && catalog.every((t) => form.tools.includes(t))
-  const mask = form.allTools || form.tools.length === 0 || everything ? null : { allow: form.tools }
+  const allow = form.allTools || form.tools.length === 0 || everything ? null : form.tools
+  const deny = form.deniedTools.length > 0 ? form.deniedTools : null
+  const mask = allow || deny ? { ...(allow ? { allow } : {}), ...(deny ? { deny } : {}) } : null
   const metadata = { ...form.extraMetadata, icon: form.icon, color: form.color }
   return {
     model: form.model,

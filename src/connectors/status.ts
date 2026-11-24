@@ -31,27 +31,48 @@ async function fetchStatus(refresh: boolean, signal?: AbortSignal): Promise<Conn
  */
 export function useConnectionStatus(initial: ConnectionStatus | undefined) {
   const [status, setStatus] = useState<ConnectionStatus | null>(initial ?? null)
-  const [checking, setChecking] = useState(false)
+  const [inFlight, setInFlight] = useState(0)
   const latest = useRef(status)
   latest.current = status
+  const followUp = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Never let an older answer replace a newer one.
+  const accept = useCallback((next: ConnectionStatus) => {
+    setStatus((cur) => (!cur || next.checkedAt >= cur.checkedAt || next.problem !== cur.problem ? next : cur))
+  }, [])
 
   const load = useCallback(async (refresh: boolean, signal?: AbortSignal) => {
-    setChecking(true)
+    setInFlight((n) => n + 1)
     try {
       const next = await fetchStatus(refresh, signal)
-      if (next) setStatus(next)
+      if (!next || signal?.aborted) return
+      accept(next)
       // A stale answer means the server is refreshing; pick the result up shortly.
-      if (next?.stale && !refresh) setTimeout(() => void fetchStatus(false).then((s) => s && setStatus(s)).catch(() => {}), 2_500)
+      if (next.stale && !refresh) {
+        if (followUp.current) clearTimeout(followUp.current)
+        followUp.current = setTimeout(() => {
+          followUp.current = null
+          void fetchStatus(false).then((s) => s && accept(s)).catch(() => {})
+        }, 2_500)
+      }
     } catch {
       // Aborted or offline: keep what is shown.
     } finally {
-      if (!signal?.aborted) setChecking(false)
+      setInFlight((n) => n - 1)
     }
-  }, [])
+  }, [accept])
 
+  // The page's status, read again whenever the page brings a different one (a replaced key).
+  const signature = initial ? `${String(initial.checkedAt)}|${initial.problem ?? ''}|${(initial.connected ?? []).join(',')}|${String(initial.connected === null)}` : 'none'
   useEffect(() => {
     const ctl = new AbortController()
+    setStatus(initial ?? null)
     if (!initial || initial.stale || initial.connected === null) void load(false, ctl.signal)
+    return () => ctl.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `signature` stands for `initial`
+  }, [signature, load])
+
+  useEffect(() => {
     const onFocus = () => {
       const s = latest.current
       if (document.visibilityState === 'visible' && (!s || Date.now() - s.checkedAt > FOCUS_REFRESH_MS)) void load(false)
@@ -59,14 +80,13 @@ export function useConnectionStatus(initial: ConnectionStatus | undefined) {
     document.addEventListener('visibilitychange', onFocus)
     window.addEventListener('focus', onFocus)
     return () => {
-      ctl.abort()
       document.removeEventListener('visibilitychange', onFocus)
       window.removeEventListener('focus', onFocus)
+      if (followUp.current) clearTimeout(followUp.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the initial status is read once
   }, [load])
 
-  return { status, checking, refresh: () => load(true) }
+  return { status, checking: inFlight > 0, refresh: () => load(true) }
 }
 
 /** "Checked just now" / "Checked 4 min ago" / "Checked 2 h ago". */

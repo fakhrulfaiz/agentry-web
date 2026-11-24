@@ -65,3 +65,18 @@ describe('starters', () => {
     for (const s of STARTERS) expect(s.instructions.length).toBeGreaterThan(40)
   })
 })
+
+describe('review fixes: tool masks', () => {
+  it('keeps a saved deny list through edit and save (chat-created agents)', async () => {
+    const { agentToForm: toForm, formToParams: toParams } = await import('@/agents/form')
+    const form = toForm({ id: 'agent_1', object: 'agent', name: 'Made in chat', model: 'm1', host_tools: { deny: ['agent_create', 'agent_update'] } } as never)
+    expect(form.allTools).toBe(true)
+    expect(toParams({ ...form, color: 'teal' }, ['read', 'agent_create', 'agent_update']).host_tools).toEqual({ deny: ['agent_create', 'agent_update'] })
+  })
+
+  it('keeps the deny list next to a chosen allow list', async () => {
+    const { agentToForm: toForm, formToParams: toParams } = await import('@/agents/form')
+    const form = toForm({ id: 'agent_1', object: 'agent', name: 'X', model: 'm1', host_tools: { allow: ['read'], deny: ['agent_create'] } } as never)
+    expect(toParams(form, ['read', 'write', 'agent_create']).host_tools).toEqual({ allow: ['read'], deny: ['agent_create'] })
+  })
+})

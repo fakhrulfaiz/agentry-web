@@ -45,6 +45,8 @@ export interface ConnectionCacheOptions {
  * failures are remembered briefly (so a refused key does not slow every page),
  * and a failed refresh keeps the last good answer.
  */
+const hashOf = (key: string) => createHash('sha256').update(key).digest('hex')
+
 export function createConnectionCache(options: ConnectionCacheOptions) {
   const { load, now = Date.now, freshMs = 60_000, staleMs = 24 * 3_600_000, failureMs = 60_000 } = options
   const entries = new Map<string, Entry>()
@@ -72,7 +74,7 @@ export function createConnectionCache(options: ConnectionCacheOptions) {
 
   return {
     async get(owner: string, key: string, slugs: string[], opts: { force?: boolean } = {}): Promise<ConnectionSnapshot> {
-      const keyHash = createHash('sha256').update(key).digest('hex')
+      const keyHash = hashOf(key)
       let entry = entries.get(owner)
       if (!entry || entry.keyHash !== keyHash) {
         entry = { keyHash, inventory: null, checkedAt: 0 }
@@ -89,10 +91,10 @@ export function createConnectionCache(options: ConnectionCacheOptions) {
       }
       return snapshot(entry)
     },
-    /** The owner's snapshot without checking anything; undefined when never asked. */
-    peek(owner: string): ConnectionSnapshot | undefined {
+    /** The owner's snapshot for `key` without checking anything; undefined when never asked with that key. */
+    peek(owner: string, key: string): ConnectionSnapshot | undefined {
       const entry = entries.get(owner)
-      return entry ? snapshot(entry) : undefined
+      return entry && entry.keyHash === hashOf(key) ? snapshot(entry) : undefined
     },
     forget(owner: string): void {
       entries.delete(owner)

@@ -132,6 +132,7 @@ export function readiness(form: FormState): { label: string; ok: boolean; requir
   return [
     { label: 'Name', ok: form.name.trim() !== '', required: true },
     { label: 'Model', ok: form.model !== '', required: true },
+    { label: 'Tools', ok: form.allTools || form.tools.length > 0, required: true },
     { label: 'Instructions', ok: form.instructions.trim().length >= 20, required: false },
   ]
 }
@@ -182,7 +183,10 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
     ;(async () => {
       try {
         const [modelList, toolList, connected, agent] = await Promise.all([
-          modelsMemo.get(), hostToolsMemo.get(), connectedAppsMemo.get(), agentId ? api.getAgent(agentId) : Promise.resolve(null),
+          modelsMemo.get(),
+          hostToolsMemo.get().catch((): HostToolInfo[] => []),
+          connectedAppsMemo.get().catch(() => null),
+          agentId ? api.getAgent(agentId) : Promise.resolve(null),
         ])
         if (!alive) return
         const defaultModel = modelList[0] ?? ''
@@ -214,6 +218,7 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
     if (!form) return
     if (!form.name.trim()) return setError('Give the agent a name.')
     if (!form.model) return setError('Choose a model.')
+    if (!form.allTools && form.tools.length === 0) return setError('Choose at least one tool, or allow every tool.')
     setSaving(true)
     setError(null)
     try {
@@ -398,7 +403,7 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
                 <HStack key={c.label} gap={1} vAlign="center" role="listitem">
                   <Icon icon={c.ok ? CheckCircleIcon : ExclamationCircleIcon} size="sm" color={c.ok ? 'success' : c.required ? 'error' : 'secondary'} />
                   <Text type="supporting" color={c.ok ? 'secondary' : 'primary'}>
-                    {c.ok ? c.label : c.required ? `${c.label} needed` : `Add ${c.label.toLowerCase()}`}
+                    {c.ok ? c.label : c.label === 'Tools' ? 'Choose at least one tool' : c.required ? `${c.label} needed` : `Add ${c.label.toLowerCase()}`}
                   </Text>
                 </HStack>
               ))}

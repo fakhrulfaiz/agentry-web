@@ -30,8 +30,8 @@ describe('connection cache', () => {
     expect(stale.inventory?.gmail).toBeDefined()
     await flush()
     expect(load).toHaveBeenCalledTimes(2)
-    expect(cache.peek('a')?.inventory?.github).toBeDefined()
-    expect(cache.peek('a')?.checkedAt).toBe(61_000)
+    expect(cache.peek('a', 'k')?.inventory?.github).toBeDefined()
+    expect(cache.peek('a', 'k')?.checkedAt).toBe(61_000)
   })
 
   it('shares one request between callers', async () => {
@@ -56,7 +56,7 @@ describe('connection cache', () => {
     at(61_000)
     await cache.get('a', 'k', [])
     await flush()
-    const snap = cache.peek('a')
+    const snap = cache.peek('a', 'k')
     expect(snap?.inventory?.gmail).toBeDefined()
     expect(snap?.problem).toBe('unavailable')
   })
@@ -66,7 +66,7 @@ describe('connection cache', () => {
     await cache.get('a', 'k', [])
     expect((await cache.get('a', 'k', [], { force: true })).inventory?.github).toBeDefined()
     cache.forget('a')
-    expect(cache.peek('a')).toBeUndefined()
+    expect(cache.peek('a', 'k')).toBeUndefined()
     await cache.get('a', 'k', [])
     expect(load).toHaveBeenCalledTimes(3)
   })
@@ -76,5 +76,12 @@ describe('connection cache', () => {
     await cache.get('a', 'k1', [])
     expect((await cache.get('a', 'k2', [])).inventory?.gmail).toBeUndefined()
     expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('peek answers only for the key it was asked with', async () => {
+    const { cache } = setup([ok(['gmail'])])
+    await cache.get('a', 'k1', [])
+    expect(cache.peek('a', 'k1')?.inventory?.gmail).toBeDefined()
+    expect(cache.peek('a', 'k2')).toBeUndefined()
   })
 })

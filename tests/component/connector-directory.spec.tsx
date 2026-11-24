@@ -8,7 +8,7 @@ import type { CatalogEntry } from '@/connectors/catalog'
 import { ConnectorDirectory } from '@/ui/settings/ConnectorDirectory'
 
 function stubStatus(connected: string[] | null) {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected })))
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected, checkedAt: Date.now(), stale: false })))
 }
 
 beforeEach(() => stubStatus(null))
@@ -105,5 +105,17 @@ describe('ConnectorDirectory', () => {
     render(<ConnectorDirectory entries={entries} featured={featured} failed={false} initialStatus={{ connected: [], checkedAt: Date.now(), stale: false }} />)
     await userEvent.click(screen.getByRole('button', { name: 'Refresh status' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/agentry/connectors/status?refresh=1', expect.anything()))
+  })
+
+  it('drops the old key’s status when the page brings a new one (key replaced)', async () => {
+    const answers = [{ connected: null, checkedAt: 0, stale: false, problem: 'rejected' }, { connected: ['gmail'], checkedAt: Date.now(), stale: false }]
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(answers[Math.min(calls++, 1)])))
+    const { rerender } = render(<ConnectorDirectory entries={entries} featured={featured} failed={false} initialStatus={{ connected: null, checkedAt: 0, stale: false, problem: 'rejected' }} />)
+    expect(await screen.findByText(/Composio rejected your key/)).toBeInTheDocument()
+    await waitFor(() => expect(calls).toBe(1))
+    rerender(<ConnectorDirectory entries={entries} featured={featured} failed={false} />)
+    await waitFor(() => expect(screen.queryByText(/Composio rejected your key/)).not.toBeInTheDocument())
+    expect(await screen.findByRole('heading', { name: 'Connected' })).toBeInTheDocument()
   })
 })

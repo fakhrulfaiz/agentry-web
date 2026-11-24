@@ -29,6 +29,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: nav.push }), useSe
 
 afterEach(() => {
   for (const memo of [modelsMemo, hostToolsMemo, connectedAppsMemo]) memo.clear()
+  apiMock.listHostTools.mockImplementation(async () => [{ name: 'read_file' }, { name: 'grep' }, { name: 'shell' }])
   cleanup()
   vi.clearAllMocks()
   nav.params = new URLSearchParams()
@@ -131,5 +132,30 @@ describe('AgentForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ host_tools: { allow: ['read_file'] } })
+  })
+})
+
+describe('AgentForm review fixes', () => {
+  it('refuses to save with tools turned off and none chosen, instead of granting every tool', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Nothing')
+    await userEvent.click(screen.getByRole('switch', { name: /Allow every tool/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(within(screen.getByRole('list', { name: 'Before you save' })).getByText('Choose at least one tool')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    expect(await screen.findByText(/Choose at least one tool, or allow every tool/)).toBeInTheDocument()
+    expect(apiMock.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('does not keep a failed tool list, so the next open asks again', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    apiMock.listHostTools.mockRejectedValueOnce(new Error('down'))
+    render(<AgentForm />)
+    await screen.findByRole('textbox', { name: /Name/ })
+    cleanup()
+    render(<AgentForm />)
+    await screen.findByRole('textbox', { name: /Name/ })
+    expect(apiMock.listHostTools).toHaveBeenCalledTimes(2)
   })
 })
