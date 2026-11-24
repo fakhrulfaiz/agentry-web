@@ -18,10 +18,11 @@ export const NARROW_QUERY = '(max-width: 767.98px)'
 const PANEL_WIDTH = 360
 
 const styles = stylex.create({
-  frame: { flexGrow: 1, minBlockSize: 0, minInlineSize: 0 },
+  // Fill the slot and never grow past it: long one-line rows (tool results) truncate instead of widening the page.
+  frame: { flexGrow: 1, minBlockSize: 0, minInlineSize: 0, inlineSize: '100%', maxInlineSize: '100%' },
   // The page owns the slot's height: content that scrolls itself (the ledger) shrinks
   // to it instead of growing past the shell and adding a second page scrollbar.
-  content: { display: 'flex', flexDirection: 'column', minBlockSize: 0 },
+  content: { display: 'flex', flexDirection: 'column', minBlockSize: 0, minInlineSize: 0, maxInlineSize: '100%' },
 })
 
 export function SidePanelLayout({

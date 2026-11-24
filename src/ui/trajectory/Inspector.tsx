@@ -68,6 +68,10 @@ export function Inspector({ record, onShowInChat }: { record: TrajectoryRecord; 
   const status = STATUS[record.status]
   const duration = record.startedAt !== undefined && record.endedAt !== undefined ? formatSeconds(record.endedAt - record.startedAt) : null
   const kind = record.subKind ?? record.kind
+  // An assistant step: the wait for its first token, then generation; throughput needs recorded usage.
+  const ttft = record.startedAt !== undefined && record.firstTokenAt !== undefined ? record.firstTokenAt - record.startedAt : null
+  const generation = record.firstTokenAt !== undefined && record.endedAt !== undefined ? record.endedAt - record.firstTokenAt : null
+  const throughput = generation !== null && generation > 0 && record.usage ? `${String(Math.round(record.usage.output_tokens / generation))} tok/s` : null
   const hasInput = kind === 'tool' || kind === 'user'
   return (
     <VStack gap={3} data-testid="trajectory-inspector">
@@ -122,9 +126,9 @@ export function Inspector({ record, onShowInChat }: { record: TrajectoryRecord; 
         <VStack>
           <Row label="Started" value={record.startedAt !== undefined ? formatClock(record.startedAt) : NOT_RECORDED} />
           <Row label="Total duration" value={duration ?? NOT_RECORDED} />
-          <Row label="TTFT" value={NOT_RECORDED} />
-          <Row label="Generation" value={NOT_RECORDED} />
-          <Row label="Throughput" value={NOT_AVAILABLE} />
+          <Row label="TTFT" value={ttft !== null ? formatSeconds(ttft) : NOT_RECORDED} />
+          <Row label="Generation" value={generation !== null ? formatSeconds(generation) : NOT_RECORDED} />
+          <Row label="Throughput" value={throughput ?? NOT_AVAILABLE} />
         </VStack>
       </Section>
     </VStack>

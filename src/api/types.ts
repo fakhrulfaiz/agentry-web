@@ -301,6 +301,19 @@ export interface OAIFileObject {
 }
 
 /** Saved user or assistant message. */
+/**
+ * When Agentry's Session log recorded an item, epoch milliseconds (an Agentry
+ * extension; each field only when recorded: a running call has no end yet).
+ */
+export interface OAIItemTiming {
+  /** An assistant step's start, or when a tool was called. */
+  started_at_ms?: number
+  /** An assistant step's first streamed token. */
+  first_token_at_ms?: number
+  /** When it finished: the reply settled, the tool answered, the message was logged. */
+  completed_at_ms?: number
+}
+
 export interface OAIMessageItem {
   id: string
   type: 'message'
@@ -309,6 +322,9 @@ export interface OAIMessageItem {
   phase?: 'commentary' | 'final_answer' | null
   status: ItemStatus
   turn_id: string
+  step?: number
+  usage?: OAITokenUsage
+  timing?: OAIItemTiming
 }
 
 /** Saved function call. */
@@ -320,6 +336,8 @@ export interface OAIFunctionCallItem {
   arguments: Record<string, unknown> | string
   status: ToolCallStatus
   turn_id: string
+  step?: number
+  timing?: OAIItemTiming
 }
 
 /** Saved function-call result. */
@@ -331,6 +349,7 @@ export interface OAIFunctionCallOutputItem {
   error?: string | null
   status: ToolCallStatus
   turn_id: string
+  timing?: OAIItemTiming
   /** A sign-in link for a connected app; shown as a Connect button. */
   connect_request?: ConnectRequest
 }
@@ -359,6 +378,8 @@ export interface OAICommandExecutionItem {
   duration_ms?: number
   status: ToolCallStatus
   turn_id: string
+  step?: number
+  timing?: OAIItemTiming
 }
 
 /** Saved reasoning summary. */
@@ -368,6 +389,8 @@ export interface OAIReasoningItem {
   summary?: Array<{ type: 'summary_text'; text: string }>
   status: ItemStatus
   turn_id: string
+  step?: number
+  timing?: OAIItemTiming
 }
 
 /** One saved session item. */

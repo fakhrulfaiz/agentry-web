@@ -74,8 +74,8 @@ export const REVEAL_FRAMES = 10
 
 const styles = stylex.create({
   page: { blockSize: '100%', minBlockSize: 0 },
-  chat: { flexGrow: 1, minBlockSize: 0 },
-  views: { flexGrow: 1, minBlockSize: 0, position: 'relative' },
+  chat: { flexGrow: 1, minBlockSize: 0, minInlineSize: 0, inlineSize: '100%' },
+  views: { flexGrow: 1, minBlockSize: 0, minInlineSize: 0, inlineSize: '100%', position: 'relative' },
   // Both views stay mounted; the inactive one keeps its box (and its scroll position) but is not shown.
   inactive: { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' },
 })
