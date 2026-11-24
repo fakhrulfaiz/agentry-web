@@ -3,6 +3,15 @@
 All notable changes to Agentry Web are recorded here.
 
 
+
+## 2026-11-24 — Sandboxes UI redesign and plan 3 completion
+
+- Where an environment or template runs is now a plain choice, "This server" or "Isolated sandbox", each with one line on what it means; one that is down is disabled with the reason. The New environment dialog lists only templates made for the chosen place.
+- New template is a two-pane editor like the agent editor: name, where it runs and a live "What it sets up" summary on the left; Software, Startup, Variables, and Internet and limits tabs on the right, each with a count. Only the settings the chosen place applies are shown (others are named in one line). It starts on the place that applies the most settings. New: CPU cores and memory limits; the image field says what the standard image already has.
+- Environment cards and the detail page show the name (or "Unnamed environment" with a short id) and the place in plain words. The detail page shows its header and actions at once while the files load, puts Start, Stop and Reset in one row, and hides dot-folders (tool caches, `.git`) behind "Show N hidden files".
+- The Providers tab describes each place: the software it has (for the sandbox, read from its standard image), what templates can set, and availability.
+- The environment list refreshes every 3 seconds while an environment is setting up or being deleted. The new-chat environment menu reads "Data box (Isolated sandbox, stopped)".
+
 ## 2026-11-24 — Sandboxes UI for Agentry Sandbox
 
 - Environments have names and show a sandbox's live state (Running, Stopped, Setting up, Failed, Gone, Unreachable), its image and when it was last used. The New environment dialog asks for an optional name, lists providers that are down as disabled with the reason, and keeps itself open with the reason when the sandbox is refused (for example a sandbox limit).

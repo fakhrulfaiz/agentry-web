@@ -621,6 +621,8 @@ export interface SandboxProvider {
   reason?: string
   /** The service version (Agentry Sandbox). */
   version?: string
+  /** Agentry Sandbox: the image used when a template names none, and what it ships. */
+  default_image?: { name: string; runtimes?: Record<string, string>; python_packages?: string[]; tools?: string[] }
 }
 
 /** An environment template (`agent.environment.template`). */
@@ -635,6 +637,9 @@ export interface SandboxTemplate {
   packages: { npm: string[]; python: string[]; system: string[] }
   provider: string
   image?: string
+  setup_commands?: Array<{ command: string }>
+  env?: Record<string, string>
+  resources?: { cpus?: number; memory_mb?: number }
   /** Fields the provider cannot apply; provisioning fails while any remain. */
   unsupported_fields: string[]
 }
@@ -691,6 +696,7 @@ export interface CreateTemplateParams {
   setup_commands?: Array<{ command: string }>
   env?: Record<string, string>
   network?: { access: 'enabled' | 'disabled' }
+  resources?: { cpus?: number; memory_mb?: number }
 }
 
 /** The script runtimes the host bundles for every agent (`GET /agents/environments/runtimes`). */

@@ -27,8 +27,11 @@ export function environmentLook(env: SandboxEnvironment): Look {
   }
 }
 
-/** The name people see: the given name, else the id. */
-export const environmentName = (env: Pick<SandboxEnvironment, 'id' | 'name'>): string => env.name || env.id
+/** The name people see: the given name, else "Unnamed environment". */
+export const environmentName = (env: Pick<SandboxEnvironment, 'id' | 'name'>): string => env.name || 'Unnamed environment'
+
+/** A short form of an id for secondary text: `env_6784…3a`. */
+export const shortId = (id: string): string => (id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-3)}` : id)
 
 /** Whether a chat can be started in this environment (a stopped sandbox starts on send). */
 export function canChatIn(env: SandboxEnvironment): boolean {
@@ -38,7 +41,30 @@ export function canChatIn(env: SandboxEnvironment): boolean {
 
 /** The composer's environment menu entry: name, provider and state, e.g. "Data box · sandbox · Stopped". */
 export function environmentMenuLabel(env: SandboxEnvironment): string {
-  return [environmentName(env), env.provider, environmentLook(env).text].join(' · ')
+  return `${environmentName(env)} (${providerTitle(env.provider)}, ${environmentLook(env).text.toLowerCase()})`
+}
+
+/** A provider in the words people use. */
+export function providerTitle(name: string): string {
+  return name === 'local' ? 'This server' : name === 'sandbox' ? 'Isolated sandbox' : name
+}
+
+/** One line on what running there means. */
+export function providerBlurb(name: string): string {
+  if (name === 'local') return 'A folder on the Agentry server. Fast to start, uses the software the server already has.'
+  if (name === 'sandbox') return 'Its own Linux container with the software you choose. Reaches the internet, never your network.'
+  return 'A registered sandbox provider.'
+}
+
+const FIELD_WORDS: Record<string, string> = {
+  image: 'image', packages: 'packages', setup_commands: 'setup commands', env: 'environment variables',
+  network: 'internet access', files: 'starter files', resources: 'CPU and memory', plugins: 'plugins', skills: 'skills',
+  capability_directories: 'capability folders',
+}
+/** Template fields in plain words, as one sentence fragment: "image, packages and starter files". */
+export function fieldWords(fields: string[]): string {
+  const words = fields.map((f) => FIELD_WORDS[f] ?? f)
+  return words.length <= 1 ? (words[0] ?? 'nothing') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
 }
 
 /** "Used 3 min ago", "Used Nov 2", or null when never used. */
@@ -112,6 +138,10 @@ export interface TemplateForm {
   setup: string
   env: string
   network: boolean
+  /** CPU cores; empty uses the service default. */
+  cpus: string
+  /** Memory in GB; empty uses the service default. */
+  memoryGb: string
 }
 
 /** `KEY=value` lines to an object; returns the first bad line instead when one has no valid name. */
@@ -154,5 +184,12 @@ export function templateBody(form: TemplateForm, fields: string[]): { body: Omit
     if (Object.keys(env).length > 0) body.env = env as Record<string, string>
   }
   if (has('network') && !form.network) body.network = { access: 'disabled' }
+  if (has('resources')) {
+    const cpus = form.cpus.trim() === '' ? undefined : Number(form.cpus)
+    const gb = form.memoryGb.trim() === '' ? undefined : Number(form.memoryGb)
+    if (cpus !== undefined && !(cpus >= 0.1 && cpus <= 64)) return { error: 'CPU cores go from 0.1 to 64.' }
+    if (gb !== undefined && !(gb >= 0.125 && gb <= 256)) return { error: 'Memory goes from 0.125 to 256 GB.' }
+    if (cpus !== undefined || gb !== undefined) body.resources = { ...(cpus !== undefined ? { cpus } : {}), ...(gb !== undefined ? { memory_mb: Math.round(gb * 1024) } : {}) }
+  }
   return { body }
 }
