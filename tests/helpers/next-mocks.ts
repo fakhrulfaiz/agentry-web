@@ -60,14 +60,17 @@ export function testConfig(overrides: Partial<WebConfig> = {}): WebConfig {
     sessionSecret: SECRET,
     models: [],
     production: false,
+    cookieSecure: 'auto',
     ...overrides,
   }
 }
 
 /** Mutable state the `vi.mock` factories read from. */
-export const mockState: { store: FakeCookieStore; config: WebConfig } = {
+export const mockState: { store: FakeCookieStore; config: WebConfig; headers: Headers } = {
   store: new FakeCookieStore(),
   config: testConfig(),
+  /** The request headers `next/headers` `headers()` returns. */
+  headers: new Headers(),
 }
 
 export function sameOriginRequest(url: string, init: RequestInit & { csrf?: string } = {}): Request {

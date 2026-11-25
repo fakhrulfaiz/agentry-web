@@ -3,7 +3,7 @@ import { FakeCookieStore, mockState, testConfig } from '../helpers/next-mocks'
 
 vi.mock('next/headers', async () => {
   const h = await import('../helpers/next-mocks')
-  return { cookies: async () => h.mockState.store }
+  return { cookies: async () => h.mockState.store, headers: async () => h.mockState.headers }
 })
 vi.mock('@/config/env', async () => {
   const h = await import('../helpers/next-mocks')
@@ -15,6 +15,7 @@ const { getSession, publicIdentity, SESSION_COOKIE } = await import('@/server/se
 beforeEach(() => {
   mockState.store = new FakeCookieStore()
   mockState.config = testConfig()
+  mockState.headers = new Headers()
 })
 
 describe('session cookie', () => {
@@ -69,13 +70,35 @@ describe('session cookie', () => {
     expect(write.options).toMatchObject({ httpOnly: true, sameSite: 'lax', secure: false, path: '/' })
   })
 
-  it('sets Secure in production', async () => {
-    mockState.config = testConfig({ production: true })
+  const secureFlag = async () => {
     const session = await getSession()
     session.csrf = 'x'
     await session.save()
-    const write = mockState.store.writes.find((w) => w.name === SESSION_COOKIE)!
-    expect(write.options).toMatchObject({ httpOnly: true, sameSite: 'lax', secure: true })
+    return mockState.store.writes.find((w) => w.name === SESSION_COOKIE)!.options
+  }
+
+  it('sets Secure in production when the request came over HTTPS', async () => {
+    mockState.config = testConfig({ production: true })
+    mockState.headers = new Headers({ 'x-forwarded-proto': 'https' })
+    expect(await secureFlag()).toMatchObject({ httpOnly: true, sameSite: 'lax', secure: true })
+  })
+
+  it('leaves Secure off in production over plain HTTP, so a LAN address can sign in', async () => {
+    mockState.config = testConfig({ production: true })
+    mockState.headers = new Headers({ 'x-forwarded-proto': 'http' })
+    expect(await secureFlag()).toMatchObject({ httpOnly: true, secure: false })
+  })
+
+  it('takes the first protocol a proxy chain forwards', async () => {
+    mockState.config = testConfig({ production: true })
+    mockState.headers = new Headers({ 'x-forwarded-proto': 'HTTPS, http' })
+    expect(await secureFlag()).toMatchObject({ secure: true })
+  })
+
+  it('always sets Secure in production with AGENTRY_WEB_COOKIE_SECURE=always', async () => {
+    mockState.config = testConfig({ production: true, cookieSecure: 'always' })
+    mockState.headers = new Headers({ 'x-forwarded-proto': 'http' })
+    expect(await secureFlag()).toMatchObject({ secure: true })
   })
 })
 

@@ -23,7 +23,7 @@ Copy `.env.example` to `.env.local` and fill it in. The server validates these v
 
 Behind a reverse proxy, forward `X-Forwarded-Proto` and `X-Forwarded-Host` (the app uses them for same-origin checks and Keycloak redirect URIs), or set Auth.js's `AUTH_URL` to the public URL.
 
-The session cookie is `Secure` whenever `NODE_ENV=production`. Chrome, Edge and Firefox accept it on `http://localhost`, so `scripts/start.sh` works locally in those; Safari drops it, and any other host over plain `http://` needs HTTPS in front.
+In production the session cookie is `Secure` when the request came over HTTPS (the `X-Forwarded-Proto` a proxy sends, or the connection itself), so the app also works over plain `http://` on a LAN address or a container port (browsers drop `Secure` cookies on `http://` except for localhost). Behind a TLS proxy, forward `X-Forwarded-Proto: https`, or set `AGENTRY_WEB_COOKIE_SECURE=always` to make the cookie `Secure` on every request.
 
 ## Running it
 

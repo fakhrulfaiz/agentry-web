@@ -10,6 +10,10 @@ All notable changes to Agentry Web are recorded here.
 
 - `deploy/compose.yaml` and `deploy/agentry-web.env.example`: run `ghcr.io/fakhrulfaiz/agentry-web` with Docker Compose and a settings file. Each GitHub Release attaches both, the compose file pinned to that version. README "Running the published image".
 
+## 2026-11-25 — sign-in over plain HTTP in production
+
+- Fixed: a production deployment opened over plain `http://` on anything but localhost (a LAN address, a server's container port) could not sign in, because the session cookie was always `Secure` and browsers drop it there. It is now `Secure` when the request came over HTTPS (`X-Forwarded-Proto`, which Next also sets from the connection); `AGENTRY_WEB_COOKIE_SECURE=always` (new, default `auto`) keeps it `Secure` on every request for a TLS proxy that does not forward the protocol. Verified on a production build over a LAN address: signs in now, and fails as before with `always`.
+
 ## 2026-11-25 — one compose file for the whole stack
 
 - `deploy/compose.yaml` runs Agentry from the published images in two modes (`COMPOSE_PROFILES` in `.env`): `full` (Agentry Web, the Agentry API from `ghcr.io/fakhrulfaiz/agentry-api`, Postgres 16; the web app uses the API at `http://api:3080`) or web only (against your own API, `AGENTRY_API_URL`). One settings file, `deploy/agentry.env.example` (replaces `agentry-web.env.example`); each service gets only its own values. Agentry Sandbox stays separate (`AGENTRY_SANDBOX_URL` / `_KEY`). Verified both modes locally: full-mode sign-in with the dev key and the web app's API calls through the bundled API, and web-only reaching an API on the host. Releases attach the new file names.

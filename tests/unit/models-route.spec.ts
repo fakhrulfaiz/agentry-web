@@ -3,7 +3,7 @@ import { FakeCookieStore, mockState, testConfig } from '../helpers/next-mocks'
 
 vi.mock('next/headers', async () => {
   const h = await import('../helpers/next-mocks')
-  return { cookies: async () => h.mockState.store }
+  return { cookies: async () => h.mockState.store, headers: async () => h.mockState.headers }
 })
 vi.mock('@/config/env', async () => {
   const h = await import('../helpers/next-mocks')

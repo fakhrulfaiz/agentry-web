@@ -38,7 +38,15 @@ describe('loadConfig', () => {
       sessionSecret: SECRET,
       models: [],
       production: false,
+      cookieSecure: 'auto',
     })
+  })
+
+  it('reads AGENTRY_WEB_COOKIE_SECURE (auto by default, always) and rejects anything else', () => {
+    expect(loadConfig({ ...apikeyEnv, AGENTRY_WEB_COOKIE_SECURE: 'always' }).cookieSecure).toBe('always')
+    expect(loadConfig({ ...apikeyEnv, AGENTRY_WEB_COOKIE_SECURE: ' ' }).cookieSecure).toBe('auto')
+    const err = configError({ ...apikeyEnv, AGENTRY_WEB_COOKIE_SECURE: 'never' })
+    expect(err).toMatchObject({ code: 'invalid', variable: 'AGENTRY_WEB_COOKIE_SECURE' })
   })
 
   it('accepts a valid keycloak env', () => {
