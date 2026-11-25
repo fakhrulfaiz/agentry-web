@@ -84,6 +84,7 @@ Cowork capabilities beyond F1. Backend pieces live in `~/code/dsh-agents-api` (m
    - Done: model and reasoning effort on follow-up messages (`model`, `reasoning.effort` on `agent.session.input.message`) reach the running agent; verified against the live backend and enabled in the open-chat composer (a refused change answers 409 `session_setting_not_live`). There is still no way to clear a stored effort back to the agent's default, so Auto is offered only while none is stored.
    - An unknown `model` on `agent.session.input.message` is accepted (200), stored and queued; the turn then fails at the provider ("supported API model names are …") instead of the documented 409 `session_setting_not_live` (seen live 2026-11-09; an unsupported effort does answer 409). The composer only offers configured models, so this needs a hand-made request or a stale model list to hit.
 7. **Owner-filtered schedule tools:** `schedule_list/view/edit` see every Host task; filter by owner (upstream DSH change or replacement tool) before multi-user containers. (Backend AGENTS.md item 6.)
+8. **External coding-agent subagents (Codex, Claude Code, ACP).** Plan written 2026-11-26: `docs/superpowers/plans/2026-11-26-external-coding-agent-subagents.md` (DSH already ships the providers; they run through the `subprocess` service, so in a sandbox chat they run inside the sandbox; the open work is mounting them, per-agent choice, per-owner sealed API keys, a "Coding agents" tab on the Agents page, and a spike first).
 
 ## Astryx conventions (installed by `pnpm exec astryx init`)
 
