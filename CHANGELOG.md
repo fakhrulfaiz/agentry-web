@@ -12,6 +12,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## 2026-11-25 — sign-in over plain HTTP in production
 
+- `deploy/compose.yaml`: in full mode the web container starts once the API is healthy (`depends_on` with `required: false`, so web-only mode is unaffected). With the API's `/health` now waiting for its database (dsh-agents-api `976bab2`), sign-in no longer races the API's start; verified order postgres → api (first `/health` 503 `starting`) → web.
 - Fixed: a production deployment opened over plain `http://` on anything but localhost (a LAN address, a server's container port) could not sign in, because the session cookie was always `Secure` and browsers drop it there. It is now `Secure` when the request came over HTTPS (`X-Forwarded-Proto`, which Next also sets from the connection); `AGENTRY_WEB_COOKIE_SECURE=always` (new, default `auto`) keeps it `Secure` on every request for a TLS proxy that does not forward the protocol. Verified on a production build over a LAN address: signs in now, and fails as before with `always`.
 
 ## 2026-11-25 — one compose file for the whole stack

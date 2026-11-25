@@ -18,6 +18,12 @@ services:
   web:
     image: ghcr.io/fakhrulfaiz/agentry-web:${AGENTRY_WEB_TAG:-latest}
     restart: unless-stopped
+    # Full stack: start once the API is healthy (its /health waits for its database).
+    # Web only: there is no api service, and `required: false` skips the wait.
+    depends_on:
+      api:
+        condition: service_healthy
+        required: false
     ports:
       - "${AGENTRY_WEB_PORT:-3000}:3000"
     environment:
