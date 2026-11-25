@@ -34,6 +34,16 @@ scripts/dev.sh image    # build the Docker image, export it to dist/agentry-web-
 scripts/start.sh        # deploy: load the newest dist/*.tar and run it as container agentry-web
 ```
 
+**Branches and CI.** Work lands on `develop`; `main` changes only through a `develop` → `main` pull request. GitHub Actions (`.github/workflows/`):
+
+| When | What runs |
+|---|---|
+| Push to `develop` | `ci.yml`: `next typegen`, typecheck, Vitest |
+| Pull request to `main` | `ci.yml`: the same, then Playwright e2e (mock API) and a Docker build check |
+| Merge to `main` | `publish.yml`: builds the image and pushes `ghcr.io/<owner>/agentry-web:<version>-<sha>`, `:<version>` and `:latest` |
+
+`scripts/start.sh` uses a local `dist/*.tar` first, then pulls `ghcr.io/<owner>/agentry-web:latest` (`--ghcr` pulls even when a tar is here; `AGENTRY_WEB_GHCR_IMAGE` picks another tag). The package is private like the repo: the machine needs `docker login ghcr.io` with a token that has `read:packages`.
+
 **Deploying from the image.** `scripts/dev.sh image` builds the `Dockerfile` (Next's standalone server on `node:24.19.0-bookworm-slim`, no configuration baked in) and saves it as `dist/agentry-web-<version>-<commit>[-dirty].tar`. `scripts/start.sh` takes the newest tar there (or `AGENTRY_WEB_IMAGE_TAR`), loads it unless that tag is already loaded, and replaces the container `agentry-web` (`--restart unless-stopped`, port `PORT`, default 3000). On another machine, copy the tar into `dist/` next to the scripts and the env file; Docker is all it needs (no Node or pnpm).
 
 - The container's environment comes from `.env` then `.env.local` (quotes stripped; `PORT`, `NODE_ENV` and the dist/data dir keys left out). An `AGENTRY_API_URL` on `localhost`/`127.0.0.1` is rewritten to `host.docker.internal` (mapped to the Docker host), so the container reaches an API running on the host. A Keycloak issuer on `localhost` is not rewritten: the browser uses it too.

@@ -360,3 +360,36 @@ run_container() {
   docker logs --tail 30 "$CONTAINER_NAME" >&2 || true
   exit 1
 }
+
+# ---------------------------------------------------------------- GHCR
+
+# The published image (CI publishes it on every merge to main): AGENTRY_WEB_GHCR_IMAGE,
+# else ghcr.io/<owner of the git remote>/agentry-web:latest.
+ghcr_image() {
+  if [ -n "${AGENTRY_WEB_GHCR_IMAGE:-}" ]; then printf '%s\n' "$AGENTRY_WEB_GHCR_IMAGE"; return; fi
+  local remote owner
+  remote=$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)
+  owner=$(printf '%s' "$remote" | sed -nE 's#^(https://github\.com/|git@github\.com:)([^/]+)/.*#\2#p' | tr '[:upper:]' '[:lower:]')
+  printf 'ghcr.io/%s/%s:latest\n' "${owner:-fakhrulfaiz}" "$IMAGE_NAME"
+}
+
+# Pulls the published image. Prints the image reference; fails when the pull does.
+pull_ghcr_image() {
+  local ref
+  ref=$(ghcr_image)
+  echo "Pulling $ref ..." >&2
+  local log
+  log=$(mktemp)
+  if ! docker pull "$ref" 2>&1 | tee "$log" >&2; then
+    if grep -q "logon session does not exist" "$log"; then
+      ui_err "Docker Desktop's credential helper lost its Windows session; restart Docker Desktop (or sign in again), then retry."
+    else
+      ui_err "Could not pull $ref (signed in to ghcr.io? \`docker login ghcr.io\`)."
+    fi
+    rm -f "$log"
+    return 1
+  fi
+  rm -f "$log"
+  ui_ok "Pulled $ref" >&2
+  printf '%s\n' "$ref"
+}

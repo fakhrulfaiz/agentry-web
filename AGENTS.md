@@ -54,6 +54,7 @@ Progress is tracked in the plan's ledger under `.superpowers/sdd/` (git-ignored)
 
 - The `pnpm` on the default WSL PATH is a Windows binary. Prefix shells with `export PATH=$HOME/.nvm/versions/node/v24.19.0/bin:$PATH` (Node 24, pnpm 11).
 - Launchers (README "Running it"): `scripts/dev.sh` (`next dev`), `scripts/dev.sh image` (Docker image → `dist/agentry-web-<tag>.tar`), `scripts/start.sh` (deploys the newest tar as container `agentry-web`; `--no-docker` for `next start`). All check that the Agentry API is up first.
+- Branches: work on `develop`; `main` only via a `develop` → `main` PR. CI (`.github/workflows/ci.yml`) runs typecheck + Vitest on pushes to `develop`, plus e2e and a Docker build on PRs to `main`; `publish.yml` pushes the image to GHCR on merge to `main`.
 - `pnpm dev` · `pnpm build` · `pnpm start` · `pnpm typecheck` · `pnpm test` (Vitest) · `pnpm test:e2e` (Playwright).
 - pnpm 11 blocks dependency build scripts; decisions live in `pnpm-workspace.yaml` (`allowBuilds`).
 

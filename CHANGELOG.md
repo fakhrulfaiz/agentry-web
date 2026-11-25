@@ -6,6 +6,11 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 2026-11-25 — CI and GHCR
+
+- GitHub Actions: `ci.yml` (push to `develop`: typecheck + Vitest; pull request to `main`: also Playwright e2e and a Docker build check) and `publish.yml` (merge to `main`: image to `ghcr.io/<owner>/agentry-web` as `<version>-<sha>`, `<version>`, `latest`).
+- `scripts/start.sh` pulls the GHCR image when no local tar is there (`--ghcr` to prefer it), and names Docker Desktop's lost credential session when that is why a pull fails.
+
 ## 2026-11-25 — Docker image deployment
 
 - `Dockerfile` (Next standalone server, no configuration baked in) and `scripts/dev.sh image`, which builds it and exports `dist/agentry-web-<version>-<commit>[-dirty].tar`. `scripts/start.sh` now deploys the newest tar: loads it unless already loaded and replaces the container `agentry-web` (restart unless-stopped; env from `.env`/`.env.local` with a loopback `AGENTRY_API_URL` pointed at `host.docker.internal`; `.data/` mounted for connector keys). Without a tar it offers to build one or to run without Docker (`--no-docker`). `output: 'standalone'` is set only for the image build (`AGENTRY_WEB_STANDALONE`).
