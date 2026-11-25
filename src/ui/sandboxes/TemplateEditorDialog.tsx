@@ -14,6 +14,7 @@ import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { StackItem } from '@astryxdesign/core/Layout'
+import { Selector } from '@astryxdesign/core/Selector'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Text } from '@astryxdesign/core/Text'
@@ -27,7 +28,7 @@ import { api, ApiError, isSignedOut } from '@/api/client'
 import type { SandboxProvider } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { fieldWords, formatBytes, providerTitle, splitList, templateBody, toBase64, type TemplateForm } from './format'
-import { richestProvider, RunsOnPicker } from './RunsOnPicker'
+import { defaultPlace, richestProvider, RunsOnPicker } from './RunsOnPicker'
 
 const MAX_STARTER_FILE = 1024 * 1024
 const MAX_STARTER_FILES = 20
@@ -40,7 +41,7 @@ const SECTIONS: { value: Section; label: string; fields: string[]; intro: string
   { value: 'limits', label: 'Internet and limits', fields: ['network', 'resources'], intro: 'Private networks are always blocked. Empty limits use the service defaults.' },
 ]
 
-const EMPTY: TemplateForm = { name: '', provider: '', image: '', system: '', python: '', npm: '', setup: '', env: '', network: true, cpus: '', memoryGb: '' }
+const EMPTY: TemplateForm = { name: '', provider: '', image: '', system: '', python: '', npm: '', setup: '', env: '', network: true, cpus: '', memoryGb: '', place: '', gpus: '' }
 
 const WIDE = '@media (min-width: 900px)'
 const ui = stylex.create({
@@ -136,7 +137,8 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
   // Each opening starts clean, on the provider that applies the most settings.
   useEffect(() => {
     if (!isOpen) return
-    setForm({ ...EMPTY, provider: richestProvider(providers) })
+    const provider = richestProvider(providers)
+    setForm({ ...EMPTY, provider, place: defaultPlace(providers.find((p) => p.name === provider)) })
     setStarters([])
     setSection('software')
     setError(null)
@@ -149,6 +151,8 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
   const current = sections.find((s) => s.value === section) ?? sections[0]
   const unsupported = SECTIONS.flatMap((s) => s.fields).filter((f) => !has(f))
   const defaultImage = target?.default_image
+  const chosenPlace = target?.places?.find((pl) => pl.id === form.place)
+  const gpuCount = chosenPlace?.gpus?.count ?? 0
 
   function pick(value: File | File[] | null) {
     const files = value === null ? [] : Array.isArray(value) ? value : [value]
@@ -193,7 +197,13 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
         <div {...stylex.props(ui.body)}>
           <section aria-label="Template" {...stylex.props(ui.side)}>
             <TextInput label="Name" value={form.name} onChange={set('name')} placeholder="Python data work" isRequired />
-            <RunsOnPicker providers={providers} value={form.provider} onChange={(provider) => { set('provider')(provider); setSection('software') }} />
+            <RunsOnPicker
+              providers={providers}
+              value={form.provider}
+              place={form.place}
+              onChange={(provider) => { setForm((f) => ({ ...f, provider, place: defaultPlace(providers.find((p) => p.name === provider)), gpus: '' })); setSection('software') }}
+              onPlaceChange={(provider, place) => { setForm((f) => ({ ...f, provider, place, gpus: '' })); setSection('software') }}
+            />
             <VStack gap={2}>
               <Text weight="medium">What it sets up</Text>
               <VStack gap={1.5} role="list" aria-label="What it sets up">
@@ -281,6 +291,17 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
                       </HStack>
                     )}
                   </>
+                )}
+
+                {current?.value === 'limits' && has('gpus') && gpuCount > 0 && (
+                  <Selector
+                    label="GPUs"
+                    isOptional
+                    description={`${chosenPlace?.name ?? 'This place'} has ${gpuCount}. They are reserved for the environment while it runs.`}
+                    options={[...Array.from({ length: gpuCount + 1 }, (_, n) => ({ value: String(n), label: String(n) })), { value: 'all', label: 'All' }]}
+                    value={form.gpus || '0'}
+                    onChange={set('gpus')}
+                  />
                 )}
 
                 {unsupported.length > 0 && target && (

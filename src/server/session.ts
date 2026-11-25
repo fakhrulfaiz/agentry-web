@@ -1,7 +1,7 @@
 import 'server-only'
 import { getIronSession, type IronSession, type SessionOptions } from 'iron-session'
-import { cookies } from 'next/headers'
-import { getConfig } from '@/config/env'
+import { cookies, headers } from 'next/headers'
+import { getConfig, type WebConfig } from '@/config/env'
 
 export const SESSION_COOKIE = 'agentry_session'
 
@@ -23,7 +23,23 @@ export interface SessionData {
   csrf: string
 }
 
-export function sessionOptions(): SessionOptions {
+/**
+ * Whether the session cookie is `Secure`. Outside production never (plain
+ * `next dev`). In production with `AGENTRY_WEB_COOKIE_SECURE=auto` (default)
+ * only when the request came over HTTPS, so a deployment reached over plain
+ * HTTP (a LAN address, a container port) can still sign in, since browsers drop
+ * `Secure` cookies on `http://` except for localhost; `always` sets it on every
+ * request, for a TLS proxy that does not forward the protocol.
+ * @param forwardedProto - the request's `X-Forwarded-Proto` (a proxy's, else
+ *   the one Next sets from the connection); the first value counts.
+ */
+export function cookieIsSecure(config: Pick<WebConfig, 'production' | 'cookieSecure'>, forwardedProto: string | null): boolean {
+  if (!config.production) return false
+  if (config.cookieSecure === 'always') return true
+  return forwardedProto?.split(',')[0]?.trim().toLowerCase() === 'https'
+}
+
+export function sessionOptions(secure: boolean): SessionOptions {
   const config = getConfig()
   return {
     cookieName: SESSION_COOKIE,
@@ -33,7 +49,7 @@ export function sessionOptions(): SessionOptions {
     cookieOptions: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: config.production,
+      secure,
       path: '/',
     },
   }
@@ -47,7 +63,8 @@ export async function getSession(): Promise<IronSession<SessionData>> {
   // Read cookies first: during a build-time prerender this bails out to dynamic
   // rendering before configuration (absent at build) is touched.
   const store = await cookies()
-  return getIronSession<SessionData>(store, sessionOptions())
+  const proto = (await headers()).get('x-forwarded-proto')
+  return getIronSession<SessionData>(store, sessionOptions(cookieIsSecure(getConfig(), proto)))
 }
 
 /**

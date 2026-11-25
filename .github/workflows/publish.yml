@@ -3,7 +3,8 @@
 # is never published again: the run skips with a warning. Otherwise it:
 #   1. pushes ghcr.io/<owner>/agentry-web:<version>-<sha>, :<version> and :latest
 #   2. tags the commit v<version> and creates the GitHub Release (notes: the "## <version>"
-#      section of CHANGELOG.md, else generated from the commits)
+#      section of CHANGELOG.md, else generated from the commits), with deploy/compose.yaml
+#      (the web tag pinned to <version>) and deploy/agentry.env.example attached
 # Deploy with scripts/start.sh (pulls :latest when no local tar), or pin a version with
 # AGENTRY_WEB_GHCR_IMAGE=ghcr.io/<owner>/agentry-web:<version> scripts/start.sh --ghcr.
 name: Publish release
@@ -86,5 +87,10 @@ jobs:
           else
             notes=(--generate-notes --notes "$image_line")
           fi
-          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" "${notes[@]}"
+          # The compose file pinned to this version, and the settings template, for running
+          # the image without the repository (see deploy/).
+          sed "s/AGENTRY_WEB_TAG:-latest}/AGENTRY_WEB_TAG:-$VERSION}/" deploy/compose.yaml > compose.yaml
+          grep -q "AGENTRY_WEB_TAG:-$VERSION}" compose.yaml
+          cp deploy/agentry.env.example agentry.env.example
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" "${notes[@]}" compose.yaml agentry.env.example
           echo "Released v$VERSION: image and GitHub Release." >> "$GITHUB_STEP_SUMMARY"

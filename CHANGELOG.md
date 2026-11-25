@@ -6,6 +6,39 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 0.3.0 — 2026-11-25
+
+Everything since 0.1.0 (0.2.0 was prepared but never released).
+
+- **Sandbox places:** "Runs on" lists every Agentry Sandbox place — Docker on this server, Docker over SSH, Machine over SSH (no isolation), E2B (hosted) — with availability, the reason when one is off, and GPU count; the default place is preselected. Templates save a place and a GPUs choice; new environments send the place; the environment page shows where it runs and its GPUs; Reset is hidden on places that can't reset, and warns that it deletes all files where files can't be kept.
+- **Run from the published images:** one compose file (`deploy/compose.yaml`, attached to the release) for web only or the full stack (`COMPOSE_PROFILES=full`: Agentry Web, the Agentry API, Postgres), with one settings file (`agentry.env.example`); in full mode the web app waits until the API is healthy.
+- **Fixed:** signing in over plain `http://` on a LAN address or a server's port failed in production. The session cookie is now `Secure` when the request came over HTTPS; `AGENTRY_WEB_COOKIE_SECURE=always` forces it behind a TLS proxy that does not send `X-Forwarded-Proto`.
+
+## 2026-11-25 — run the published image without the repository
+
+- `deploy/compose.yaml` and `deploy/agentry-web.env.example`: run `ghcr.io/fakhrulfaiz/agentry-web` with Docker Compose and a settings file. Each GitHub Release attaches both, the compose file pinned to that version. README "Running the published image".
+
+## 2026-11-25 — sandbox places and GPUs
+
+- Sandboxes: "Runs on" lists each Agentry Sandbox place under Isolated sandbox with its kind (Docker on this server, Docker over SSH), availability, why it is off, and its GPU count; the default place is preselected. The template editor saves the place and, for a place with GPUs, a GPUs choice (0 up to its count, or All). New environment sends the chosen place. The environment page shows "Runs on <place>" and its GPUs, and hides Reset when the place cannot reset. The mock API offers two places, one with 2 GPUs.
+- Sandboxes: "Runs on" names the new SSH machine place kind "Machine over SSH (no isolation)"; such a place has no Reset (it cannot reset). The mock API offers a third place of that kind.
+- Sandboxes: "Runs on" names the new E2B place kind "E2B (hosted)". The mock API offers a fourth place of that kind.
+- Sandboxes: Reset on a place that cannot keep files across a reset (E2B, `keepFilesOnReset` false) shows "Reset deletes all files in this environment." with no keep-files switch, and sends `keep_workspace: false`.
+
+## 2026-11-25 — compose file and sign-in fix (prepared as 0.2.0; released in 0.3.0)
+
+- One compose file (`deploy/compose.yaml`, attached to the release) runs Agentry from the published images: web only against your own API, or the full stack (`COMPOSE_PROFILES=full`: Agentry Web, the Agentry API and Postgres), with one settings file (`agentry.env.example`). In full mode the web app waits until the API is healthy.
+- Fixed: signing in over plain `http://` on a LAN address or a server's port failed in production (the session cookie was always `Secure`). It is now `Secure` when the request came over HTTPS; `AGENTRY_WEB_COOKIE_SECURE=always` forces it behind a TLS proxy that does not send `X-Forwarded-Proto`.
+
+## 2026-11-25 — sign-in over plain HTTP in production
+
+- `deploy/compose.yaml`: in full mode the web container starts once the API is healthy (`depends_on` with `required: false`, so web-only mode is unaffected). With the API's `/health` now waiting for its database (dsh-agents-api `976bab2`), sign-in no longer races the API's start; verified order postgres → api (first `/health` 503 `starting`) → web.
+- Fixed: a production deployment opened over plain `http://` on anything but localhost (a LAN address, a server's container port) could not sign in, because the session cookie was always `Secure` and browsers drop it there. It is now `Secure` when the request came over HTTPS (`X-Forwarded-Proto`, which Next also sets from the connection); `AGENTRY_WEB_COOKIE_SECURE=always` (new, default `auto`) keeps it `Secure` on every request for a TLS proxy that does not forward the protocol. Verified on a production build over a LAN address: signs in now, and fails as before with `always`.
+
+## 2026-11-25 — one compose file for the whole stack
+
+- `deploy/compose.yaml` runs Agentry from the published images in two modes (`COMPOSE_PROFILES` in `.env`): `full` (Agentry Web, the Agentry API from `ghcr.io/fakhrulfaiz/agentry-api`, Postgres 16; the web app uses the API at `http://api:3080`) or web only (against your own API, `AGENTRY_API_URL`). One settings file, `deploy/agentry.env.example` (replaces `agentry-web.env.example`); each service gets only its own values. Agentry Sandbox stays separate (`AGENTRY_SANDBOX_URL` / `_KEY`). Verified both modes locally: full-mode sign-in with the dev key and the web app's API calls through the bundled API, and web-only reaching an API on the host. Releases attach the new file names.
+
 ## 0.1.0 — 2026-11-25
 
 First tagged release: the claude.ai-style Agentry frontend (sign-in, chat with live reasoning and tool cards, trajectory view, agents, scheduled tasks, artifacts, plugins and skills, sandboxes), with faster navigation, user message actions, the launchers, the Docker image and CI described in the entries below.

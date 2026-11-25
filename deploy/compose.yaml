@@ -1,0 +1,92 @@
+# Agentry from the published images: Agentry Web, and optionally the Agentry API with Postgres.
+#
+#   cp agentry.env.example .env      # fill it in; Compose reads .env
+#   docker compose up -d             # http://localhost:3000
+#
+# Two ways to run it, chosen by COMPOSE_PROFILES in .env:
+#   (empty)   web only: Agentry Web against an Agentry API you run yourself (AGENTRY_API_URL)
+#   full      also the Agentry API (ghcr.io/fakhrulfaiz/agentry-api) and its Postgres; the web
+#             app talks to it at http://api:3080 unless AGENTRY_API_URL says otherwise
+# Agentry Sandbox is not part of this file: run it yourself and set AGENTRY_SANDBOX_URL / _KEY.
+#
+# Update: change the tags in .env (or the defaults below), then `docker compose pull && docker compose up -d`.
+# Logs: `docker compose logs -f web` (or api, postgres). Each Agentry Web release attaches this
+# file with the web tag pinned.
+name: agentry
+
+services:
+  web:
+    image: ghcr.io/fakhrulfaiz/agentry-web:${AGENTRY_WEB_TAG:-latest}
+    restart: unless-stopped
+    # Full stack: start once the API is healthy (its /health waits for its database).
+    # Web only: there is no api service, and `required: false` skips the wait.
+    depends_on:
+      api:
+        condition: service_healthy
+        required: false
+    ports:
+      - "${AGENTRY_WEB_PORT:-3000}:3000"
+    environment:
+      AGENTRY_WEB_AUTH: ${AGENTRY_WEB_AUTH:-apikey}
+      # Full stack: the bundled API. Web only: your API (from a container, a service on this
+      # machine is http://host.docker.internal:<port>).
+      AGENTRY_API_URL: ${AGENTRY_API_URL:-http://api:3080}
+      AGENTRY_WEB_SESSION_SECRET: ${AGENTRY_WEB_SESSION_SECRET:?set AGENTRY_WEB_SESSION_SECRET in .env (openssl rand -base64 32)}
+      AGENTRY_WEB_COOKIE_SECURE: ${AGENTRY_WEB_COOKIE_SECURE:-}
+      AGENTRY_WEB_MODELS: ${AGENTRY_WEB_MODELS:-}
+      AGENTRY_WEB_CONNECTORS_FEATURED: ${AGENTRY_WEB_CONNECTORS_FEATURED:-}
+      AGENTRY_WEB_KEYCLOAK_ISSUER: ${AGENTRY_WEB_KEYCLOAK_ISSUER:-}
+      AGENTRY_WEB_KEYCLOAK_CLIENT_ID: ${AGENTRY_WEB_KEYCLOAK_CLIENT_ID:-}
+      AGENTRY_WEB_KEYCLOAK_CLIENT_SECRET: ${AGENTRY_WEB_KEYCLOAK_CLIENT_SECRET:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # The encrypted connector key store.
+    volumes:
+      - web-data:/data
+
+  api:
+    profiles: [full]
+    image: ghcr.io/fakhrulfaiz/agentry-api:${AGENTRY_API_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AGENTRY_DEV_KEY: ${AGENTRY_DEV_KEY:-}
+      # The bundled Postgres: the API's entrypoint builds the connection from these parts.
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      AGENTRY_SANDBOX_URL: ${AGENTRY_SANDBOX_URL:-}
+      AGENTRY_SANDBOX_KEY: ${AGENTRY_SANDBOX_KEY:-}
+      AGENTRY_PUBLIC_URL: ${AGENTRY_PUBLIC_URL:-}
+    # Not published: the web app reaches it on the compose network. To use the API from this
+    # machine too, add a compose.override.yaml with:
+    #   services: { api: { ports: ["127.0.0.1:3080:3080"] } }
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # DSH home (profile, settings, Session logs), workspaces and uploads.
+    volumes:
+      - api-data:/data
+
+  postgres:
+    profiles: [full]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentry
+      POSTGRES_DB: agentry
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentry -d agentry"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  web-data:
+  api-data:
+  postgres-data:

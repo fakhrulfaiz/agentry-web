@@ -23,7 +23,7 @@ Copy `.env.example` to `.env.local` and fill it in. The server validates these v
 
 Behind a reverse proxy, forward `X-Forwarded-Proto` and `X-Forwarded-Host` (the app uses them for same-origin checks and Keycloak redirect URIs), or set Auth.js's `AUTH_URL` to the public URL.
 
-The session cookie is `Secure` whenever `NODE_ENV=production`. Chrome, Edge and Firefox accept it on `http://localhost`, so `scripts/start.sh` works locally in those; Safari drops it, and any other host over plain `http://` needs HTTPS in front.
+In production the session cookie is `Secure` when the request came over HTTPS (the `X-Forwarded-Proto` a proxy sends, or the connection itself), so the app also works over plain `http://` on a LAN address or a container port (browsers drop `Secure` cookies on `http://` except for localhost). Behind a TLS proxy, forward `X-Forwarded-Proto: https`, or set `AGENTRY_WEB_COOKIE_SECURE=always` to make the cookie `Secure` on every request.
 
 ## Running it
 
@@ -33,6 +33,27 @@ scripts/dev.sh          # next dev with hot reload (while changing the code)
 scripts/dev.sh image    # build the Docker image, export it to dist/agentry-web-<tag>.tar
 scripts/start.sh        # deploy: load the newest dist/*.tar and run it as container agentry-web
 ```
+
+**Running from the published images (no repository).** `deploy/compose.yaml` runs Agentry from GHCR; each Agentry Web release attaches it (web tag pinned) with `agentry.env.example`.
+
+```bash
+cp agentry.env.example .env      # fill it in
+docker login ghcr.io             # only for private packages
+docker compose up -d             # http://localhost:3000
+```
+
+Two modes, chosen by `COMPOSE_PROFILES` in `.env`:
+
+| `COMPOSE_PROFILES` | Runs | You set |
+|---|---|---|
+| `full` | Agentry Web, the Agentry API (`ghcr.io/fakhrulfaiz/agentry-api`) and Postgres 16; the web app uses the API at `http://api:3080` | `AGENTRY_WEB_SESSION_SECRET`, `POSTGRES_PASSWORD`, `AGENTRY_DEV_KEY` (users sign in with it), `DEEPSEEK_API_KEY` |
+| empty | Agentry Web only | `AGENTRY_WEB_SESSION_SECRET` and `AGENTRY_API_URL` (your API; from the container, a service on this machine is `http://host.docker.internal:<port>`) |
+
+- Agentry Sandbox is not in the file (no published service image yet): run it yourself and set `AGENTRY_SANDBOX_URL` / `AGENTRY_SANDBOX_KEY` (full mode passes them to the API).
+- Each service gets only its own settings (no shared env file inside the containers). Docker reads `.env` values literally: no quotes.
+- The API is not published on the host in full mode (the web app reaches it on the compose network); `compose.yaml` shows the override that publishes it on `127.0.0.1:3080`.
+- Keep the session secret (changing it signs everyone out) and the volumes (`web-data`: connector key; `api-data`: DSH home, workspaces, uploads; `postgres-data`).
+- Update: set `AGENTRY_WEB_TAG` / `AGENTRY_API_TAG` (or use a newer release's file), then `docker compose pull && docker compose up -d`.
 
 **Branches and CI.** Work lands on `develop`; `main` changes only through a `develop` → `main` pull request. GitHub Actions (`.github/workflows/`):
 

@@ -11,7 +11,14 @@ export interface WebConfig {
   /** Configured model ids from `AGENTRY_WEB_MODELS`; the first is the default. Empty when unset. */
   models: string[]
   production: boolean
+  /**
+   * When the session cookie is `Secure` in production (`AGENTRY_WEB_COOKIE_SECURE`):
+   * `auto` (default) when the request came over HTTPS, `always` on every request.
+   */
+  cookieSecure: CookieSecure
 }
+
+export type CookieSecure = 'auto' | 'always'
 
 export class ConfigError extends Error {
   readonly code: 'missing' | 'invalid'
@@ -30,6 +37,7 @@ export class ConfigError extends Error {
 }
 
 const AUTH_MODES: readonly AuthMode[] = ['keycloak', 'apikey']
+const COOKIE_SECURE: readonly CookieSecure[] = ['auto', 'always']
 const MIN_SECRET_BYTES = 32
 
 function required(env: NodeJS.ProcessEnv, variable: string): string {
@@ -59,6 +67,14 @@ function list(value: string | undefined): string[] {
     .filter((entry) => entry !== '')
 }
 
+function cookieSecure(env: NodeJS.ProcessEnv): CookieSecure {
+  const value = env.AGENTRY_WEB_COOKIE_SECURE?.trim() || 'auto'
+  if (!COOKIE_SECURE.includes(value as CookieSecure)) {
+    throw new ConfigError('invalid', 'AGENTRY_WEB_COOKIE_SECURE', `expected one of ${COOKIE_SECURE.join(', ')}`)
+  }
+  return value as CookieSecure
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv): WebConfig {
   const auth = required(env, 'AGENTRY_WEB_AUTH')
   if (!AUTH_MODES.includes(auth as AuthMode)) {
@@ -79,6 +95,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): WebConfig {
     sessionSecret,
     models: list(env.AGENTRY_WEB_MODELS),
     production: env.NODE_ENV === 'production',
+    cookieSecure: cookieSecure(env),
   }
 
   if (config.auth === 'keycloak') {

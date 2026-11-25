@@ -43,7 +43,7 @@ Progress is tracked in the plan's ledger under `.superpowers/sdd/` (git-ignored)
 ## Global Constraints (from the F1 plan)
 
 - Browser JavaScript, storage, and requests to the web app never contain an Agentry access token, refresh token, or API key.
-- Cookie `agentry_session`: `httpOnly`, `SameSite=Lax`, `Secure` when `NODE_ENV=production`; secret `AGENTRY_WEB_SESSION_SECRET` ≥ 32 bytes, required at startup.
+- Cookie `agentry_session`: `httpOnly`, `SameSite=Lax`, `Secure` in production when the request came over HTTPS (`X-Forwarded-Proto`; `AGENTRY_WEB_COOKIE_SECURE=always` forces it, decided 2026-11-25 so plain-HTTP deployments on a LAN address can sign in); secret `AGENTRY_WEB_SESSION_SECRET` ≥ 32 bytes, required at startup.
 - `AGENTRY_WEB_AUTH` ∈ `keycloak` | `apikey`; keycloak mode requires `AGENTRY_WEB_KEYCLOAK_ISSUER`, `AGENTRY_WEB_KEYCLOAK_CLIENT_ID`, `AGENTRY_WEB_KEYCLOAK_CLIENT_SECRET`; `AGENTRY_API_URL` is required and server-only. Missing or invalid values fail startup with a named error (`ConfigError`).
 - Proxy allow-list only (spec §5); other paths answer `404`. State-changing calls need same-origin plus an `x-agentry-csrf` header matching the session's CSRF token.
 - Reconnect backoff: 1s doubling to a 30s cap; always resend `Last-Event-ID`.

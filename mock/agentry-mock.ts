@@ -838,6 +838,19 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return void res.end(file.body)
     }
   }
+  if (b === 'environments' && c === 'providers' && parts.length === 3 && method === 'GET') {
+    const places = [
+      { id: 'local-docker', name: 'This server', kind: 'docker', default: true, available: true, capabilities: { reset: true, isolated: true, gpu: false } },
+      { id: 'gpu-box', name: 'GPU box', kind: 'docker-ssh', default: false, available: true, gpus: { count: 2, models: ['NVIDIA A100', 'NVIDIA A100'] }, capabilities: { reset: false, isolated: true, gpu: true } },
+      { id: 'lab-pc', name: 'Lab PC', kind: 'ssh-machine', default: false, available: true, capabilities: { reset: false, isolated: false, gpu: false } },
+      { id: 'e2b', name: 'E2B', kind: 'e2b', default: false, available: true, capabilities: { reset: true, isolated: true, gpu: false } },
+    ]
+    const providers = [
+      { object: 'sandbox.provider', name: 'local', default: false, available: true, capabilities: { templateFields: ['files'], files: true, exec: true } },
+      { object: 'sandbox.provider', name: 'sandbox', default: true, available: true, version: '0.2.0', capabilities: { templateFields: ['image', 'packages', 'setup_commands', 'env', 'network', 'files', 'resources', 'gpus'], files: true, exec: true }, places },
+    ]
+    return send(res, 200, { object: 'list', data: providers, has_more: false })
+  }
   if (b === 'artifacts' && method === 'GET') {
     if (parts.length === 2) {
       const rows = ARTIFACTS.map((x) => x.meta as { id: string })

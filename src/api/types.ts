@@ -623,6 +623,21 @@ export interface SandboxProvider {
   version?: string
   /** Agentry Sandbox: the image used when a template names none, and what it ships. */
   default_image?: { name: string; runtimes?: Record<string, string>; python_packages?: string[]; tools?: string[] }
+  /** Agentry Sandbox: the places a sandbox can run, default first. */
+  places?: SandboxPlace[]
+}
+
+/** One place an Agentry Sandbox can run (a Docker host). */
+export interface SandboxPlace {
+  id: string
+  name: string
+  kind: string
+  default: boolean
+  available: boolean
+  /** Why it is unavailable. */
+  reason?: string
+  gpus?: { count: number; models: string[] }
+  capabilities: { reset: boolean; keepFilesOnReset?: boolean; isolated: boolean; gpu: boolean }
 }
 
 /** An environment template (`agent.environment.template`). */
@@ -640,6 +655,9 @@ export interface SandboxTemplate {
   setup_commands?: Array<{ command: string }>
   env?: Record<string, string>
   resources?: { cpus?: number; memory_mb?: number }
+  /** Agentry Sandbox: the place it runs, and how many GPUs (or all). */
+  place?: string
+  gpus?: number | 'all'
   /** Fields the provider cannot apply; provisioning fails while any remain. */
   unsupported_fields: string[]
 }
@@ -664,6 +682,8 @@ export interface SandboxEnvironment {
 export interface SandboxState {
   state: 'provisioning' | 'running' | 'stopped' | 'failed' | 'deleting' | 'gone' | 'unknown'
   image?: string
+  place?: string
+  gpus?: number | 'all'
   started_at?: number | null
   last_used_at?: number | null
 }
@@ -697,6 +717,8 @@ export interface CreateTemplateParams {
   env?: Record<string, string>
   network?: { access: 'enabled' | 'disabled' }
   resources?: { cpus?: number; memory_mb?: number }
+  place?: string
+  gpus?: number | 'all'
 }
 
 /** The script runtimes the host bundles for every agent (`GET /agents/environments/runtimes`). */
