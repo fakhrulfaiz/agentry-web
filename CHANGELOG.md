@@ -6,6 +6,10 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 2026-11-25 — Docker image deployment
+
+- `Dockerfile` (Next standalone server, no configuration baked in) and `scripts/dev.sh image`, which builds it and exports `dist/agentry-web-<version>-<commit>[-dirty].tar`. `scripts/start.sh` now deploys the newest tar: loads it unless already loaded and replaces the container `agentry-web` (restart unless-stopped; env from `.env`/`.env.local` with a loopback `AGENTRY_API_URL` pointed at `host.docker.internal`; `.data/` mounted for connector keys). Without a tar it offers to build one or to run without Docker (`--no-docker`). `output: 'standalone'` is set only for the image build (`AGENTRY_WEB_STANDALONE`).
+
 ## 2026-11-25 — launchers
 
 - `scripts/start.sh` (production build + `next start`, rebuilding only when the source changed) and `scripts/dev.sh` (`next dev`). Both check that the Agentry API answers `/health` first and offer to start it in herdr, wait, continue or quit (`NONINTERACTIVE=1`: wait, then fail), and refuse a busy port. Menus use gum 0.17.0 when present (offered into `.tools/bin`), else plain prompts.

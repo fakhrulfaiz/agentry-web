@@ -29,15 +29,24 @@ The session cookie is `Secure` whenever `NODE_ENV=production`. Chrome, Edge and 
 
 ```bash
 pnpm install
-scripts/start.sh  # production build + server, http://localhost:3000 (daily use)
-scripts/dev.sh    # next dev with hot reload (while changing the code)
+scripts/dev.sh          # next dev with hot reload (while changing the code)
+scripts/dev.sh image    # build the Docker image, export it to dist/agentry-web-<tag>.tar
+scripts/start.sh        # deploy: load the newest dist/*.tar and run it as container agentry-web
 ```
 
-Both launchers first check that the Agentry API answers `GET $AGENTRY_API_URL/health` (read from `.env.local`). When it does not, they offer to start it (its own `~/code/dsh-agents-api/scripts/dev.sh`, in the herdr terminal `agentry-api`), wait for it, continue without it, or quit; with `NONINTERACTIVE=1` they wait up to `AGENTRY_API_WAIT_SECONDS` (120) and then fail. They also refuse a port already in use (`PORT`, default 3000).
+**Deploying from the image.** `scripts/dev.sh image` builds the `Dockerfile` (Next's standalone server on `node:24.19.0-bookworm-slim`, no configuration baked in) and saves it as `dist/agentry-web-<version>-<commit>[-dirty].tar`. `scripts/start.sh` takes the newest tar there (or `AGENTRY_WEB_IMAGE_TAR`), loads it unless that tag is already loaded, and replaces the container `agentry-web` (`--restart unless-stopped`, port `PORT`, default 3000). On another machine, copy the tar into `dist/` next to the scripts and the env file; Docker is all it needs (no Node or pnpm).
 
-- `scripts/start.sh` rebuilds only when `app/`, `src/`, the config, the lockfile or the env files changed since the last build (`--rebuild` forces it, `--no-build` skips it). Use it for real use: Next prefetches pages and keeps them in the client cache only in a production build, so `next dev` is several times slower per click and compiles each page on its first visit.
+- The container's environment comes from `.env` then `.env.local` (quotes stripped; `PORT`, `NODE_ENV` and the dist/data dir keys left out). An `AGENTRY_API_URL` on `localhost`/`127.0.0.1` is rewritten to `host.docker.internal` (mapped to the Docker host), so the container reaches an API running on the host. A Keycloak issuer on `localhost` is not rewritten: the browser uses it too.
+- Connector keys persist in `.data/` (mounted at `/data`; `AGENTRY_WEB_HOST_DATA_DIR` to move it).
+- No tar: a terminal run offers to build it now or to run without Docker; `NONINTERACTIVE=1` fails. `scripts/start.sh --no-docker` runs `next build` (when the source changed; `--rebuild` forces it) + `next start` instead.
+- Logs: `docker logs -f agentry-web`. Stop: `docker rm -f agentry-web`.
+- Docker Desktop's credential helper fails from WSL ("A specified logon session does not exist"); the image build needs no login, so the launcher builds with a copy of the Docker config without `credsStore`.
+
+Both launchers first check that the Agentry API answers `GET $AGENTRY_API_URL/health` (read from `.env.local`). When it does not, they offer to start it (its own `~/code/dsh-agents-api/scripts/dev.sh`, in the herdr terminal `agentry-api`), wait for it, continue without it, or quit; with `NONINTERACTIVE=1` they wait up to `AGENTRY_API_WAIT_SECONDS` (120) and then fail. A port already in use (other than by the container being replaced) stops them.
+
+- Use the image (or `--no-docker`) for real use: Next prefetches pages and keeps them in the client cache only in a production build, so `next dev` is several times slower per click and compiles each page on its first visit.
 - Menus use [gum](https://github.com/charmbracelet/gum) `0.17.0` when it is on the `PATH` or in `.tools/bin` (the first terminal run offers to download it there); without it they fall back to numbered prompts. Shared code: `scripts/lib/launch.sh`.
-- Overrides: `AGENTRY_API_REPO` (default `~/code/dsh-agents-api`), `AGENTRY_API_HERDR_NAME` (default `agentry-api`).
+- Overrides: `AGENTRY_API_REPO` (default `~/code/dsh-agents-api`), `AGENTRY_API_HERDR_NAME` (default `agentry-api`), `AGENTRY_WEB_IMAGE_NAME`, `AGENTRY_WEB_CONTAINER`, `AGENTRY_WEB_DIST`.
 
 Other scripts:
 

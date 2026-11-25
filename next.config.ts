@@ -37,6 +37,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // The e2e run builds into its own directory, so it can run beside a `next dev` on `.next`.
   distDir: process.env.AGENTRY_WEB_DIST_DIR || '.next',
+  // The Docker image (Dockerfile) runs Next's self-contained server; `next start` does not need it.
+  ...(process.env.AGENTRY_WEB_STANDALONE ? { output: 'standalone' as const } : {}),
   experimental: {
     // Every signed-in page is dynamic (the session cookie), and Next keeps no
     // client copy of a dynamic page by default, so each sidebar click waited on

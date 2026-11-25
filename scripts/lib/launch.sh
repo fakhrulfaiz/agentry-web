@@ -211,3 +211,152 @@ require_api() {
     esac
   done
 }
+
+# ---------------------------------------------------------------- Docker image (.tar)
+
+IMAGE_NAME=${AGENTRY_WEB_IMAGE_NAME:-agentry-web}
+DIST_DIR=${AGENTRY_WEB_DIST:-$ROOT/dist}
+CONTAINER_NAME=${AGENTRY_WEB_CONTAINER:-agentry-web}
+HOST_DATA_DIR=${AGENTRY_WEB_HOST_DATA_DIR:-$ROOT/.data}
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    ui_err "Docker is not available (is Docker Desktop / the daemon running?)."
+    exit 1
+  fi
+}
+
+# Docker Desktop's credential helper (desktop.exe) fails from WSL with "A specified logon
+# session does not exist", even for public images. The build needs no login (the base image
+# is public), so when that helper is configured it runs with a copy of the Docker config
+# without it; buildx, plugins and contexts stay shared.
+docker_build() {
+  local cfg="${DOCKER_CONFIG:-$HOME/.docker}"
+  if [ -f "$cfg/config.json" ] && grep -q '"credsStore"' "$cfg/config.json"; then
+    local tmp entry
+    tmp=$(mktemp -d)
+    sed -E '/"credsStore"[[:space:]]*:/d' "$cfg/config.json" | sed -E ':a;N;$!ba;s/,([[:space:]]*\})/\1/g' >"$tmp/config.json"
+    for entry in buildx cli-plugins contexts features.json; do
+      [ -e "$cfg/$entry" ] && ln -s "$cfg/$entry" "$tmp/$entry"
+    done
+    local status=0
+    DOCKER_CONFIG=$tmp docker build "$@" || status=$?
+    rm -rf "$tmp"
+    return $status
+  fi
+  docker build "$@"
+}
+
+# The image tag: package version and commit, "-dirty" with uncommitted changes.
+image_tag() {
+  local version sha dirty=""
+  version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$ROOT/package.json")
+  sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)
+  [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ] && dirty="-dirty"
+  printf '%s-%s%s\n' "${version:-0.0.0}" "$sha" "$dirty"
+}
+
+# Builds the image and exports it to dist/agentry-web-<tag>.tar; sets IMAGE_TAR to its path.
+IMAGE_TAR=
+build_image_tar() {
+  require_docker
+  local tag tar
+  tag=$(image_tag)
+  tar="$DIST_DIR/$IMAGE_NAME-$tag.tar"
+  ui_box "Agentry Web · image" "docker build → $IMAGE_NAME:$tag" "export → ${tar#$ROOT/}"
+  docker_build -t "$IMAGE_NAME:$tag" -t "$IMAGE_NAME:latest" "$ROOT"
+  mkdir -p "$DIST_DIR"
+  ui_spin "Exporting $IMAGE_NAME:$tag ..." docker save -o "$tar.part" "$IMAGE_NAME:$tag"
+  mv "$tar.part" "$tar"
+  ui_ok "Image saved: ${tar#$ROOT/} ($(du -h "$tar" | cut -f1))"
+  IMAGE_TAR=$tar
+}
+
+# The image tar to deploy: AGENTRY_WEB_IMAGE_TAR, else the newest dist/agentry-web-*.tar.
+find_image_tar() {
+  if [ -n "${AGENTRY_WEB_IMAGE_TAR:-}" ]; then
+    [ -f "$AGENTRY_WEB_IMAGE_TAR" ] && printf '%s\n' "$AGENTRY_WEB_IMAGE_TAR"
+    return
+  fi
+  ls -t "$DIST_DIR/$IMAGE_NAME"-*.tar 2>/dev/null | head -n 1 || true
+}
+
+# Loads the tar unless its image is already here. Prints the image reference.
+load_image_tar() {
+  local tar=$1 ref out
+  ref="$IMAGE_NAME:$(basename "$tar" .tar | sed "s/^$IMAGE_NAME-//")"
+  if docker image inspect "$ref" >/dev/null 2>&1; then
+    ui_ok "Image $ref is already loaded." >&2
+  else
+    echo "Loading ${tar#$ROOT/} ..." >&2
+    out=$(docker load -i "$tar") || { ui_err "docker load failed."; exit 1; }
+    ref=$(printf '%s\n' "$out" | sed -n 's/^Loaded image: //p' | tail -n 1)
+    [ -n "$ref" ] || { ui_err "The tar holds no tagged image."; exit 1; }
+    ui_ok "Loaded $ref" >&2
+  fi
+  printf '%s\n' "$ref"
+}
+
+# The container's env file: .env then .env.local (later wins), quotes stripped; the
+# host-only keys left out; a loopback API URL pointed at the Docker host.
+container_env_file() {
+  local out=$1 file line key value
+  : >"$out"
+  chmod 600 "$out"
+  declare -A seen=()
+  local keys=()
+  for file in "$ROOT/.env" "$ROOT/.env.local"; do
+    [ -f "$file" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+      [[ "$line" == *=* ]] || continue
+      key=${line%%=*}
+      key=${key#export }
+      value=${line#*=}
+      value=${value%\"}; value=${value#\"}; value=${value%\'}; value=${value#\'}
+      case "$key" in PORT | HOSTNAME | NODE_ENV | AGENTRY_WEB_DIST_DIR | AGENTRY_WEB_DATA_DIR | AGENTRY_WEB_STANDALONE) continue ;; esac
+      [ -n "${seen[$key]:-}" ] || keys+=("$key")
+      seen[$key]=$value
+    done <"$file"
+  done
+  for key in "${keys[@]}"; do
+    value=${seen[$key]}
+    if [ "$key" = AGENTRY_API_URL ]; then
+      value=$(printf '%s' "$value" | sed -E 's#^(https?://)(localhost|127\.0\.0\.1|\[::1\])([:/]|$)#\1host.docker.internal\3#')
+    fi
+    printf '%s=%s\n' "$key" "$value" >>"$out"
+  done
+}
+
+# Replaces the running container with one from `ref`, then waits until it answers.
+run_container() {
+  local ref=$1 port=$2 envfile
+  envfile=$(mktemp)
+  container_env_file "$envfile"
+  mkdir -p "$HOST_DATA_DIR"
+  docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  if ! docker run -d --name "$CONTAINER_NAME" --restart unless-stopped \
+    -p "$port:3000" \
+    --add-host host.docker.internal:host-gateway \
+    --env-file "$envfile" \
+    -v "$HOST_DATA_DIR:/data" \
+    "$ref" >/dev/null; then
+    rm -f "$envfile"
+    ui_err "docker run failed."
+    exit 1
+  fi
+  rm -f "$envfile"
+  local i
+  for i in $(seq 1 30); do
+    if curl -fsS -m 2 -o /dev/null "http://127.0.0.1:$port/login" 2>/dev/null; then
+      ui_ok "Agentry Web ($ref) is up at http://localhost:$port"
+      echo "   Logs: docker logs -f $CONTAINER_NAME · Stop: docker rm -f $CONTAINER_NAME"
+      return 0
+    fi
+    if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null)" != true ]; then break; fi
+    sleep 1
+  done
+  ui_err "The container did not come up. Its last output:"
+  docker logs --tail 30 "$CONTAINER_NAME" >&2 || true
+  exit 1
+}
