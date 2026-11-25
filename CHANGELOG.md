@@ -10,6 +10,10 @@ All notable changes to Agentry Web are recorded here.
 
 - `deploy/compose.yaml` and `deploy/agentry-web.env.example`: run `ghcr.io/fakhrulfaiz/agentry-web` with Docker Compose and a settings file. Each GitHub Release attaches both, the compose file pinned to that version. README "Running the published image".
 
+## 2026-11-25 — sandbox places and GPUs
+
+- Sandboxes: "Runs on" lists each Agentry Sandbox place under Isolated sandbox with its kind (Docker on this server, Docker over SSH), availability, why it is off, and its GPU count; the default place is preselected. The template editor saves the place and, for a place with GPUs, a GPUs choice (0 up to its count, or All). New environment sends the chosen place. The environment page shows "Runs on <place>" and its GPUs, and hides Reset when the place cannot reset. The mock API offers two places, one with 2 GPUs.
+
 ## 0.2.0 — 2026-11-25
 
 - One compose file (`deploy/compose.yaml`, attached to the release) runs Agentry from the published images: web only against your own API, or the full stack (`COMPOSE_PROFILES=full`: Agentry Web, the Agentry API and Postgres), with one settings file (`agentry.env.example`). In full mode the web app waits until the API is healthy.

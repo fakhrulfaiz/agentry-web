@@ -24,9 +24,9 @@ import { ArrowDownTrayIcon, DocumentIcon } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { EnvironmentFile, SandboxEnvironment } from '@/api/types'
+import type { EnvironmentFile, SandboxEnvironment, SandboxPlace } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
-import { canChatIn, environmentLook, environmentName, formatBytes, lastUsed, providerTitle, shortDate, shortId, toBase64 } from './format'
+import { canChatIn, environmentLook, environmentName, formatBytes, gpuLabel, lastUsed, providerTitle, shortDate, shortId, toBase64 } from './format'
 
 const COLUMN_WIDTH = 880
 const WORKSPACE = '/workspace/'
@@ -53,6 +53,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [keepWorkspace, setKeepWorkspace] = useState(true)
+  const [places, setPlaces] = useState<SandboxPlace[]>([])
   const [acting, setActing] = useState<'start' | 'stop' | 'reset' | null>(null)
 
   // The environment and its files load separately: a sandbox lists files slowly, and the header and actions should not wait for it.
@@ -82,6 +83,21 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   useEffect(() => {
     void load()
   }, [load])
+  // The places give the place's name and whether it can reset; the page works without them.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const page = await api.listSandboxProviders()
+        setPlaces(page.data.flatMap((p) => p.places ?? []))
+      } catch {
+        setPlaces([])
+      }
+    })()
+  }, [])
+  const place = places.find((pl) => pl.id === env?.sandbox?.place)
+  const placeName = place?.name ?? env?.sandbox?.place ?? ''
+  const gpuText = gpuLabel(typeof env?.sandbox?.gpus === 'number' ? env.sandbox.gpus : undefined) ?? (env?.sandbox?.gpus === 'all' ? 'All GPUs' : null)
+  const canReset = place?.capabilities.reset !== false
 
   async function more() {
     if (!next) return
@@ -177,6 +193,8 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
                   <HStack gap={3} vAlign="center" wrap="wrap">
                     <HStack gap={1.5} vAlign="center"><StatusDot variant={look.variant} label={look.text} /><Text weight="medium">{look.text}</Text></HStack>
                     <Text type="supporting" color="secondary">{providerTitle(env.provider)}</Text>
+                    {env.sandbox?.place && <Text type="supporting" color="secondary">{`Runs on ${placeName}`}</Text>}
+                    {env.sandbox && gpuText && <Text type="supporting" color="secondary">{gpuText}</Text>}
                     {env.sandbox?.image && <Text type="supporting" color="secondary">{env.sandbox.image}</Text>}
                     <Text type="supporting" color="secondary">{used ?? `Created ${shortDate(env.created_at)}`}</Text>
                     <Text type="supporting" color="secondary">{shortId(env.id)}</Text>
@@ -190,7 +208,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             <HStack gap={2} vAlign="center" wrap="wrap" role="group" aria-label="Environment actions">
               {state === 'stopped' && <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} />}
               {state === 'running' && <Button label="Stop" size="sm" isLoading={acting === 'stop'} isDisabled={acting !== null} onClick={() => void act('stop')} />}
-              {state !== undefined && state !== 'gone' && <Button label="Reset" size="sm" isDisabled={acting !== null} onClick={() => setConfirmReset(true)} />}
+              {state !== undefined && state !== 'gone' && canReset && <Button label="Reset" size="sm" isDisabled={acting !== null} onClick={() => setConfirmReset(true)} />}
               {env.session_id && <Button label="Open its chat" size="sm" variant="ghost" onClick={() => router.push(`/c/${encodeURIComponent(env.session_id!)}`)} />}
               <StackItem size="fill">{null}</StackItem>
               <Button label="Delete environment" size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} />

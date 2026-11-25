@@ -71,3 +71,12 @@ describe('session environment for a menu choice', () => {
     expect(sessionEnvironment(`${NEW_SANDBOX}tpl_9`)).toEqual({ type: 'sandbox', template_id: 'tpl_9' })
   })
 })
+
+describe('places in the template body', () => {
+  it('carries place and gpus only when the provider applies them', () => {
+    const form = { name: 'T', provider: 'sandbox', image: '', system: '', python: '', npm: '', setup: '', env: '', network: true, cpus: '', memoryGb: '', place: 'gpu-box', gpus: 'all' }
+    expect(templateBody(form, ['gpus'])).toEqual({ body: { name: 'T', provider: 'sandbox', place: 'gpu-box', gpus: 'all' } })
+    expect(templateBody({ ...form, gpus: '0' }, ['gpus'])).toEqual({ body: { name: 'T', provider: 'sandbox', place: 'gpu-box' } })
+    expect(templateBody(form, [])).toEqual({ body: { name: 'T', provider: 'sandbox', place: 'gpu-box' } })
+  })
+})

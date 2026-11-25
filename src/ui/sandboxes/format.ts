@@ -1,4 +1,4 @@
-import type { CreateTemplateParams, SandboxEnvironment, SandboxProvider, SandboxTemplate } from '@/api/types'
+import type { CreateTemplateParams, SandboxEnvironment, SandboxPlace, SandboxProvider, SandboxTemplate } from '@/api/types'
 
 /** Status dot variant and the word shown beside it. */
 export function statusLook(status: SandboxEnvironment['status']): { variant: 'success' | 'warning' | 'error' | 'neutral'; text: string } {
@@ -47,6 +47,22 @@ export function environmentMenuLabel(env: SandboxEnvironment): string {
 /** A provider in the words people use. */
 export function providerTitle(name: string): string {
   return name === 'local' ? 'This server' : name === 'sandbox' ? 'Isolated sandbox' : name
+}
+
+/** A place's kind in plain words. */
+export function placeKindTitle(kind: string): string {
+  return kind === 'docker' ? 'Docker on this server' : kind === 'docker-ssh' ? 'Docker over SSH' : kind
+}
+
+/** "2 GPUs", "1 GPU", or null for a place without any. */
+export function gpuLabel(count: number | undefined): string | null {
+  return count ? `${count} ${count === 1 ? 'GPU' : 'GPUs'}` : null
+}
+
+/** The place a dialog starts on: the default one when available, else the first available. */
+export function initialPlace(places: SandboxPlace[] | undefined): string {
+  const usable = (places ?? []).filter((p) => p.available)
+  return (usable.find((p) => p.default) ?? usable[0])?.id ?? ''
 }
 
 /** One line on what running there means. */
@@ -142,6 +158,10 @@ export interface TemplateForm {
   cpus: string
   /** Memory in GB; empty uses the service default. */
   memoryGb: string
+  /** Agentry Sandbox place id; empty for providers without places. */
+  place?: string
+  /** GPU count as typed, or `all`; empty for none. */
+  gpus?: string
 }
 
 /** `KEY=value` lines to an object; returns the first bad line instead when one has no valid name. */
@@ -190,6 +210,12 @@ export function templateBody(form: TemplateForm, fields: string[]): { body: Omit
     if (cpus !== undefined && !(cpus >= 0.1 && cpus <= 64)) return { error: 'CPU cores go from 0.1 to 64.' }
     if (gb !== undefined && !(gb >= 0.125 && gb <= 256)) return { error: 'Memory goes from 0.125 to 256 GB.' }
     if (cpus !== undefined || gb !== undefined) body.resources = { ...(cpus !== undefined ? { cpus } : {}), ...(gb !== undefined ? { memory_mb: Math.round(gb * 1024) } : {}) }
+  }
+  if (form.place) body.place = form.place
+  if (has('gpus') && form.place) {
+    const raw = (form.gpus ?? '').trim().toLowerCase()
+    if (raw === 'all') body.gpus = 'all'
+    else if (raw !== '' && raw !== '0') body.gpus = Number(raw)
   }
   return { body }
 }

@@ -42,7 +42,7 @@ import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { IconTile } from '@/ui/shared/IconTile'
 import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, shortDate, shortId, templateSummary } from './format'
-import { initialProvider, RunsOnPicker } from './RunsOnPicker'
+import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
 import { useCachedState } from '@/ui/page-cache'
 
@@ -63,6 +63,7 @@ function NewEnvironmentDialog({
 }: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreated(): void }) {
   const [name, setName] = useState('')
   const [provider, setProvider] = useState('')
+  const [place, setPlace] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +71,9 @@ function NewEnvironmentDialog({
   useEffect(() => {
     if (!isOpen) return
     setName('')
-    setProvider(initialProvider(providers))
+    const first = initialProvider(providers)
+    setProvider(first)
+    setPlace(defaultPlace(providers.find((p) => p.name === first)))
     setTemplateId('')
     setError(null)
   }, [isOpen, providers])
@@ -83,7 +86,7 @@ function NewEnvironmentDialog({
     setBusy(true)
     setError(null)
     try {
-      const created = await api.createSandboxEnvironment({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
+      const created = await api.createSandboxEnvironment({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
       // A refused sandbox (a limit, a failed setup) is recorded as failed: show why here instead of closing.
       if (created.status === 'failed' && created.error) {
         onCreated()
@@ -104,7 +107,13 @@ function NewEnvironmentDialog({
       <DialogHeader title="New environment" subtitle="A workspace an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />
       <VStack gap={4} padding={4}>
         <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat environment menu." value={name} onChange={setName} />
-        {providers.length > 0 && <RunsOnPicker providers={providers} value={provider} onChange={(p) => { setProvider(p); setTemplateId('') }} />}
+        {providers.length > 0 && <RunsOnPicker
+          providers={providers}
+          value={provider}
+          place={place}
+          onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
+          onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
+        />}
         <Selector
           label="Template"
           description={fitting.length > 0 ? 'Start from a saved setup, or from nothing.' : `No templates for ${providerTitle(provider).toLowerCase()} yet. It starts from nothing.`}
