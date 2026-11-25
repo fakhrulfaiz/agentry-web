@@ -27,7 +27,7 @@ import type { UserFile } from '@/chat/attachments'
 import { Message } from './Message'
 import { RecentFiles } from './RecentFiles'
 import { Thinking } from './Thinking'
-import { Composer, type EffortChoice } from './Composer'
+import { Composer, ContextMenus, type ComposerSettings, type EffortChoice } from './Composer'
 import { canChatIn, environmentMenuLabel, NEW_SANDBOX, templateSummary } from '@/ui/sandboxes/format'
 import { pickModel, readModelCookie } from './model-cookie'
 
@@ -149,8 +149,10 @@ export function NewChat() {
     [model, models, effort],
   )
   const noModels = models !== null && models.length === 0 && !failure
+  const settings: ComposerSettings = { models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }
   const composer = (
-          <Composer
+    <VStack gap={2}>
+      <Composer
       onSend={start}
       autoFocus
       isDisabled={!model}
@@ -167,8 +169,11 @@ export function NewChat() {
             ? { type: 'warning', message: 'No models are configured.' }
             : undefined
       }
-      settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }}
-    />
+      settings={settings}
+      />
+      {/* Who runs the chat and where: under the input, so a long sandbox name does not crowd it. */}
+      {!pending && <ContextMenus settings={settings} />}
+    </VStack>
   )
   return (
     <VStack xstyle={styles.page}>

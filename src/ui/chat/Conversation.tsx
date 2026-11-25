@@ -420,6 +420,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                         highlighted={highlight === view.id}
                         answer={onAnswer}
                         onRetry={retryText !== undefined && !running ? () => void onSend(retryText).catch(() => {}) : undefined}
+                        onSend={running ? undefined : (text) => void onSend(text).catch(() => {})}
                       />
                     )
                   }

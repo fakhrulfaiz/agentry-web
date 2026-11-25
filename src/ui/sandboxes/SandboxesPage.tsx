@@ -44,6 +44,7 @@ import { IconTile } from '@/ui/shared/IconTile'
 import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, shortDate, shortId, templateSummary } from './format'
 import { initialProvider, RunsOnPicker } from './RunsOnPicker'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
+import { useCachedState } from '@/ui/page-cache'
 
 const COLUMN_WIDTH = 880
 type View = 'environments' | 'templates' | 'providers'
@@ -169,10 +170,10 @@ function ProviderCard({ provider: p, runtimes }: { provider: SandboxProvider; ru
 
 export function SandboxesPage() {
   const [view, setView] = useState<View>('environments')
-  const [environments, setEnvironments] = useState<SandboxEnvironment[] | null>(null)
-  const [templates, setTemplates] = useState<SandboxTemplate[] | null>(null)
-  const [providers, setProviders] = useState<SandboxProvider[] | null>(null)
-  const [runtimes, setRuntimes] = useState<SandboxRuntimes | null>(null)
+  const [environments, setEnvironments] = useCachedState<SandboxEnvironment[]>('sandboxes.environments')
+  const [templates, setTemplates] = useCachedState<SandboxTemplate[]>('sandboxes.templates')
+  const [providers, setProviders] = useCachedState<SandboxProvider[]>('sandboxes.providers')
+  const [runtimes, setRuntimes] = useCachedState<SandboxRuntimes>('sandboxes.runtimes')
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)

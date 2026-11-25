@@ -6,6 +6,14 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 2026-11-25 — faster sidebar navigation; user message actions
+
+- Sidebar clicks no longer wait on the server. Every signed-in page is dynamic, so Next prefetched nothing and kept no client copy: in-app links now prefetch their page in full (`AppLink` in `AppTheme.tsx`; `/api/` links are left alone), and `experimental.staleTimes.dynamic` keeps a visited page for 60s. Measured on a production build against the mock API: 0 server requests per sidebar click (was 1 each). `next dev` stays much slower (it compiles each route on first visit and never prefetches): judge speed on `pnpm build && pnpm start`.
+- Scheduled, Agents, Artifacts, Sandboxes and Plugins › Skills show the data they last loaded at once when opened again and refresh it in the background, instead of a skeleton on every visit (`useCachedState`, `src/ui/page-cache.ts`; memory only, cleared by a reload or sign-out).
+- Opening a chat again shows its last read history at once while it reloads (an idle session's status too; a running one waits for a fresh status, so no stale approval is offered). Opening a chat now asks for the session together with its items instead of after them, one round trip fewer.
+- Hovering your own message (or tabbing into it) shows Retry, Edit and Copy under the bubble, as in claude.ai. Retry sends the same text again; Edit opens it in place (Enter sends, Escape cancels) and sends the edited text as a new message, since the backend has no branching. Retry and Edit are hidden while a turn runs.
+- New chat: the Agent and Environment menus moved out of the composer to a row under it, each capped in width, so a long sandbox name truncates instead of crowding the input. They are hidden while the first message is being sent.
+
 ## 2026-11-24 — a fresh sandbox per chat
 
 - `docs/sandboxes.md` covers a fresh sandbox per chat and the agent's sandbox tools (create and delete ask first).

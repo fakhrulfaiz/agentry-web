@@ -46,6 +46,7 @@ import {
 } from "@/artifacts/kind";
 import { seedHref, type ArtifactSeedId } from "@/artifacts/seed";
 import { goToLogin } from "@/chat/use-conversation";
+import { useCachedState } from "@/ui/page-cache";
 
 /** Width of the page column, as on claude.ai. */
 const COLUMN_WIDTH = 880;
@@ -211,7 +212,7 @@ function ArtifactCard({
 
 export function ArtifactsPage() {
   const router = useRouter();
-  const [items, setItems] = useState<Artifact[] | null>(null);
+  const [items, setItems] = useCachedState<Artifact[]>("artifacts");
   const [hasMore, setHasMore] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);

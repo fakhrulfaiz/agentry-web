@@ -37,6 +37,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // The e2e run builds into its own directory, so it can run beside a `next dev` on `.next`.
   distDir: process.env.AGENTRY_WEB_DIST_DIR || '.next',
+  experimental: {
+    // Every signed-in page is dynamic (the session cookie), and Next keeps no
+    // client copy of a dynamic page by default, so each sidebar click waited on
+    // the server. The pages are thin shells that load their data in the
+    // browser, so a copy reused for a minute is safe and makes going back instant.
+    staleTimes: { dynamic: 60 },
+  },
   async headers() {
     return [
       {

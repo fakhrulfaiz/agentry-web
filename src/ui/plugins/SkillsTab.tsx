@@ -25,6 +25,9 @@ import { AddSkillMenu } from './AddSkillMenu'
 import { SkillDetail } from './SkillDetail'
 import { skillVisual } from './skill-visual'
 import { SkillEditorDialog, SkillReviewDialog, type SkillDraft } from './SkillDialogs'
+import { useCachedState } from '@/ui/page-cache'
+
+const NO_NAMES = new Map<string, string>()
 
 const SOURCE: Record<InstalledSkill['source'], string> = { upload: 'Upload', github: 'GitHub', editor: 'Written here', chat: 'Made in chat' }
 const message = (error: unknown): string => (error instanceof Error ? error.message : 'Something went wrong.')
@@ -37,9 +40,10 @@ export function SkillsTab() {
   const router = useRouter()
   const opened = useSearchParams().get('skill')
   const [view, setView] = useState<'builtin' | 'library'>('builtin')
-  const [catalog, setCatalog] = useState<AgentSkill[] | null>(null)
-  const [installed, setInstalled] = useState<InstalledSkill[] | null>(null)
-  const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map())
+  const [catalog, setCatalog] = useCachedState<AgentSkill[]>('skills.catalog')
+  const [installed, setInstalled] = useCachedState<InstalledSkill[]>('skills.library')
+  const [cachedNames, setAgentNames] = useCachedState<Map<string, string>>('skills.agentNames')
+  const agentNames = cachedNames ?? NO_NAMES
   const [error, setError] = useState<string | null>(null)
   const [review, setReview] = useState<SkillManifest | null>(null)
   const [busy, setBusy] = useState(false)

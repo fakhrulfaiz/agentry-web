@@ -50,6 +50,7 @@ import {
 import { CardGrid, EntityCard, Fact } from "@/ui/cards/EntityCard";
 import { DeleteScheduleDialog } from "@/ui/scheduled/ScheduleDialogs";
 import { SESSIONS_CHANGED } from "@/ui/shell/session-actions";
+import { useCachedState } from "@/ui/page-cache";
 
 type View = "yours" | "templates";
 
@@ -119,7 +120,7 @@ function TemplateGrid({
 export function ScheduledPage() {
   const router = useRouter();
   const [view, setView] = useState<View>("yours");
-  const [schedules, setSchedules] = useState<AgentSchedule[] | null>(null);
+  const [schedules, setSchedules] = useCachedState<AgentSchedule[]>("scheduled");
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [query, setQuery] = useState("");

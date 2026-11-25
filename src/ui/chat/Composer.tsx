@@ -39,6 +39,7 @@ import { ChatComposer, ChatComposerDrawer, ChatComposerInput, ChatSendButton, ty
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { Selector } from '@astryxdesign/core/Selector'
+import * as stylex from '@stylexjs/stylex'
 import { Text } from '@astryxdesign/core/Text'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
@@ -91,11 +92,18 @@ export interface ComposerSettings {
   onEnvironmentChange?(id: string): void
 }
 
-/** Left of the footer: who runs the chat and where (new chats only). Renders nothing without any choice. */
-function ContextMenus({ settings }: { settings: ComposerSettings }) {
+/**
+ * Who runs the chat and where (new chats only), in a row under the composer
+ * so a long agent or sandbox name never crowds the input's footer; each menu
+ * is capped and truncates its value. Renders nothing without any choice.
+ */
+export function ContextMenus({ settings }: { settings: ComposerSettings }) {
   const { agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange } = settings
+  const hasAgents = agents && agents.length > 0 && onAgentChange
+  const hasEnvironments = environments && environments.length > 0 && onEnvironmentChange
+  if (!hasAgents && !hasEnvironments) return null
   return (
-    <>
+    <HStack gap={1} vAlign="center" wrap="wrap" data-testid="composer-context">
       {agents && agents.length > 0 && onAgentChange && (
         <Selector
           label="Agent"
@@ -103,6 +111,7 @@ function ContextMenus({ settings }: { settings: ComposerSettings }) {
           size="sm"
           variant="ghost"
           startIcon={UserGroupIcon}
+          containerXstyle={contextStyles.menu}
           options={[{ value: '', label: 'Default agent' }, ...agents.map((a) => ({ value: a.id, label: a.name || 'Untitled agent' }))]}
           value={agentId}
           onChange={onAgentChange}
@@ -115,14 +124,20 @@ function ContextMenus({ settings }: { settings: ComposerSettings }) {
           size="sm"
           variant="ghost"
           startIcon={ServerStackIcon}
+          containerXstyle={contextStyles.menu}
           options={environmentOptions(environments)}
           value={environmentId}
           onChange={onEnvironmentChange}
         />
       )}
-    </>
+    </HStack>
   )
 }
+
+const contextStyles = stylex.create({
+  // Wide enough for a usual name; a longer one truncates instead of stretching the row.
+  menu: { maxWidth: 280, minWidth: 0 },
+})
 
 /** The environment menu: the default workspace, existing environments, then fresh sandboxes for this chat. */
 function environmentOptions(environments: NonNullable<ComposerSettings['environments']>) {
@@ -372,7 +387,6 @@ export function Composer({
       footerActions={
         <>
           <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly onClick={() => picker.current?.click()} />
-          {settings && <ContextMenus settings={settings} />}
         </>
       }
       sendActions={settings ? <ModelMenus settings={settings} /> : undefined}

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * One conversation view (`MessageView`) as a chat row: user bubble (right),
+ * One conversation view (`MessageView`) as a chat row: user bubble (right, see `UserMessage`),
  * assistant Markdown (full width, streamed), reasoning, tool, delegation,
  * approval / question, or notice.
  */
@@ -16,16 +16,15 @@ import type { ActionAnswer } from '@/chat/use-conversation'
 import { ApprovalCard } from './ApprovalCard'
 import { CommandResult } from './CommandResult'
 import { Markdown } from './Markdown'
-import { MessageFiles } from './MessageFiles'
 import { Notice } from './Notice'
 import { QuestionCard } from './QuestionCard'
 import { ReasoningBlock } from './ReasoningBlock'
 import { SubagentCard } from './SubagentCard'
 import { ToolCard } from './ToolCard'
+import { UserMessage } from './UserMessage'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
 const styles = stylex.create({
-  userText: { whiteSpace: 'pre-wrap' },
   // A row revealed from the trajectory, briefly.
   highlight: { backgroundColor: colorVars['--color-accent-muted'], borderRadius: radiusVars['--radius-container'] },
 })
@@ -56,12 +55,15 @@ export function Message({
   view,
   answer,
   onRetry,
+  onSend,
   depth = 1,
   highlighted = false,
 }: {
   view: MessageView
   answer(actionId: string, a: ActionAnswer): Promise<void>
   onRetry?: () => void
+  /** Sends a message (a user row's Retry and Edit); absent while a turn runs. */
+  onSend?: (text: string) => void
   /** Subagent nesting: 1 in the conversation, one more inside each expanded subagent card. */
   depth?: number
   /** Briefly marks the row (revealed from the trajectory). */
@@ -71,16 +73,7 @@ export function Message({
   const anchor = depth === 1 ? view.id : undefined
   switch (view.kind) {
     case 'user':
-      return (
-        <ChatMessage sender="user" name="" data-item-id={anchor} xstyle={highlighted ? styles.highlight : undefined}>
-          <ChatMessageBubble>
-            <VStack gap={2}>
-              {view.files && <MessageFiles files={view.files} />}
-              {view.text && <Text xstyle={styles.userText}>{view.text}</Text>}
-            </VStack>
-          </ChatMessageBubble>
-        </ChatMessage>
-      )
+      return <UserMessage view={view} anchor={anchor} highlight={highlighted ? styles.highlight : undefined} onSend={onSend} />
     case 'assistant':
       // A step that was only reasoning (or only tool calls) leaves an empty message: show nothing.
       if (!view.text) return null

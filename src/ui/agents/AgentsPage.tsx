@@ -29,6 +29,7 @@ import { STARTERS } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { AgentEditorDialog, editorTargetOf } from './AgentEditorDialog'
+import { useCachedState } from '@/ui/page-cache'
 
 const COLUMN_WIDTH = 880
 
@@ -80,7 +81,7 @@ export function AgentsPage() {
     openedHere.current = false
     closeEditor(pushed)
   }
-  const [agents, setAgents] = useState<OAIAgent[] | null>(null)
+  const [agents, setAgents] = useCachedState<OAIAgent[]>('agents')
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'yours' | 'starters'>('yours')
   const [query, setQuery] = useState('')
