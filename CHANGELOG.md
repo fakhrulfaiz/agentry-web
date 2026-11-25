@@ -6,6 +6,10 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 2026-11-25 — run the published image without the repository
+
+- `deploy/compose.yaml` and `deploy/agentry-web.env.example`: run `ghcr.io/fakhrulfaiz/agentry-web` with Docker Compose and a settings file. Each GitHub Release attaches both, the compose file pinned to that version. README "Running the published image".
+
 ## 0.1.0 — 2026-11-25
 
 First tagged release: the claude.ai-style Agentry frontend (sign-in, chat with live reasoning and tool cards, trajectory view, agents, scheduled tasks, artifacts, plugins and skills, sandboxes), with faster navigation, user message actions, the launchers, the Docker image and CI described in the entries below.

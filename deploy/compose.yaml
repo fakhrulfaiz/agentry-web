@@ -1,0 +1,27 @@
+# Agentry Web from the published image, without this repository.
+#
+#   cp agentry-web.env.example agentry-web.env   # then fill it in
+#   docker login ghcr.io                          # once; the package is private
+#   docker compose up -d
+#
+# Update: change AGENTRY_WEB_TAG (or the tag below), then `docker compose pull && docker compose up -d`.
+# Logs: `docker compose logs -f`. The GitHub Release of each version attaches this file with
+# its tag already pinned.
+name: agentry-web
+
+services:
+  agentry-web:
+    image: ghcr.io/fakhrulfaiz/agentry-web:${AGENTRY_WEB_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${AGENTRY_WEB_PORT:-3000}:3000"
+    env_file: agentry-web.env
+    # Lets AGENTRY_API_URL=http://host.docker.internal:<port> reach an API on this machine.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # The encrypted connector key store; keep it across updates.
+    volumes:
+      - agentry-web-data:/data
+
+volumes:
+  agentry-web-data:
