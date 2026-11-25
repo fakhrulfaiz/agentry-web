@@ -10,6 +10,11 @@ All notable changes to Agentry Web are recorded here.
 
 - `deploy/compose.yaml` and `deploy/agentry-web.env.example`: run `ghcr.io/fakhrulfaiz/agentry-web` with Docker Compose and a settings file. Each GitHub Release attaches both, the compose file pinned to that version. README "Running the published image".
 
+## 0.2.0 — 2026-11-25
+
+- One compose file (`deploy/compose.yaml`, attached to the release) runs Agentry from the published images: web only against your own API, or the full stack (`COMPOSE_PROFILES=full`: Agentry Web, the Agentry API and Postgres), with one settings file (`agentry.env.example`). In full mode the web app waits until the API is healthy.
+- Fixed: signing in over plain `http://` on a LAN address or a server's port failed in production (the session cookie was always `Secure`). It is now `Secure` when the request came over HTTPS; `AGENTRY_WEB_COOKIE_SECURE=always` forces it behind a TLS proxy that does not send `X-Forwarded-Proto`.
+
 ## 2026-11-25 — sign-in over plain HTTP in production
 
 - `deploy/compose.yaml`: in full mode the web container starts once the API is healthy (`depends_on` with `required: false`, so web-only mode is unaffected). With the API's `/health` now waiting for its database (dsh-agents-api `976bab2`), sign-in no longer races the API's start; verified order postgres → api (first `/health` 503 `starting`) → web.
