@@ -1,5 +1,7 @@
 # Sandbox terminal (2026-11-25)
 
+Status 2026-11-26: implemented and committed. Phase 1 (envd PTY routes and the Terminal on the sandbox page) works. Phase 2 shipped as a Terminal tab in the chat's right-hand panel (Start page, several terminals, slide-in toggle) on the same envd PTY routes, not through DSH's terminal controller. New sandboxes mount their workspace at `/workspace` when that folder exists on the API host; see `AGENTS.md` backlog item 10.
+
 Short design, approved in conversation 2026-11-25 (review limited on purpose; a full review is due when the user's token budget resets).
 
 ## Why

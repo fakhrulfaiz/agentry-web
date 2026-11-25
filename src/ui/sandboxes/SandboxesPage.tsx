@@ -43,6 +43,7 @@ import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { IconTile } from '@/ui/shared/IconTile'
 import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, shortDate, shortId, templateSummary } from './format'
 import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
+import { TemplateDetailsDialog } from './TemplateDetails'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
 import { useCachedState } from '@/ui/page-cache'
 
@@ -186,6 +187,7 @@ export function SandboxesPage() {
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)
+  const [viewing, setViewing] = useState<SandboxTemplate | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -307,6 +309,8 @@ export function SandboxesPage() {
                 <EntityCard
                   key={tpl.id}
                   title={tpl.name || 'Untitled template'}
+                  href={`#${tpl.id}`}
+                  onClick={(event) => { event.preventDefault(); setViewing(tpl) }}
                   leading={<IconTile icon={Square3Stack3DIcon} hue="violet" />}
                   trailing={tpl.built_in ? <Text type="supporting" color="secondary">Built in</Text> : <IconButton label={`Delete ${tpl.name || 'template'}`} size="sm" variant="ghost" icon={<Icon icon={TrashIcon} />} onClick={() => setRemoving(tpl)} />}
                   footer={
@@ -335,6 +339,7 @@ export function SandboxesPage() {
       </VStack>
 
       <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreated={() => void load()} />
+      <TemplateDetailsDialog template={viewing} onClose={() => setViewing(null)} />
       <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onCreated={() => void load()} />
       <AlertDialog
         isOpen={removing !== null}

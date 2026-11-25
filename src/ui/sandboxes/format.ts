@@ -122,15 +122,15 @@ export function providerAbilities(provider: SandboxProvider): string[] {
   return out
 }
 
-/** One line describing what a template sets up. */
+/** One line describing what a template sets up: the package names when there are few, else their count. */
 export function templateSummary(template: SandboxTemplate): string {
   const parts: string[] = []
-  const packages = template.packages.npm.length + template.packages.python.length + template.packages.system.length
+  const names = [...template.packages.system, ...template.packages.python, ...template.packages.npm]
   if (template.image) parts.push(template.image)
   if (template.files.length > 0) parts.push(`${template.files.length} ${template.files.length === 1 ? 'file' : 'files'}`)
-  if (packages > 0) parts.push(`${packages} ${packages === 1 ? 'package' : 'packages'}`)
+  if (names.length > 0) parts.push(names.length <= 4 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`)
   if (template.network.access !== 'enabled') parts.push(`network ${template.network.access}`)
-  return parts.length > 0 ? parts.join(', ') : 'Empty workspace'
+  return parts.length > 0 ? parts.join('; ') : 'Empty workspace'
 }
 
 /** Seconds since epoch as a short local date. */

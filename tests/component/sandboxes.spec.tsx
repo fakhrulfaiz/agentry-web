@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -55,7 +55,7 @@ describe('SandboxesPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     expect(screen.getByText('This server cannot apply internet access and packages')).toBeInTheDocument()
-    expect(screen.getByText('1 package, network disabled')).toBeInTheDocument()
+    expect(screen.getByText('pandas; network disabled')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Providers' }))
     expect(await screen.findByText('Node 24.21.0')).toBeInTheDocument()
@@ -121,6 +121,22 @@ describe('SandboxesPage', () => {
     await waitFor(() => expect(apiMock.createSandboxTemplate).toHaveBeenCalledWith({
       name: 'Data work', provider: 'sandbox', packages: { system: [], python: ['polars', 'rich'], npm: [] }, network: { access: 'disabled' }, resources: { cpus: 2 },
     }))
+  })
+
+  it('opens a template to show exactly what it installs', async () => {
+    const data = { ...template, id: 'tpl_builtin_data_science', name: 'Data science', built_in: true, provider: 'sandbox', unsupported_fields: [], network: { access: 'enabled', allowed_domains: [] }, packages: { npm: [], python: ['matplotlib', 'seaborn', 'scipy', 'scikit-learn'], system: ['ripgrep'] } }
+    apiMock.listSandboxTemplates.mockResolvedValue(page([data]))
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    await user.click(await screen.findByRole('button', { name: 'Templates' }))
+    expect(screen.getByText('ripgrep, matplotlib, seaborn, scipy, scikit-learn'.split(', ').slice(0, 3).join(', ') + ' and 2 more')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Data science' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('matplotlib, seaborn, scipy, scikit-learn')).toBeInTheDocument()
+    expect(within(dialog).getByText('ripgrep')).toBeInTheDocument()
+    expect(within(dialog).getByText('Built in. It cannot be changed or deleted.')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('marks built-in templates and offers no delete for them', async () => {
