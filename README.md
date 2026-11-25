@@ -34,20 +34,26 @@ scripts/dev.sh image    # build the Docker image, export it to dist/agentry-web-
 scripts/start.sh        # deploy: load the newest dist/*.tar and run it as container agentry-web
 ```
 
-**Running the published image (no repository).** Each GitHub Release attaches `compose.yaml` (pinned to that version) and `agentry-web.env.example`; the same files are in `deploy/`.
+**Running from the published images (no repository).** `deploy/compose.yaml` runs Agentry from GHCR; each Agentry Web release attaches it (web tag pinned) with `agentry.env.example`.
 
 ```bash
-cp agentry-web.env.example agentry-web.env   # fill it in; generate the secret once: openssl rand -base64 32
-docker login ghcr.io                          # once; the package is private
-docker compose up -d                          # http://localhost:3000 (AGENTRY_WEB_PORT to change)
+cp agentry.env.example .env      # fill it in
+docker login ghcr.io             # only for private packages
+docker compose up -d             # http://localhost:3000
 ```
 
-- Settings are the container's environment (`agentry-web.env`): `AGENTRY_WEB_AUTH`, `AGENTRY_API_URL`, `AGENTRY_WEB_SESSION_SECRET`, optional `AGENTRY_WEB_MODELS` and `AGENTRY_WEB_CONNECTORS_FEATURED`, and the Keycloak trio in keycloak mode. Docker reads the values literally (no quotes). A change applies on `docker compose up -d`.
-- Inside the container `localhost` is the container: an API on the same machine is `http://host.docker.internal:<port>` (the compose file maps that name to the host).
-- Keep the session secret (changing it signs everyone out) and the `agentry-web-data` volume (the encrypted connector key).
-- Update: download the new release's `compose.yaml` (or set `AGENTRY_WEB_TAG=<version>`), then `docker compose pull && docker compose up -d`.
-- Users still sign in with their own Agentry API key, and the Composio key is entered in Plugins → Apps.
-- Without Compose: `docker run -d --name agentry-web --restart unless-stopped -p 3000:3000 --env-file agentry-web.env --add-host host.docker.internal:host-gateway -v agentry-web-data:/data ghcr.io/fakhrulfaiz/agentry-web:<version>`.
+Two modes, chosen by `COMPOSE_PROFILES` in `.env`:
+
+| `COMPOSE_PROFILES` | Runs | You set |
+|---|---|---|
+| `full` | Agentry Web, the Agentry API (`ghcr.io/fakhrulfaiz/agentry-api`) and Postgres 16; the web app uses the API at `http://api:3080` | `AGENTRY_WEB_SESSION_SECRET`, `POSTGRES_PASSWORD`, `AGENTRY_DEV_KEY` (users sign in with it), `DEEPSEEK_API_KEY` |
+| empty | Agentry Web only | `AGENTRY_WEB_SESSION_SECRET` and `AGENTRY_API_URL` (your API; from the container, a service on this machine is `http://host.docker.internal:<port>`) |
+
+- Agentry Sandbox is not in the file (no published service image yet): run it yourself and set `AGENTRY_SANDBOX_URL` / `AGENTRY_SANDBOX_KEY` (full mode passes them to the API).
+- Each service gets only its own settings (no shared env file inside the containers). Docker reads `.env` values literally: no quotes.
+- The API is not published on the host in full mode (the web app reaches it on the compose network); `compose.yaml` shows the override that publishes it on `127.0.0.1:3080`.
+- Keep the session secret (changing it signs everyone out) and the volumes (`web-data`: connector key; `api-data`: DSH home, workspaces, uploads; `postgres-data`).
+- Update: set `AGENTRY_WEB_TAG` / `AGENTRY_API_TAG` (or use a newer release's file), then `docker compose pull && docker compose up -d`.
 
 **Branches and CI.** Work lands on `develop`; `main` changes only through a `develop` → `main` pull request. GitHub Actions (`.github/workflows/`):
 

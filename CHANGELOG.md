@@ -10,6 +10,10 @@ All notable changes to Agentry Web are recorded here.
 
 - `deploy/compose.yaml` and `deploy/agentry-web.env.example`: run `ghcr.io/fakhrulfaiz/agentry-web` with Docker Compose and a settings file. Each GitHub Release attaches both, the compose file pinned to that version. README "Running the published image".
 
+## 2026-11-25 — one compose file for the whole stack
+
+- `deploy/compose.yaml` runs Agentry from the published images in two modes (`COMPOSE_PROFILES` in `.env`): `full` (Agentry Web, the Agentry API from `ghcr.io/fakhrulfaiz/agentry-api`, Postgres 16; the web app uses the API at `http://api:3080`) or web only (against your own API, `AGENTRY_API_URL`). One settings file, `deploy/agentry.env.example` (replaces `agentry-web.env.example`); each service gets only its own values. Agentry Sandbox stays separate (`AGENTRY_SANDBOX_URL` / `_KEY`). Verified both modes locally: full-mode sign-in with the dev key and the web app's API calls through the bundled API, and web-only reaching an API on the host. Releases attach the new file names.
+
 ## 0.1.0 — 2026-11-25
 
 First tagged release: the claude.ai-style Agentry frontend (sign-in, chat with live reasoning and tool cards, trajectory view, agents, scheduled tasks, artifacts, plugins and skills, sandboxes), with faster navigation, user message actions, the launchers, the Docker image and CI described in the entries below.
