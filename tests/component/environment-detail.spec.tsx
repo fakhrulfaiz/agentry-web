@@ -24,6 +24,7 @@ const apiMock = vi.hoisted(() => ({
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
 
+import { ApiError } from '@/api/client'
 import { EnvironmentDetail } from '@/ui/sandboxes/EnvironmentDetail'
 
 const base = { id: 'env_sbx', object: 'agent.environment', type: 'openai_hosted', status: 'connected', provider: 'sandbox', name: 'Data box', created_at: 1_700_000_000 }
@@ -87,8 +88,45 @@ describe('EnvironmentDetail', () => {
   it('says when the sandbox is gone and offers no chat', async () => {
     apiMock.getSandboxEnvironment.mockResolvedValue({ ...base, sandbox: { state: 'gone' } })
     render(<EnvironmentDetail environmentId="env_sbx" />)
-    expect(await screen.findByText(/no longer exists in Agentry Sandbox/)).toBeInTheDocument()
+    expect(await screen.findByText('This sandbox is gone')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'New chat here' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument()
+  })
+
+  it('a gone environment shows one panel with Delete and no files section', async () => {
+    apiMock.getSandboxEnvironment.mockResolvedValue({ ...base, sandbox: { state: 'gone' } })
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByText('This sandbox is gone')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Delete environment' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Back to sandboxes' })).toBeInTheDocument()
+    expect(apiMock.listEnvironmentFiles).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Files' })).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="file"]')).toBeNull()
+  })
+
+  it('a raw files error is shown in plain words without Retry', async () => {
+    apiMock.listEnvironmentFiles.mockRejectedValue(new ApiError(500, 'internal', '[unimplemented]'))
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByText("Couldn't list the files.")).toBeInTheDocument()
+    expect(screen.queryByText(/unimplemented/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('an unreachable sandbox offers Retry for files', async () => {
+    apiMock.listEnvironmentFiles.mockRejectedValueOnce(new ApiError(503, 'unavailable', 'down'))
+    const user = userEvent.setup()
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByText("Couldn't reach the sandbox to list files.")).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(apiMock.listEnvironmentFiles).toHaveBeenCalledTimes(2))
+  })
+
+  it('a stopped environment asks to start it instead of offering Retry', async () => {
+    apiMock.getSandboxEnvironment.mockResolvedValue(stopped)
+    apiMock.listEnvironmentFiles.mockRejectedValue(new ApiError(500, 'internal', '[unimplemented]'))
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByText('Start the environment to see its files.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 })

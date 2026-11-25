@@ -6,6 +6,10 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 2026-11-25 — environment page
+
+- A gone environment now shows one calm panel ("This sandbox is gone") with Delete and Back to sandboxes, and no longer asks for files. Files errors are shown in plain words: Retry only when the sandbox could not be reached, "Start the environment to see its files." for a stopped one. Uploads are disabled with a reason unless the environment is running.
+
 ## 0.3.0 — 2026-11-25
 
 Everything since 0.1.0 (0.2.0 was prepared but never released).
