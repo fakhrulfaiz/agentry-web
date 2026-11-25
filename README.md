@@ -42,6 +42,18 @@ scripts/start.sh        # deploy: load the newest dist/*.tar and run it as conta
 | Pull request to `main` | `ci.yml`: the same, then Playwright e2e (mock API) and a Docker build check |
 | Merge to `main` | `publish.yml`: builds the image and pushes `ghcr.io/<owner>/agentry-web:<version>-<sha>`, `:<version>` and `:latest` |
 
+**Releasing a version.** The version is `"version"` in `package.json`; a `develop` → `main` merge is a release.
+
+```bash
+git checkout develop
+npm version 0.2.0 --no-git-tag-version   # or minor / major / patch
+# add a "## 0.2.0 — <date>" section at the top of CHANGELOG.md (the release notes)
+git commit -am "release: 0.2.0" && git push
+# then the develop → main pull request; merge it
+```
+
+The pull request fails ("Version not yet released") when `package.json` names a version that already has a `v<version>` tag. After the merge, `publish.yml` pushes the image (`<version>-<sha>`, `<version>`, `latest`), tags the commit `v<version>` and creates the GitHub Release from that CHANGELOG section (or from the commits when there is none). A version that is already released is never published again; that run only warns. Deploy a pinned version with `AGENTRY_WEB_GHCR_IMAGE=ghcr.io/fakhrulfaiz/agentry-web:0.2.0 scripts/start.sh --ghcr`.
+
 `scripts/start.sh` uses a local `dist/*.tar` first, then pulls `ghcr.io/<owner>/agentry-web:latest` (`--ghcr` pulls even when a tar is here; `AGENTRY_WEB_GHCR_IMAGE` picks another tag). The package is private like the repo: the machine needs `docker login ghcr.io` with a token that has `read:packages`.
 
 **Deploying from the image.** `scripts/dev.sh image` builds the `Dockerfile` (Next's standalone server on `node:24.19.0-bookworm-slim`, no configuration baked in) and saves it as `dist/agentry-web-<version>-<commit>[-dirty].tar`. `scripts/start.sh` takes the newest tar there (or `AGENTRY_WEB_IMAGE_TAR`), loads it unless that tag is already loaded, and replaces the container `agentry-web` (`--restart unless-stopped`, port `PORT`, default 3000). On another machine, copy the tar into `dist/` next to the scripts and the env file; Docker is all it needs (no Node or pnpm).

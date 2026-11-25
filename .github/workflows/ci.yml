@@ -1,6 +1,7 @@
 # Checks for agentry-web.
 #   push to develop          typecheck + unit/component tests (fast feedback on every change)
-#   pull request to main     the same, then Playwright e2e against the mock API, and a Docker build
+#   pull request to main     the same, then Playwright e2e against the mock API, a Docker build,
+#                            and a check that package.json names a version not yet released
 # The image is published to GHCR only after the merge (see publish.yml).
 name: CI
 
@@ -18,6 +19,26 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    name: Version not yet released
+    # A develop → main merge is a release: package.json must name a version without a tag.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check package.json version against the release tags
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::error file=package.json::Version $version is already released (tag v$version). Bump it on develop: npm version minor --no-git-tag-version (or patch / major / an exact version)."
+            exit 1
+          fi
+          if ! scripts/ci/release-notes.sh "$version" | grep -q .; then
+            echo "::warning file=CHANGELOG.md::No \"## $version\" section in CHANGELOG.md; the release notes will be generated from the commits."
+          fi
+          echo "Releasing $version on merge." >> "$GITHUB_STEP_SUMMARY"
+
   check:
     name: Typecheck and tests
     runs-on: ubuntu-latest

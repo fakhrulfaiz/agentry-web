@@ -6,6 +6,14 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 0.1.0 — 2026-11-25
+
+First tagged release: the claude.ai-style Agentry frontend (sign-in, chat with live reasoning and tool cards, trajectory view, agents, scheduled tasks, artifacts, plugins and skills, sandboxes), with faster navigation, user message actions, the launchers, the Docker image and CI described in the entries below.
+
+## 2026-11-25 — versioned releases
+
+- A `develop` → `main` merge is a release of `package.json`'s version: the pull request fails when that version already has a `v<version>` tag, and `publish.yml` pushes the image, tags `v<version>` and creates the GitHub Release (notes from this file's `## <version>` section, `scripts/ci/release-notes.sh`). An already released version is never published again.
+
 ## 2026-11-25 — CI and GHCR
 
 - GitHub Actions: `ci.yml` (push to `develop`: typecheck + Vitest; pull request to `main`: also Playwright e2e and a Docker build check) and `publish.yml` (merge to `main`: image to `ghcr.io/<owner>/agentry-web` as `<version>-<sha>`, `<version>`, `latest`).
