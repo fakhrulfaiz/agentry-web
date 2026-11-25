@@ -85,7 +85,8 @@ test('reopening a chat shows the full history once: user, tool and assistant', a
   await page.waitForTimeout(1000) // let the replay settle
   const users = page.getByRole('article', { name: /user/i })
   await expect(users).toHaveCount(1)
-  await expect(users).toHaveText('Use a tool please')
+  // The bubble's text only: the row also holds the hover actions (Retry, Edit, Copy).
+  await expect(users.getByText('Use a tool please', { exact: true })).toHaveCount(1)
   await openWork(page)
   await expect(page.getByRole('button', { name: /search/ })).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveCount(1)
