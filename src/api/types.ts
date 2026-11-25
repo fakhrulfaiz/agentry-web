@@ -637,7 +637,7 @@ export interface SandboxPlace {
   /** Why it is unavailable. */
   reason?: string
   gpus?: { count: number; models: string[] }
-  capabilities: { reset: boolean; isolated: boolean; gpu: boolean }
+  capabilities: { reset: boolean; keepFilesOnReset?: boolean; isolated: boolean; gpu: boolean }
 }
 
 /** An environment template (`agent.environment.template`). */

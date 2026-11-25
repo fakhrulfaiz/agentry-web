@@ -14,6 +14,7 @@ vi.mock('next/navigation', () => ({
 const apiMock = vi.hoisted(() => ({
   getSandboxEnvironment: vi.fn(),
   listEnvironmentFiles: vi.fn(),
+  listSandboxProviders: vi.fn(),
   startSandboxEnvironment: vi.fn(),
   stopSandboxEnvironment: vi.fn(),
   resetSandboxEnvironment: vi.fn(),
@@ -32,6 +33,7 @@ const stopped = { ...base, sandbox: { state: 'stopped', image: 'python:3.13' } }
 beforeEach(() => {
   apiMock.getSandboxEnvironment.mockResolvedValue(running)
   apiMock.listEnvironmentFiles.mockResolvedValue({ object: 'list', data: [], has_more: false })
+  apiMock.listSandboxProviders.mockRejectedValue(new Error('no places'))
 })
 afterEach(() => {
   cleanup()
@@ -57,6 +59,20 @@ describe('EnvironmentDetail', () => {
     render(<EnvironmentDetail environmentId="env_sbx" />)
     await user.click(await screen.findByRole('button', { name: 'Reset' }))
     await user.click(await screen.findByRole('switch', { name: 'Keep workspace files' }))
+    await user.click(screen.getByRole('button', { name: 'Reset and delete files' }))
+    await waitFor(() => expect(apiMock.resetSandboxEnvironment).toHaveBeenCalledWith('env_sbx', false))
+  })
+
+  it('says reset deletes all files, and offers no keep-files switch, on a place that cannot keep them', async () => {
+    apiMock.getSandboxEnvironment.mockResolvedValue({ ...base, sandbox: { state: 'running', image: 'base', place: 'e2b1' } })
+    apiMock.listSandboxProviders.mockResolvedValue({ object: 'list', data: [{ name: 'sandbox', places: [{ id: 'e2b1', name: 'E2B', kind: 'e2b', default: false, available: true, capabilities: { reset: true, keepFilesOnReset: false, isolated: true, gpu: false } }] }] })
+    apiMock.resetSandboxEnvironment.mockResolvedValue(running)
+    const user = userEvent.setup()
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    await screen.findByText('Runs on E2B')
+    await user.click(await screen.findByRole('button', { name: 'Reset' }))
+    expect(await screen.findByText('Reset deletes all files in this environment.')).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Keep workspace files' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reset and delete files' }))
     await waitFor(() => expect(apiMock.resetSandboxEnvironment).toHaveBeenCalledWith('env_sbx', false))
   })

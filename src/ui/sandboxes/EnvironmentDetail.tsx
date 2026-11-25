@@ -98,6 +98,9 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const placeName = place?.name ?? env?.sandbox?.place ?? ''
   const gpuText = gpuLabel(typeof env?.sandbox?.gpus === 'number' ? env.sandbox.gpus : undefined) ?? (env?.sandbox?.gpus === 'all' ? 'All GPUs' : null)
   const canReset = place?.capabilities.reset !== false
+  // A place that cannot keep files across a reset (E2B) deletes them: no keep-files choice, and the request says so.
+  const canKeep = place?.capabilities.keepFilesOnReset !== false
+  const keeping = canKeep && keepWorkspace
 
   async function more() {
     if (!next) return
@@ -139,7 +142,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         ? await api.startSandboxEnvironment(environmentId)
         : action === 'stop'
           ? await api.stopSandboxEnvironment(environmentId)
-          : await api.resetSandboxEnvironment(environmentId, keepWorkspace)
+          : await api.resetSandboxEnvironment(environmentId, keeping)
       setEnv(updated)
       if (action === 'reset') {
         setConfirmReset(false)
@@ -260,14 +263,16 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         <DialogHeader title="Reset this environment?" onOpenChange={(open: boolean) => { setConfirmReset(open); if (!open) setKeepWorkspace(true) }} />
         <VStack gap={3} padding={4}>
           <Text>
-            {keepWorkspace
+            {!canKeep
+              ? 'Reset deletes all files in this environment.'
+              : keepWorkspace
               ? 'The sandbox is rebuilt from its template: installed software and anything outside the workspace are lost. Workspace files are kept.'
               : 'The sandbox is rebuilt from its template and every workspace file is deleted.'}
           </Text>
-          <Switch label="Keep workspace files" value={keepWorkspace} onChange={setKeepWorkspace} />
+          {canKeep && <Switch label="Keep workspace files" value={keepWorkspace} onChange={setKeepWorkspace} />}
           <HStack gap={2} hAlign="end">
             <Button label="Cancel" onClick={() => setConfirmReset(false)} />
-            <Button label={keepWorkspace ? 'Reset, keep files' : 'Reset and delete files'} variant="destructive" isLoading={acting === 'reset'} onClick={() => void act('reset')} />
+            <Button label={keeping ? 'Reset, keep files' : 'Reset and delete files'} variant="destructive" isLoading={acting === 'reset'} onClick={() => void act('reset')} />
           </HStack>
         </VStack>
       </Dialog>
