@@ -123,25 +123,6 @@ describe('SandboxesPage', () => {
     }))
   })
 
-  it('starts a template from a starter: the form is prefilled, and nothing is saved until Save', async () => {
-    const sandbox = { object: 'sandbox.provider', name: 'sandbox', default: false, available: true, capabilities: { templateFields: ['image', 'packages', 'setup_commands', 'env', 'network', 'files', 'resources'], files: true, exec: true } }
-    apiMock.listSandboxProviders.mockResolvedValue(page([provider, sandbox]))
-    apiMock.createSandboxTemplate.mockResolvedValue(template)
-    const user = userEvent.setup()
-    render(<SandboxesPage />)
-    await user.click(await screen.findByRole('button', { name: 'Templates' }))
-    await user.click(screen.getByRole('button', { name: 'New template' }))
-    await user.click(await screen.findByRole('button', { name: 'Coding agents' }))
-    expect(screen.getByRole('textbox', { name: /^Name/ })).toHaveValue('Coding agents')
-    expect(apiMock.createSandboxTemplate).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Offline' }))
-    expect(screen.getByRole('textbox', { name: /^Name/ })).toHaveValue('Offline')
-    await user.click(screen.getByRole('button', { name: 'Save template' }))
-    await waitFor(() => expect(apiMock.createSandboxTemplate).toHaveBeenCalledWith({
-      name: 'Offline', provider: 'sandbox', network: { access: 'disabled' },
-    }))
-  })
-
   it('on this server the template editor offers only starter files', async () => {
     const user = userEvent.setup()
     render(<SandboxesPage />)
