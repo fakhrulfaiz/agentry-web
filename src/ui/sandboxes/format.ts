@@ -51,7 +51,9 @@ export function providerTitle(name: string): string {
 
 /** A place's kind in plain words. */
 export function placeKindTitle(kind: string): string {
-  return kind === 'docker' ? 'Docker on this server' : kind === 'docker-ssh' ? 'Docker over SSH' : kind
+  if (kind === 'docker') return 'Docker on this server'
+  if (kind === 'docker-ssh') return 'Docker over SSH'
+  return kind === 'ssh-machine' ? 'Machine over SSH (no isolation)' : kind
 }
 
 /** "2 GPUs", "1 GPU", or null for a place without any. */

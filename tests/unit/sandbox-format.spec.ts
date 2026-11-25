@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SandboxEnvironment } from '@/api/types'
-import { canChatIn, environmentLook, environmentName, lastUsed, parseEnvLines, templateBody } from '@/ui/sandboxes/format'
+import { canChatIn, environmentLook, environmentName, lastUsed, parseEnvLines, placeKindTitle, templateBody } from '@/ui/sandboxes/format'
 
 const env = (over: Partial<SandboxEnvironment> = {}): SandboxEnvironment => ({ id: 'env_1', object: 'agent.environment', type: 'openai_hosted', status: 'connected', provider: 'sandbox', created_at: 1, ...over })
 
@@ -78,5 +78,13 @@ describe('places in the template body', () => {
     expect(templateBody(form, ['gpus'])).toEqual({ body: { name: 'T', provider: 'sandbox', place: 'gpu-box', gpus: 'all' } })
     expect(templateBody({ ...form, gpus: '0' }, ['gpus'])).toEqual({ body: { name: 'T', provider: 'sandbox', place: 'gpu-box' } })
     expect(templateBody(form, [])).toEqual({ body: { name: 'T', provider: 'sandbox', place: 'gpu-box' } })
+  })
+})
+
+describe('place kinds in plain words', () => {
+  it('names an SSH machine place and says it has no isolation', () => {
+    expect(placeKindTitle('ssh-machine')).toBe('Machine over SSH (no isolation)')
+    expect(placeKindTitle('docker-ssh')).toBe('Docker over SSH')
+    expect(placeKindTitle('docker')).toBe('Docker on this server')
   })
 })

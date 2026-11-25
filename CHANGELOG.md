@@ -13,6 +13,7 @@ All notable changes to Agentry Web are recorded here.
 ## 2026-11-25 — sandbox places and GPUs
 
 - Sandboxes: "Runs on" lists each Agentry Sandbox place under Isolated sandbox with its kind (Docker on this server, Docker over SSH), availability, why it is off, and its GPU count; the default place is preselected. The template editor saves the place and, for a place with GPUs, a GPUs choice (0 up to its count, or All). New environment sends the chosen place. The environment page shows "Runs on <place>" and its GPUs, and hides Reset when the place cannot reset. The mock API offers two places, one with 2 GPUs.
+- Sandboxes: "Runs on" names the new SSH machine place kind "Machine over SSH (no isolation)"; such a place has no Reset (it cannot reset). The mock API offers a third place of that kind.
 
 ## 0.2.0 — 2026-11-25
 
