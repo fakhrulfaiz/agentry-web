@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -18,6 +18,7 @@ const FILE = { id: 'file' } as const
 const TEMPLATE = { id: 'template' } as const
 const ENVIRONMENT = { id: 'environment' } as const
 const SKILL = { id: 'skill' } as const
+const TERMINAL = { id: 'terminal' } as const
 /** Installed skill ids Agentry issues. */
 const SKILL_ID = /^skill_[a-f0-9]{32}$/
 
@@ -49,6 +50,11 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'stop'] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'reset'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'files'] },
+  // Interactive shell in a sandbox: open, type, resize, close. The output stream has its own route (SSE).
+  { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals'] },
+  { methods: ['DELETE'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL] },
+  { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL, 'input'] },
+  { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL, 'resize'] },
   { methods: ['GET', 'POST'], segments: ['agents'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', AGENT] },
   { methods: ['GET', 'POST'], segments: ['agents', 'sessions'] },

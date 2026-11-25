@@ -6,7 +6,10 @@ import { createElement, createContext, useCallback, useContext, useEffect, useMe
 export interface PanelState {
   open: boolean
   tabs: { path: string; pinned: boolean }[]
-  /** `'files'` (the tree) or an open file's path. */
+  /** Terminal tabs (sandbox chats); each `key` is local to this panel. */
+  terminals: { key: string; title: string }[]
+  termCount: number
+  /** `'start'` (the chooser), `'files'` (the tree), `term:<key>`, or an open file's path. */
   active: string
   treeVisible: boolean
   width: number
@@ -17,7 +20,7 @@ export const MAX_WIDTH = 900
 const DEFAULT_WIDTH = 560
 const WIDTH_KEY = 'agentry-preview-width'
 
-export const initialState = (): PanelState => ({ open: false, tabs: [], active: 'files', treeVisible: false, width: DEFAULT_WIDTH })
+export const initialState = (): PanelState => ({ open: false, tabs: [], terminals: [], termCount: 0, active: 'start', treeVisible: false, width: DEFAULT_WIDTH })
 
 export function openFile(s: PanelState, path: string): PanelState {
   const existing = s.tabs.find((t) => t.path === path)
@@ -39,6 +42,22 @@ export function closeTab(s: PanelState, path: string): PanelState {
   return { ...s, tabs, active: s.active === path ? 'files' : s.active }
 }
 
+export const showStart = (s: PanelState): PanelState => ({ ...s, open: true, active: 'start' })
+
+export function openTerminal(s: PanelState): PanelState {
+  const n = s.termCount + 1
+  const key = `t${String(n)}`
+  return { ...s, open: true, terminals: [...s.terminals, { key, title: `Terminal ${String(n)}` }], termCount: n, active: `term:${key}` }
+}
+
+export const selectTerminal = (s: PanelState, key: string): PanelState => ({ ...s, open: true, active: `term:${key}` })
+
+export function closeTerminal(s: PanelState, key: string): PanelState {
+  const terminals = s.terminals.filter((t) => t.key !== key)
+  return { ...s, terminals, active: s.active === `term:${key}` ? 'start' : s.active }
+}
+
+export const togglePanel = (s: PanelState): PanelState => ({ ...s, open: !s.open })
 export const showFiles = (s: PanelState): PanelState => ({ ...s, open: true, active: 'files' })
 export const toggleTree = (s: PanelState): PanelState => ({ ...s, treeVisible: !s.treeVisible })
 export const closePanel = (s: PanelState): PanelState => ({ ...s, open: false })
@@ -58,6 +77,11 @@ export interface PanelActions {
   pinTab(path: string): void
   closeTab(path: string): void
   showFiles(): void
+  showStart(): void
+  toggle(): void
+  openTerminal(): void
+  closeTerminal(key: string): void
+  selectTerminal(key: string): void
   toggleTree(): void
   close(): void
   setWidth(px: number): void
@@ -77,6 +101,11 @@ export function PreviewPanelProvider({ sessionId, children }: { sessionId: strin
       pinTab: (p) => setState((s) => pinTab(s, p)),
       closeTab: (p) => setState((s) => closeTab(s, p)),
       showFiles: () => setState(showFiles),
+      showStart: () => setState(showStart),
+      toggle: () => setState(togglePanel),
+      openTerminal: () => setState(openTerminal),
+      closeTerminal: (key) => setState((s) => closeTerminal(s, key)),
+      selectTerminal: (key) => setState((s) => selectTerminal(s, key)),
       toggleTree: () => setState(toggleTree),
       close: () => setState(closePanel),
       setWidth: (px) =>
@@ -101,7 +130,7 @@ export function usePreviewPanel(): { state: PanelState; actions: PanelActions } 
   return (
     ctx ?? {
       state: initialState(),
-      actions: { openFile: noop, pinTab: noop, closeTab: noop, showFiles: noop, toggleTree: noop, close: noop, setWidth: noop },
+      actions: { openFile: noop, pinTab: noop, closeTab: noop, showFiles: noop, showStart: noop, toggle: noop, openTerminal: noop, closeTerminal: noop, selectTerminal: noop, toggleTree: noop, close: noop, setWidth: noop },
     }
   )
 }

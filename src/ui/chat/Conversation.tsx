@@ -20,7 +20,8 @@
  * (409 `session_setting_not_live`) keeps the draft, shows Agentry's message and
  * puts the menus back.
  */
-import { Button } from '@astryxdesign/core/Button'
+import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Banner } from '@astryxdesign/core/Banner'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
@@ -54,6 +55,8 @@ import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
 import { SessionArtifacts } from './SessionArtifacts'
+import { SessionFilesContext } from './session-files'
+import { PanelRightIcon } from '@/ui/icons/PanelRightIcon'
 import { SubagentItems } from './SubagentCard'
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
@@ -80,14 +83,29 @@ const styles = stylex.create({
   inactive: { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' },
 })
 
-/** Files button in the chat header; also opens `?file=<path>` (from the Artifacts page) once. */
+/** The `environmentId` prop for chats that run in a sandbox (the only ones with a terminal). */
+function sandboxEnvironmentProp(environment: { type?: string; environment_id?: unknown } | undefined): { environmentId?: string } {
+  return environment?.type === 'sandbox' && typeof environment.environment_id === 'string' ? { environmentId: environment.environment_id } : {}
+}
+
+/** Workspace button in the chat header (opens the panel's Start page); also opens `?file=<path>` (from the Artifacts page) once. */
 function PreviewControls() {
   const { actions } = usePreviewPanel()
   useEffect(() => {
     const file = new URLSearchParams(window.location.search).get('file')
     if (file) actions.openFile(file)
   }, [actions])
-  return <Button label="Files" size="sm" variant="ghost" onClick={actions.showFiles} />
+  const { state } = usePreviewPanel()
+  return (
+    <IconButton
+      label={state.open ? 'Close workspace panel' : 'Open workspace panel'}
+      tooltip={state.open ? 'Close workspace panel' : 'Workspace: files and terminal'}
+      variant="ghost"
+      size="sm"
+      icon={<Icon icon={PanelRightIcon} size="sm" />}
+      onClick={actions.toggle}
+    />
+  )
 }
 
 const CLOSED_NOTICE: Record<ClosedReason, { title: string; description: string }> = {
@@ -367,6 +385,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
 
   return (
     <PreviewPanelProvider sessionId={session?.id ?? null}>
+    <SessionFilesContext.Provider value={session?.id ?? null}>
     <VStack xstyle={styles.page}>
       <TopBar
         title={session && !blank ? <ChatTitleMenu sessionId={session.id} metadata={session.metadata} /> : undefined}
@@ -457,10 +476,11 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           </VStack>
         )}
       </VStack>
-      {session && <PreviewPanel sessionId={session.id} idle={!running} />}
+      {session && <PreviewPanel sessionId={session.id} idle={!running} {...sandboxEnvironmentProp(session.environment)} />}
       </HStack>
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
     </VStack>
+    </SessionFilesContext.Provider>
     </PreviewPanelProvider>
   )
 }

@@ -463,6 +463,19 @@ export const api = {
   async deleteSandboxEnvironment(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}`)
   },
+  /** Opens an interactive shell in a sandbox environment; read its output from `terminalStreamUrl`. */
+  openTerminal(id: string, cols: number, rows: number): Promise<{ id: string }> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/terminals`, { cols, rows })
+  },
+  async terminalInput(id: string, terminalId: string, data: string): Promise<void> {
+    await request('POST', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}/input`, { data })
+  },
+  async terminalResize(id: string, terminalId: string, cols: number, rows: number): Promise<void> {
+    await request('POST', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}/resize`, { cols, rows })
+  },
+  async closeTerminal(id: string, terminalId: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}`)
+  },
   /** One page of an environment's files, A to Z. */
   listEnvironmentFiles(id: string, page?: string): Promise<SandboxPage<EnvironmentFile>> {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/files?limit=100&order=asc${page ? `&page=${encodeURIComponent(page)}` : ''}`)

@@ -20,20 +20,31 @@ import {
   DocumentTextIcon,
   FolderIcon,
   PhotoIcon,
+  PlusIcon,
+  CommandLineIcon,
   TableCellsIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
+import { usePrefersReducedMotion } from '@/ui/chat/use-reduced-motion'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type PointerEvent, type SVGProps } from 'react'
 import { api } from '@/api/client'
 import { type RendererId, renderersFor } from '@/preview/renderers'
 import { MAX_WIDTH, MIN_WIDTH, usePreviewPanel } from '@/preview/store'
 import { buildTree, type TreeNode } from '@/preview/tree'
 import { fileUrl } from '@/preview/use-file-bytes'
+import { Terminal } from '@/ui/terminal/Terminal'
 import { FileTree } from './FileTree'
 import { RendererBody } from './renderers'
 
+const SLIDE_MS = '220ms'
+
 const styles = stylex.create({
+  // The slot slides the panel in and out by animating its width; the panel inside keeps its own width, so its content is clipped, not squeezed.
+  slot: { flexShrink: 0, display: 'flex', minHeight: 0, overflow: 'hidden' },
+  slotWidth: (width: number) => ({ width }),
+  slotAnimated: { transitionProperty: 'width, visibility', transitionDuration: `${SLIDE_MS}, 0s`, transitionTimingFunction: 'ease, linear' },
+  slotClosed: { visibility: 'hidden', transitionDelay: `0s, ${SLIDE_MS}` },
   shell: (width: number) => ({
     position: { default: 'relative', '@media (max-width: 767px)': 'fixed' },
     inset: { default: 'auto', '@media (max-width: 767px)': 0 },
@@ -100,6 +111,28 @@ const styles = stylex.create({
   tree: { width: 232, flexShrink: 0, overflow: 'auto', borderInlineEnd: `1px solid ${colorVars['--color-border']}` },
   content: { flex: 1, minWidth: 0, position: 'relative', overflow: 'auto' },
   filesPage: { flex: 1, minWidth: 0, overflow: 'auto', padding: 8 },
+  startPage: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
+  startCard: {
+    all: 'unset',
+    boxSizing: 'border-box',
+    width: '100%',
+    maxWidth: 380,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: '12px 16px',
+    cursor: 'pointer',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: colorVars['--color-border'],
+    borderRadius: radiusVars['--radius-container'],
+    backgroundColor: { default: colorVars['--color-background-card'], ':hover': colorVars['--color-background-muted'] },
+    outlineStyle: { default: 'none', ':focus-visible': 'solid' },
+    outlineWidth: 2,
+    outlineColor: colorVars['--color-accent'],
+  },
+  startCardOff: { cursor: 'default', opacity: 0.55 },
+  termPane: { flex: 1, minHeight: 0, flexDirection: 'column' },
 })
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>
@@ -200,7 +233,29 @@ function FileView({
   )
 }
 
-export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boolean }) {
+function StartPage({ canTerminal }: { canTerminal: boolean }) {
+  const { actions } = usePreviewPanel()
+  return (
+    <div {...stylex.props(styles.startPage)} data-testid="preview-start">
+      <button type="button" onClick={actions.showFiles} {...stylex.props(styles.startCard)}>
+        <Icon icon={FolderIcon} size="md" />
+        <span {...stylex.props(styles.titles)}>
+          <Text weight="medium">Workspace files</Text>
+          <Text type="supporting" color="secondary">Browse files in this chat’s workspace</Text>
+        </span>
+      </button>
+      <button type="button" aria-disabled={!canTerminal} onClick={canTerminal ? actions.openTerminal : undefined} {...stylex.props(styles.startCard, !canTerminal && styles.startCardOff)}>
+        <Icon icon={CommandLineIcon} size="md" />
+        <span {...stylex.props(styles.titles)}>
+          <Text weight="medium">New terminal</Text>
+          <Text type="supporting" color="secondary">{canTerminal ? 'Run commands in this chat’s sandbox' : 'Only chats that run in a sandbox have a terminal'}</Text>
+        </span>
+      </button>
+    </div>
+  )
+}
+
+export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: string; idle: boolean; environmentId?: string }) {
   const { state, actions } = usePreviewPanel()
   const [entries, setEntries] = useState<{ path: string; size?: number }[]>([])
   const [reloadKey, setReloadKey] = useState(0)
@@ -218,9 +273,20 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
   }, [state.open, idle, load])
   const tree = useMemo(() => buildTree(entries), [entries])
 
-  if (!state.open) return null
+  const reducedMotion = usePrefersReducedMotion()
+  // Mounted from the first open on (so terminals keep running while the panel is closed); `shown` lags one frame so the first open slides too.
+  const [mounted, setMounted] = useState(false)
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    if (!state.open) return setShown(false)
+    setMounted(true)
+    const frame = requestAnimationFrame(() => setShown(true))
+    return () => cancelAnimationFrame(frame)
+  }, [state.open])
+  if (!mounted) return null
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') actions.close()
+    // Escape inside a terminal belongs to the program running there (vim, less, ...).
+    if (e.key === 'Escape' && !(e.target as HTMLElement).closest('[data-testid="terminal-host"]')) actions.close()
   }
   const startDrag = (e: PointerEvent) => {
     const startX = e.clientX
@@ -240,7 +306,14 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
     e.preventDefault()
   }
   const showingFiles = state.active === 'files'
+  const onTerminal = state.active.startsWith('term:')
   return (
+    <div
+      data-testid="preview-slot"
+      aria-hidden={!state.open}
+      inert={!state.open}
+      {...stylex.props(styles.slot, styles.slotWidth(shown && state.open ? state.width : 0), !reducedMotion && styles.slotAnimated, !state.open && styles.slotClosed)}
+    >
     <div data-testid="preview-panel" onKeyDown={onKey} {...stylex.props(styles.shell(state.width))}>
       <div
         role="separator"
@@ -255,8 +328,8 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
         {...stylex.props(styles.grip)}
       />
       <div {...stylex.props(styles.card)}>
-        {state.tabs.length > 1 && (
-          <div role="tablist" aria-label="Open files" {...stylex.props(styles.tabs)} style={{ paddingTop: 8 }}>
+        {state.tabs.length + state.terminals.length > 1 && (
+          <div role="tablist" aria-label="Open tabs" {...stylex.props(styles.tabs)} style={{ paddingTop: 8 }}>
             {state.tabs.map((t) => (
               <div key={t.path} {...stylex.props(styles.chip, state.active === t.path && styles.chipActive)}>
                 <button type="button" role="tab" aria-selected={state.active === t.path} onClick={() => actions.openFile(t.path)} onDoubleClick={() => actions.pinTab(t.path)} {...stylex.props(styles.chipLabel)}>
@@ -265,9 +338,31 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
                 <IconButton label={`Close ${basename(t.path)}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeTab(t.path)} />
               </div>
             ))}
+            {state.terminals.map((t) => (
+              <div key={t.key} {...stylex.props(styles.chip, state.active === `term:${t.key}` && styles.chipActive)}>
+                <button type="button" role="tab" aria-selected={state.active === `term:${t.key}`} onClick={() => actions.selectTerminal(t.key)} {...stylex.props(styles.chipLabel)}>
+                  <Text type="supporting" maxLines={1}>{t.title}</Text>
+                </button>
+                <IconButton label={`Close ${t.title}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeTerminal(t.key)} />
+              </div>
+            ))}
+            <IconButton label="New tab" tooltip="New tab" variant="ghost" size="sm" icon={<Icon icon={PlusIcon} size="sm" />} onClick={actions.showStart} />
           </div>
         )}
-        {showingFiles ? (
+        {state.active === 'start' ? (
+          <>
+            <div {...stylex.props(styles.header)}>
+              <div {...stylex.props(styles.identity)}>
+                <Text weight="medium">Start</Text>
+              </div>
+              <div {...stylex.props(styles.actions)}>
+                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
+              </div>
+            </div>
+            <div {...stylex.props(styles.divider)} />
+            <StartPage canTerminal={environmentId !== undefined} />
+          </>
+        ) : onTerminal ? null : showingFiles ? (
           <>
             <div {...stylex.props(styles.header)}>
               <div {...stylex.props(styles.identity)}>
@@ -291,7 +386,32 @@ export function PreviewPanel({ sessionId, idle }: { sessionId: string; idle: boo
         ) : (
           <FileView sessionId={sessionId} path={state.active} size={entries.find((e) => e.path === state.active)?.size} tree={tree} reloadKey={reloadKey} onMissing={load} />
         )}
+        {onTerminal && (
+          <>
+            <div {...stylex.props(styles.header)}>
+              <div {...stylex.props(styles.identity)}>
+                <span {...stylex.props(styles.tile)}><Icon icon={CommandLineIcon} size="md" /></span>
+                <div {...stylex.props(styles.titles)}>
+                  <Text weight="medium">{state.terminals.find((t) => `term:${t.key}` === state.active)?.title ?? 'Terminal'}</Text>
+                  <Text type="supporting" color="secondary">A shell in this chat’s sandbox</Text>
+                </div>
+              </div>
+              <div {...stylex.props(styles.actions)}>
+                <IconButton label="New terminal" tooltip="New terminal" variant="ghost" size="sm" icon={<Icon icon={PlusIcon} size="sm" />} onClick={actions.openTerminal} />
+                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
+              </div>
+            </div>
+            <div {...stylex.props(styles.divider)} />
+          </>
+        )}
+        {environmentId !== undefined && state.terminals.map((t) => (
+          // Every terminal stays mounted so its shell survives switching tabs; closing the tab closes the shell.
+          <div key={t.key} role="tabpanel" aria-label={t.title} {...stylex.props(styles.termPane)} style={{ display: state.active === `term:${t.key}` ? 'flex' : 'none' }}>
+            <Terminal environmentId={environmentId} variant="pane" />
+          </div>
+        ))}
       </div>
+    </div>
     </div>
   )
 }

@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { EnvironmentFile, SandboxEnvironment, SandboxPlace } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
+import { Terminal } from '@/ui/terminal/Terminal'
 import { canChatIn, environmentLook, environmentName, formatBytes, gpuLabel, lastUsed, providerTitle, shortDate, shortId, toBase64 } from './format'
 
 const COLUMN_WIDTH = 880
@@ -249,6 +250,13 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             }
           />
         ) : (
+        <VStack gap={5}>
+        {env?.provider === 'sandbox' && (
+          <VStack gap={2}>
+            <Heading level={2}>Terminal</Heading>
+            <Terminal environmentId={environmentId} isDisabled={state !== undefined && state !== 'running' && state !== 'stopped'} />
+          </VStack>
+        )}
         <VStack gap={2}>
           <HStack gap={3} vAlign="end" wrap="wrap">
             <StackItem size="fill"><Heading level={2}>Files</Heading></StackItem>
@@ -288,6 +296,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             </ul>
           )}
           {next !== undefined && <Button label="Show more files" onClick={() => void more()} />}
+        </VStack>
         </VStack>
         )}
       </VStack>
