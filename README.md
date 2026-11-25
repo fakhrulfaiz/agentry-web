@@ -23,14 +23,21 @@ Copy `.env.example` to `.env.local` and fill it in. The server validates these v
 
 Behind a reverse proxy, forward `X-Forwarded-Proto` and `X-Forwarded-Host` (the app uses them for same-origin checks and Keycloak redirect URIs), or set Auth.js's `AUTH_URL` to the public URL.
 
-The session cookie is `Secure` whenever `NODE_ENV=production`, so `pnpm start` over plain `http://` needs HTTPS in front of it (Safari drops `Secure` cookies on `http://localhost`); use `pnpm dev` for local http.
+The session cookie is `Secure` whenever `NODE_ENV=production`. Chrome, Edge and Firefox accept it on `http://localhost`, so `scripts/start.sh` works locally in those; Safari drops it, and any other host over plain `http://` needs HTTPS in front.
 
-## Development
+## Running it
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:3000
+scripts/start.sh  # production build + server, http://localhost:3000 (daily use)
+scripts/dev.sh    # next dev with hot reload (while changing the code)
 ```
+
+Both launchers first check that the Agentry API answers `GET $AGENTRY_API_URL/health` (read from `.env.local`). When it does not, they offer to start it (its own `~/code/dsh-agents-api/scripts/dev.sh`, in the herdr terminal `agentry-api`), wait for it, continue without it, or quit; with `NONINTERACTIVE=1` they wait up to `AGENTRY_API_WAIT_SECONDS` (120) and then fail. They also refuse a port already in use (`PORT`, default 3000).
+
+- `scripts/start.sh` rebuilds only when `app/`, `src/`, the config, the lockfile or the env files changed since the last build (`--rebuild` forces it, `--no-build` skips it). Use it for real use: Next prefetches pages and keeps them in the client cache only in a production build, so `next dev` is several times slower per click and compiles each page on its first visit.
+- Menus use [gum](https://github.com/charmbracelet/gum) `0.17.0` when it is on the `PATH` or in `.tools/bin` (the first terminal run offers to download it there); without it they fall back to numbered prompts. Shared code: `scripts/lib/launch.sh`.
+- Overrides: `AGENTRY_API_REPO` (default `~/code/dsh-agents-api`), `AGENTRY_API_HERDR_NAME` (default `agentry-api`).
 
 Other scripts:
 

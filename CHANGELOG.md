@@ -6,6 +6,10 @@ All notable changes to Agentry Web are recorded here.
 
 
 
+## 2026-11-25 — launchers
+
+- `scripts/start.sh` (production build + `next start`, rebuilding only when the source changed) and `scripts/dev.sh` (`next dev`). Both check that the Agentry API answers `/health` first and offer to start it in herdr, wait, continue or quit (`NONINTERACTIVE=1`: wait, then fail), and refuse a busy port. Menus use gum 0.17.0 when present (offered into `.tools/bin`), else plain prompts.
+
 ## 2026-11-25 — faster sidebar navigation; user message actions
 
 - Sidebar clicks no longer wait on the server. Every signed-in page is dynamic, so Next prefetched nothing and kept no client copy: in-app links now prefetch their page in full (`AppLink` in `AppTheme.tsx`; `/api/` links are left alone), and `experimental.staleTimes.dynamic` keeps a visited page for 60s. Measured on a production build against the mock API: 0 server requests per sidebar click (was 1 each). `next dev` stays much slower (it compiles each route on first visit and never prefetches): judge speed on `pnpm build && pnpm start`.
