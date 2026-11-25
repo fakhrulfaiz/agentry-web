@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-26: The New template editor has a "Start from" row of six starters (Data science, Web and scraping, Node and TypeScript, Coding agents, Python 3.13, Offline). A starter fills the name and software or limits; nothing is saved until Save template. They add to the standard image, so they list only what it lacks.
 - 2026-11-26: The chat's right-hand panel opens on a Start page from the header's Workspace button: Workspace files, and New terminal for chats that run in a sandbox. Terminals are tabs next to file tabs (several at once, each stays running while another tab is shown; closing a tab closes its shell), with a + for a new tab.
 - 2026-11-26: Terminal on a sandbox environment's page: a real shell (xterm.js) inside the sandbox as the agent user, over the API's new terminal routes (SSE output, POST input and resize); the BFF allow-list and a dedicated SSE route carry them. Spec `docs/superpowers/specs/2026-11-25-sandbox-terminal-design.md`. Phase 2 (a Terminal tab in chats that run on a sandbox environment) is not built yet.
 - 2026-11-25: Assistant Markdown shows an image inline when it is a file of the chat's own workspace (a relative path, or an absolute path inside the chat's session or sandbox folder), served through the BFF. Remote images still become links.

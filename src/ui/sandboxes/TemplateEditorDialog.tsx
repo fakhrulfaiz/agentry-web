@@ -29,6 +29,7 @@ import type { SandboxProvider } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { fieldWords, formatBytes, providerTitle, splitList, templateBody, toBase64, type TemplateForm } from './format'
 import { defaultPlace, richestProvider, RunsOnPicker } from './RunsOnPicker'
+import { TEMPLATE_STARTERS } from './template-starters'
 
 const MAX_STARTER_FILE = 1024 * 1024
 const MAX_STARTER_FILES = 20
@@ -196,6 +197,21 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
 
         <div {...stylex.props(ui.body)}>
           <section aria-label="Template" {...stylex.props(ui.side)}>
+            <VStack gap={2}>
+              <Text weight="medium">Start from</Text>
+              <HStack gap={2} wrap="wrap" role="group" aria-label="Start from">
+                {TEMPLATE_STARTERS.map((starter) => (
+                  <Button
+                    key={starter.id}
+                    label={starter.name}
+                    size="sm"
+                    variant="ghost"
+                    tooltip={starter.summary}
+                    onClick={() => setForm((f) => ({ ...f, name: starter.name, image: '', system: '', python: '', npm: '', setup: '', network: true, ...starter.set }))}
+                  />
+                ))}
+              </HStack>
+            </VStack>
             <TextInput label="Name" value={form.name} onChange={set('name')} placeholder="Python data work" isRequired />
             <RunsOnPicker
               providers={providers}
