@@ -11,9 +11,12 @@ export function formatTokens(n: number): string {
   return count.format(n)
 }
 
-/** `13 s`, `2 m 5 s`. */
+/** `340 ms`, `1.3 s`, `13 s`, `2 m 5 s`. */
 export function formatSeconds(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds))
+  const exact = Math.max(0, seconds)
+  if (exact < 1) return `${String(Math.round(exact * 1000))} ms`
+  if (exact < 10) return `${(Math.round(exact * 10) / 10).toFixed(1)} s`
+  const s = Math.round(exact)
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} m ${s % 60} s`
 }
 

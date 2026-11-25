@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/',
 }))
 
-const apiMock = vi.hoisted(() => ({ models: vi.fn(), createSession: vi.fn(), listSkills: vi.fn(), listCommands: vi.fn() }))
+const apiMock = vi.hoisted(() => ({ models: vi.fn(), createSession: vi.fn(), listSkills: vi.fn(), listCommands: vi.fn(), listAgents: vi.fn(), listSandboxEnvironments: vi.fn(), listSandboxProviders: vi.fn(), listSandboxTemplates: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
 vi.mock('@/ui/shell/TopBar', () => ({ TopBar: () => null }))
@@ -26,6 +26,7 @@ beforeEach(() => {
   nav.push.mockReset()
   nav.replace.mockReset()
   apiMock.models.mockResolvedValue(['m1'])
+  for (const list of [apiMock.listAgents, apiMock.listSandboxEnvironments, apiMock.listSandboxProviders, apiMock.listSandboxTemplates]) list.mockResolvedValue({ object: 'list', data: [], has_more: false })
 })
 afterEach(() => cleanup())
 
@@ -89,3 +90,53 @@ describe('New chat send', () => {
     await waitFor(() => expect(input()).toHaveTextContent('hello world'), { timeout: 5000 })
   })
 }, 15_000)
+
+describe('New chat first prompt', () => {
+  it('docks the composer under the sent message while the chat is created, like an open chat', async () => {
+    nav.query = ''
+    apiMock.createSession.mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    render(<NewChat />)
+    await waitFor(() => expect(input()).toBeInTheDocument())
+    await user.click(input())
+    await user.keyboard('Plan my week{Enter}')
+    const pane = await screen.findByTestId('new-chat-pending')
+    expect(pane).toHaveTextContent('Plan my week')
+    expect(pane).toContainElement(input())
+    expect(screen.queryByTestId('new-chat-start')).toBeNull()
+  })
+})
+
+describe('New chat environment menu', () => {
+  const page = <T,>(data: T[]) => ({ object: 'list', data, has_more: false })
+  beforeEach(() => {
+    nav.query = ''
+    apiMock.listAgents.mockResolvedValue(page([]))
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([{ id: 'env_1', object: 'agent.environment', type: 'openai_hosted', status: 'connected', provider: 'sandbox', name: 'Data box', created_at: 1, sandbox: { state: 'stopped' } }]))
+    apiMock.listSandboxProviders.mockResolvedValue(page([{ object: 'sandbox.provider', name: 'sandbox', default: false, available: true, capabilities: { templateFields: ['image'], files: true, exec: true } }]))
+    apiMock.listSandboxTemplates.mockResolvedValue(page([{ id: 'tpl_1', object: 'agent.environment.template', name: 'Python data', provider: 'sandbox', files: [], packages: { npm: [], python: ['pandas'], system: [] }, network: { access: 'enabled', allowed_domains: [] }, unsupported_fields: [], created_at: 1, updated_at: 1 }]))
+    apiMock.createSession.mockReturnValue(new Promise(() => {}))
+  })
+
+  it('offers existing environments and a fresh sandbox per template, and sends the choice', async () => {
+    const user = userEvent.setup()
+    render(<NewChat />)
+    await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
+    expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
+    expect(screen.getByText('New sandbox for this chat')).toBeInTheDocument()
+    expect(screen.getByText('Empty sandbox')).toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /Python data/ }))
+    await user.click(input())
+    await user.keyboard('hello{Enter}')
+    await waitFor(() => expect(apiMock.createSession).toHaveBeenCalledWith(expect.objectContaining({ environmentId: 'new:tpl_1' })))
+  })
+
+  it('offers no fresh sandbox while the isolated sandbox is down', async () => {
+    apiMock.listSandboxProviders.mockResolvedValue(page([{ object: 'sandbox.provider', name: 'sandbox', default: false, available: false, reason: 'down', capabilities: { templateFields: [], files: true, exec: true } }]))
+    const user = userEvent.setup()
+    render(<NewChat />)
+    await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
+    expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
+    expect(screen.queryByText('New sandbox for this chat')).not.toBeInTheDocument()
+  })
+})

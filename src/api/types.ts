@@ -73,6 +73,16 @@ export interface SkillManifest {
   skill_md: string
 }
 
+/** `GET /v1/agents/skills/view/{name}`: a skill's files for the viewer. */
+export interface SkillView {
+  name: string
+  description: string
+  kind: 'builtin' | 'library' | 'private'
+  id?: string
+  files: { path: string; bytes: number }[]
+  skill_md: string
+}
+
 /** Which skills a saved agent uses; absent or null uses every built-in. */
 export interface AgentSkillSelection {
   builtin: string[]
@@ -291,6 +301,19 @@ export interface OAIFileObject {
 }
 
 /** Saved user or assistant message. */
+/**
+ * When Agentry's Session log recorded an item, epoch milliseconds (an Agentry
+ * extension; each field only when recorded: a running call has no end yet).
+ */
+export interface OAIItemTiming {
+  /** An assistant step's start, or when a tool was called. */
+  started_at_ms?: number
+  /** An assistant step's first streamed token. */
+  first_token_at_ms?: number
+  /** When it finished: the reply settled, the tool answered, the message was logged. */
+  completed_at_ms?: number
+}
+
 export interface OAIMessageItem {
   id: string
   type: 'message'
@@ -299,6 +322,9 @@ export interface OAIMessageItem {
   phase?: 'commentary' | 'final_answer' | null
   status: ItemStatus
   turn_id: string
+  step?: number
+  usage?: OAITokenUsage
+  timing?: OAIItemTiming
 }
 
 /** Saved function call. */
@@ -310,6 +336,8 @@ export interface OAIFunctionCallItem {
   arguments: Record<string, unknown> | string
   status: ToolCallStatus
   turn_id: string
+  step?: number
+  timing?: OAIItemTiming
 }
 
 /** Saved function-call result. */
@@ -321,6 +349,7 @@ export interface OAIFunctionCallOutputItem {
   error?: string | null
   status: ToolCallStatus
   turn_id: string
+  timing?: OAIItemTiming
   /** A sign-in link for a connected app; shown as a Connect button. */
   connect_request?: ConnectRequest
 }
@@ -349,6 +378,8 @@ export interface OAICommandExecutionItem {
   duration_ms?: number
   status: ToolCallStatus
   turn_id: string
+  step?: number
+  timing?: OAIItemTiming
 }
 
 /** Saved reasoning summary. */
@@ -358,6 +389,8 @@ export interface OAIReasoningItem {
   summary?: Array<{ type: 'summary_text'; text: string }>
   status: ItemStatus
   turn_id: string
+  step?: number
+  timing?: OAIItemTiming
 }
 
 /** One saved session item. */
@@ -583,6 +616,13 @@ export interface SandboxProvider {
   name: string
   default: boolean
   capabilities: { templateFields: string[]; files: boolean; exec: boolean }
+  /** Whether the provider can create environments now; `reason` says why not. */
+  available?: boolean
+  reason?: string
+  /** The service version (Agentry Sandbox). */
+  version?: string
+  /** Agentry Sandbox: the image used when a template names none, and what it ships. */
+  default_image?: { name: string; runtimes?: Record<string, string>; python_packages?: string[]; tools?: string[] }
 }
 
 /** An environment template (`agent.environment.template`). */
@@ -597,6 +637,9 @@ export interface SandboxTemplate {
   packages: { npm: string[]; python: string[]; system: string[] }
   provider: string
   image?: string
+  setup_commands?: Array<{ command: string }>
+  env?: Record<string, string>
+  resources?: { cpus?: number; memory_mb?: number }
   /** Fields the provider cannot apply; provisioning fails while any remain. */
   unsupported_fields: string[]
 }
@@ -612,6 +655,17 @@ export interface SandboxEnvironment {
   session_id?: string
   error?: string
   created_at: number
+  /** Display name given at create. */
+  name?: string
+  /** Agentry Sandbox environments: the sandbox's live state. */
+  sandbox?: SandboxState
+}
+
+export interface SandboxState {
+  state: 'provisioning' | 'running' | 'stopped' | 'failed' | 'deleting' | 'gone' | 'unknown'
+  image?: string
+  started_at?: number | null
+  last_used_at?: number | null
 }
 
 /** A file in an environment (`agent.environment.file`). */
@@ -636,6 +690,13 @@ export interface CreateTemplateParams {
   provider?: string
   /** Starter files copied into every environment made from the template. */
   files?: Array<{ type: 'inline'; path: string; data: string }>
+  /** Container image (container providers). */
+  image?: string
+  packages?: { npm: string[]; python: string[]; system: string[] }
+  setup_commands?: Array<{ command: string }>
+  env?: Record<string, string>
+  network?: { access: 'enabled' | 'disabled' }
+  resources?: { cpus?: number; memory_mb?: number }
 }
 
 /** The script runtimes the host bundles for every agent (`GET /agents/environments/runtimes`). */

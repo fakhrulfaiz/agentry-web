@@ -4,11 +4,13 @@
  * browser. Each request carries the session's CSRF token, read from
  * `<meta name="agentry-csrf">`, in `x-agentry-csrf`.
  */
+import { sessionEnvironment } from '@/ui/sandboxes/format'
 import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
   InstalledSkill,
   SkillManifest,
+  SkillView,
   OAIFileObject,
   AgentCommandList,
   AgentSkillList,
@@ -107,7 +109,7 @@ async function toError(res: Response): Promise<ApiError> {
 }
 
 /** Sends a request to the BFF and parses the JSON answer (`undefined` for an empty body). */
-export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json', [CSRF_HEADER]: csrfToken() }
   if (body !== undefined) headers['content-type'] = 'application/json'
   let res: Response
@@ -118,8 +120,10 @@ export async function request<T>(method: string, url: string, body?: unknown): P
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: 'same-origin',
       cache: 'no-store',
+      ...(signal ? { signal } : {}),
     })
   } catch (error) {
+    if (signal?.aborted) throw new ApiError(0, 'aborted', 'Request cancelled')
     throw new ApiError(0, 'network_error', error instanceof Error ? error.message : 'Network error')
   }
   if (!res.ok) throw await toError(res)
@@ -216,7 +220,8 @@ export const api = {
     const body: CreateSessionParams = {
       ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
-      ...(input.environmentId ? { environment: { type: 'sandbox', environment_id: input.environmentId } } : {}),
+      // An environment id, or `new:` / `new:<template id>` for a fresh sandbox that belongs to this chat.
+      ...(sessionEnvironment(input.environmentId ?? '') ? { environment: sessionEnvironment(input.environmentId ?? '') } : {}),
       input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
       metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
     }
@@ -245,6 +250,16 @@ export const api = {
   listInstalledSkills(scope?: 'library' | 'agent', agentId?: string): Promise<InstalledSkill[]> {
     const params = new URLSearchParams({ ...(scope ? { scope } : {}), ...(agentId ? { agent_id: agentId } : {}) })
     return request<{ data: InstalledSkill[] }>('GET', `${AGENTRY}/agents/skills/installed${params.size > 0 ? `?${params}` : ''}`).then((r) => r.data)
+  },
+
+  /** A skill's files and SKILL.md by name (your installed skills and Agentry built-ins). */
+  viewSkill(name: string): Promise<SkillView> {
+    return request('GET', `${AGENTRY}/agents/skills/view/${seg(name)}`)
+  },
+
+  /** One skill file as text. */
+  readSkillFile(name: string, path: string): Promise<{ path: string; bytes: number; content: string }> {
+    return request('GET', `${AGENTRY}/agents/skills/view/${seg(name)}/files/${path.split('/').map(encodeURIComponent).join('/')}`)
   },
 
   getSkill(id: string): Promise<SkillManifest> {
@@ -400,8 +415,8 @@ export const api = {
   },
 
   /** Files the agent delivered with `present` in one chat (`GET /v1/agents/sessions/{id}/deliverables`). */
-  listSessionDeliverables(id: string): Promise<SessionDeliverableList> {
-    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`)
+  listSessionDeliverables(id: string, signal?: AbortSignal): Promise<SessionDeliverableList> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`, undefined, signal)
   },
 
   /** Sandbox providers and what each supports. */
@@ -427,11 +442,22 @@ export const api = {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}`)
   },
   /** Provisions an environment; `templateId` and `provider` are optional (the default provider is used without them). */
-  createSandboxEnvironment(input: { templateId?: string; provider?: string } = {}): Promise<SandboxEnvironment> {
+  createSandboxEnvironment(input: { templateId?: string; provider?: string; name?: string } = {}): Promise<SandboxEnvironment> {
     return request('POST', `${AGENTRY}/agents/environments`, {
       ...(input.templateId ? { template_id: input.templateId } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
+      ...(input.name ? { name: input.name } : {}),
     })
+  },
+  /** Starts, stops or rebuilds an Agentry Sandbox environment; answers the environment. */
+  startSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/start`, {})
+  },
+  stopSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/stop`, {})
+  },
+  resetSandboxEnvironment(id: string, keepWorkspace: boolean): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/reset`, { keep_workspace: keepWorkspace })
   },
   async deleteSandboxEnvironment(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}`)

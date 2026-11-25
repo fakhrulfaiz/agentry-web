@@ -65,6 +65,7 @@ describe('isAllowed', () => {
     ['POST', `/agents/schedules/${SCHEDULE}/run`],
     ['GET', `/agents/schedules/${SCHEDULE}/runs`],
     ['GET', '/agents/skills/installed'],
+    ['GET', '/agents/skills/view/create-agent'],
     ['POST', '/agents/skills'],
     ['POST', '/agents/skills/import'],
     ['GET', `/agents/skills/${SKILL}`],
@@ -192,5 +193,13 @@ describe('sandbox routes', () => {
     expect(isAllowed('POST', '/agents/environments/providers')).toBe(false)
     expect(isAllowed('POST', '/agents/environments/env_1')).toBe(false)
     expect(isAllowed('DELETE', '/agents/environments')).toBe(false)
+  })
+
+  it('allow start, stop and reset by POST only', () => {
+    for (const action of ['start', 'stop', 'reset']) {
+      expect(isAllowed('POST', `/agents/environments/env_1/${action}`)).toBe(true)
+      expect(isAllowed('GET', `/agents/environments/env_1/${action}`)).toBe(false)
+    }
+    expect(isAllowed('POST', '/agents/environments/env_1/destroy')).toBe(false)
   })
 })

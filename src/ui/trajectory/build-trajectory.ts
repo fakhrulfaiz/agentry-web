@@ -5,9 +5,11 @@
  *
  * Built from what Agentry exposes: turn records (`GET /turns`: status, start
  * and end in Unix seconds, token usage), saved items (`GET /items`) and
- * subagents with their turns and items. Saved items carry no timestamps, so a
- * record has timing only when its source has it: a turn, or a subagent run
- * (its turns). Nothing is invented: missing timing stays undefined.
+ * subagents with their turns and items. Items carry their own timing from the
+ * Session log (`timing`, epoch ms: a step's start, first token and end, a
+ * tool call's start and end, a message's log time) and an assistant step its
+ * token usage; older items without it fall back to their turn. Nothing is
+ * invented: missing timing stays undefined.
  *
  * Assistant steps: the backend saves a step as `item_reason_N` (thinking) and
  * `item_msg_N` (text, which repeats the thinking first). They form one
@@ -20,7 +22,7 @@
  * Steps are pending while their turn runs; the last step of a failed or
  * cancelled turn takes that status.
  */
-import type { OAISubagent, OAITokenUsage, OAITurn, StoredSessionItem, TurnStatus } from '@/api/types'
+import type { OAIItemTiming, OAISubagent, OAITokenUsage, OAITurn, StoredSessionItem, TurnStatus } from '@/api/types'
 import { stripReasoning } from '@/chat/reducer'
 
 export type RecordKind = 'user' | 'assistant' | 'tool' | 'subtool'
@@ -48,8 +50,10 @@ export interface TrajectoryRecord {
   output?: unknown
   thinking?: string
   model?: string
-  /** Unix seconds; only when recorded. */
+  /** Unix seconds (fractional); only when recorded. */
   startedAt?: number
+  /** An assistant step's first streamed token. */
+  firstTokenAt?: number
   endedAt?: number
   usage?: OAITokenUsage
   /** The Assistant step a tool call belongs to. */
@@ -131,6 +135,40 @@ interface Scope {
   model?: string
 }
 
+const secs = (ms: number | undefined): number | undefined => (typeof ms === 'number' ? ms / 1000 : undefined)
+
+/** Copies an item's recorded timing onto its record (fields the item lacks stay as they were). */
+function applyTiming(record: TrajectoryRecord, timing: OAIItemTiming | undefined): void {
+  const started = secs(timing?.started_at_ms)
+  const first = secs(timing?.first_token_at_ms)
+  const ended = secs(timing?.completed_at_ms)
+  if (started !== undefined) record.startedAt = started
+  if (first !== undefined) record.firstTokenAt = first
+  if (ended !== undefined) record.endedAt = ended
+}
+
+/**
+ * A turn's usage from its steps, the way DeepSeek Harness counts it: Input is
+ * the context of the last step that reported usage (each step re-sends the
+ * whole conversation, so adding inputs would count it again per step), while
+ * Output and Think, produced once per step, are added up. Undefined when no
+ * step reported any.
+ */
+export function turnUsageOf(list: (OAITokenUsage | undefined)[]): OAITokenUsage | undefined {
+  const present = list.filter((u): u is OAITokenUsage => u !== undefined)
+  const last = present.at(-1)
+  if (!last) return undefined
+  const output = present.reduce((n, u) => n + u.output_tokens, 0)
+  const reasoning = present.reduce((n, u) => n + u.output_tokens_details.reasoning_tokens, 0)
+  return {
+    input_tokens: last.input_tokens,
+    input_tokens_details: { cached_tokens: last.input_tokens_details.cached_tokens },
+    output_tokens: output,
+    output_tokens_details: { reasoning_tokens: reasoning },
+    total_tokens: last.input_tokens + output,
+  }
+}
+
 function stepNumberOf(id: string): string | null {
   const m = /^item_(?:reason|msg)_(\d+)$/.exec(id)
   return m ? m[1] : null
@@ -179,10 +217,16 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
       case 'message': {
         const text = item.content.map((p) => ('text' in p ? p.text : '')).join('')
         if (item.role === 'user') {
-          out.push(make('user', item.id, turnId, { title: firstLine(text) || 'Message', input: text }))
+          const user = make('user', item.id, turnId, { title: firstLine(text) || 'Message', input: text })
+          // A message happens at one moment: when it was logged.
+          const at = secs(item.timing?.completed_at_ms)
+          if (at !== undefined) Object.assign(user, { startedAt: at, endedAt: at })
+          out.push(user)
           break
         }
         const step = stepFor(item.id, turnId)
+        applyTiming(step, item.timing)
+        if (item.usage) step.usage = item.usage
         const n = stepNumberOf(item.id)
         const prefix = n ? (reasoningText.get(`${turnId}:${n}`) ?? '') : ''
         const own = stripReasoning(text, prefix)
@@ -198,6 +242,7 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
         const n = stepNumberOf(item.id)
         if (n) reasoningText.set(`${turnId}:${n}`, text)
         const step = stepFor(item.id, turnId)
+        applyTiming(step, item.timing)
         step.thinking = (step.thinking ? `${step.thinking}\n\n` : '') + text
         break
       }
@@ -208,6 +253,7 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
         const input = item.type === 'command_execution' ? { command: item.command, ...(item.cwd === undefined ? {} : { cwd: item.cwd }) } : parseArgs(item.arguments)
         const step = lastStep.get(turnId)
         const record = make('tool', item.id, turnId, { name, input, title: argumentSummary(input), ...(step ? { stepId: step.id } : {}) })
+        if (item.type !== 'mcp_call') applyTiming(record, item.timing)
         if (item.type !== 'function_call') {
           const output = item.type === 'mcp_call' ? (item.error ?? item.output) : item.output
           if (output !== undefined && output !== null) record.output = output
@@ -224,6 +270,10 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
           calls.get(item.call_id) ??
           out.findLast((r) => r.name === COMMAND && r.output === undefined && r.turnId === (turnId || null))
         if (!call) break
+        if (call.endedAt === undefined) {
+          const ended = secs(item.timing?.completed_at_ms)
+          if (ended !== undefined) call.endedAt = ended
+        }
         call.output = item.output
         call.status = item.status === 'failed' || item.status === 'incomplete' || item.error ? 'failed' : 'completed'
         break
@@ -279,7 +329,10 @@ export function buildTrajectory(turns: OAITurn[], items: StoredSessionItem[], su
     if (start) record.startedAt = start
     const status = runStatus(run)
     const end = status === 'pending' ? undefined : (last?.completed_at ?? run.subagent.closed_at)
+    // The run, not the spawn call (which returns at once), decides when it ends: a running one has no end yet.
     if (end) record.endedAt = end
+    else delete record.endedAt
+    delete record.firstTokenAt
     // The call's own status follows the run it started.
     record.status = status
   }
@@ -302,7 +355,11 @@ export function buildTrajectory(turns: OAITurn[], items: StoredSessionItem[], su
       status: turn.status,
       startedAt: turn.started_at ?? turn.created_at,
       ...(turn.completed_at ? { endedAt: turn.completed_at } : {}),
-      ...(turn.usage ? { usage: turn.usage } : {}),
+      ...((): { usage?: OAITokenUsage } => {
+        // DeepSeek Harness turns report no usage of their own; their steps do.
+        const usage = turn.usage ?? turnUsageOf((byTurn.get(turn.id) ?? []).filter((r) => r.kind === 'assistant').map((r) => r.usage))
+        return usage ? { usage } : {}
+      })(),
       records: byTurn.get(turn.id) ?? [],
     }))
   return { turns: ordered, between }
@@ -362,9 +419,11 @@ export function recordsInInterval(t: Trajectory, from: number, to: number, now: 
 
 export interface TimelineSpan {
   id: string
-  lane: 'turn' | 'subagent'
+  lane: 'turn' | 'assistant' | 'tool' | 'subagent'
   label: string
   start: number
+  /** An assistant step's first token: the span splits waiting from generating. */
+  firstToken?: number
   /** Undefined while still running. */
   end?: number
   status: RecordStatus
@@ -376,7 +435,7 @@ export function turnRecordStatus(status: TurnStatus): RecordStatus {
   return TERMINAL.has(status) ? 'completed' : 'pending'
 }
 
-/** The spans the overview draws: turns and subagent runs, from recorded timing only. */
+/** The spans the overview draws: turns, assistant steps, tool calls and subagent runs, from recorded timing only. */
 export function timelineSpans(t: Trajectory): TimelineSpan[] {
   const spans: TimelineSpan[] = []
   for (const turn of t.turns) {
@@ -389,9 +448,12 @@ export function timelineSpans(t: Trajectory): TimelineSpan[] {
       status: turnRecordStatus(turn.status),
     })
     for (const r of turn.records) {
-      if (r.subagentId && r.startedAt !== undefined) {
-        spans.push({ id: r.id, lane: 'subagent', label: r.title || 'Subagent', start: r.startedAt, ...(r.endedAt !== undefined ? { end: r.endedAt } : {}), status: r.status })
-      }
+      if (r.startedAt === undefined) continue
+      const end = r.endedAt !== undefined ? { end: r.endedAt } : {}
+      if (r.subagentId) spans.push({ id: r.id, lane: 'subagent', label: r.title || 'Subagent', start: r.startedAt, ...end, status: r.status })
+      else if (r.kind === 'assistant')
+        spans.push({ id: r.id, lane: 'assistant', label: `Step ${String(r.step)}`, start: r.startedAt, ...(r.firstTokenAt !== undefined ? { firstToken: r.firstTokenAt } : {}), ...end, status: r.status })
+      else if (r.kind === 'tool') spans.push({ id: r.id, lane: 'tool', label: r.name ?? 'Tool', start: r.startedAt, ...end, status: r.status })
     }
   }
   return spans

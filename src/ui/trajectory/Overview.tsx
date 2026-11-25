@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * The timing overview above the ledger: one lane for turns, one for subagent
- * runs, each span placed by its recorded start and duration (a running span
- * reaches now). Records without recorded timing are left out. "Duration" off
- * gives every span the same width, in order.
+ * The timing overview above the ledger: lanes for turns, assistant steps, tool
+ * calls and subagent runs, each span placed by its recorded start and duration
+ * (a running span reaches now). An assistant step shows its wait for the first
+ * token lighter than its generation. Records without recorded timing are left
+ * out. "Duration" off gives every span the same width, in order.
  *
  * Drag across it to focus the ledger on that interval; the wheel zooms around
  * the pointer; a right-button click clears the interval and the zoom. Hovering
@@ -28,7 +29,7 @@ const styles = stylex.create({
     position: 'relative',
     flexGrow: 1,
     minInlineSize: 0,
-    blockSize: `calc(${spacingVars['--spacing-4']} * 2 + ${spacingVars['--spacing-1']} * 2)`,
+    blockSize: `calc(${spacingVars['--spacing-4']} * 4 + ${spacingVars['--spacing-1']} * 2)`,
     borderRadius: radiusVars['--radius-inner'],
     backgroundColor: colorVars['--color-background-muted'],
     overflow: 'hidden',
@@ -44,9 +45,20 @@ const styles = stylex.create({
     blockSize: spacingVars['--spacing-2'],
     minInlineSize: spacingVars['--spacing-0-5'],
   }),
-  // The kind chip colours: a turn is the assistant's (teal), a subagent run its subtools' (pink).
-  turn: { backgroundColor: dataVars['--color-data-categorical-teal'], opacity: 0.8 },
+  // The kind chip colours: assistant teal, tool orange, a subagent run its subtools' pink; a turn is neutral.
+  turn: { backgroundColor: colorVars['--color-border-emphasized'] },
+  assistant: { backgroundColor: dataVars['--color-data-categorical-teal'], opacity: 0.85 },
+  tool: { backgroundColor: dataVars['--color-data-categorical-orange'], opacity: 0.85 },
   subagent: { backgroundColor: dataVars['--color-data-categorical-pink'], opacity: 0.8 },
+  // The wait before the first token, inside an assistant span.
+  waiting: (width: string) => ({
+    position: 'absolute',
+    insetBlock: 0,
+    insetInlineStart: 0,
+    inlineSize: width,
+    backgroundColor: colorVars['--color-background-muted'],
+    opacity: 0.55,
+  }),
   failed: { backgroundColor: dataVars['--color-data-categorical-red'], opacity: 0.85 },
   laneLabel: { blockSize: spacingVars['--spacing-4'] },
   selection: (left: string, width: string) => ({
@@ -61,15 +73,26 @@ const styles = stylex.create({
   }),
 })
 
-// Each lane is a --spacing-4 row; its bar is centred in it.
-const LANE_TOP = {
-  turn: `calc(${spacingVars['--spacing-1']} * 2)`,
-  subagent: `calc(${spacingVars['--spacing-1']} * 2 + ${spacingVars['--spacing-4']})`,
-}
 const LANES = [
   { key: 'turn', label: 'Turns' },
+  { key: 'assistant', label: 'Assistant' },
+  { key: 'tool', label: 'Tools' },
   { key: 'subagent', label: 'Subagents' },
 ] as const
+
+// Each lane is a --spacing-4 row; its bar is centred in it.
+const LANE_TOP = Object.fromEntries(
+  LANES.map((lane, i) => [lane.key, `calc(${spacingVars['--spacing-1']} * 2 + ${spacingVars['--spacing-4']} * ${String(i)})`]),
+) as Record<TimelineSpan['lane'], string>
+
+/** The hover text of a span: what it is, when it started, and how long each part took. */
+export function spanDetails(span: TimelineSpan): string {
+  const parts = [span.label, `Started ${formatClock(span.start)}`]
+  if (span.firstToken !== undefined) parts.push(`First token ${formatSeconds(span.firstToken - span.start)}`)
+  if (span.end !== undefined && span.firstToken !== undefined) parts.push(`Generating ${formatSeconds(span.end - span.firstToken)}`)
+  parts.push(span.end !== undefined ? `Total ${formatSeconds(span.end - span.start)}` : 'Running')
+  return parts.join(' · ')
+}
 
 interface Placed {
   span: TimelineSpan
@@ -202,16 +225,20 @@ export function Overview({
           }}
         >
           {placed.map(({ span, left, width }) => (
-            <Tooltip
-              key={span.id}
-              delay={500}
-              content={`${span.label} · Started ${formatClock(span.start)} · ${span.end !== undefined ? `Total ${formatSeconds(span.end - span.start)}` : 'Running'}`}
-            >
+            <Tooltip key={span.id} delay={500} content={spanDetails(span)}>
               <VStack
                 aria-label={span.label}
                 data-testid="trajectory-span"
+                data-lane={span.lane}
                 xstyle={[styles.span(pct(left), pct(width), LANE_TOP[span.lane]), span.status === 'failed' ? styles.failed : styles[span.lane]]}
-              />
+              >
+                {span.firstToken !== undefined && (span.end ?? now) > span.start && (
+                  <VStack
+                    aria-hidden
+                    xstyle={styles.waiting(pct(Math.min(1, Math.max(0, (span.firstToken - span.start) / ((span.end ?? now) - span.start)))))}
+                  />
+                )}
+              </VStack>
             </Tooltip>
           ))}
           {mark && <VStack xstyle={styles.selection(pct(mark.left), pct(mark.width))} />}

@@ -6,11 +6,12 @@
  */
 import { Center } from '@astryxdesign/core/Center'
 import { VStack } from '@astryxdesign/core/VStack'
+import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import * as stylex from '@stylexjs/stylex'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { OAIAgent } from '@/api/types'
+import type { OAIAgent, SandboxProvider, SandboxTemplate } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
 import { promptText } from '@/connectors/catalog'
@@ -26,10 +27,14 @@ import type { UserFile } from '@/chat/attachments'
 import { Message } from './Message'
 import { RecentFiles } from './RecentFiles'
 import { Thinking } from './Thinking'
-import { Composer, type EffortChoice } from './Composer'
+import { Composer, ContextMenus, type ComposerSettings, type EffortChoice } from './Composer'
+import { canChatIn, environmentMenuLabel, NEW_SANDBOX, templateSummary } from '@/ui/sandboxes/format'
 import { pickModel, readModelCookie } from './model-cookie'
 
-const styles = stylex.create({ page: { blockSize: '100%', minBlockSize: 0 } })
+const styles = stylex.create({
+  page: { blockSize: '100%', minBlockSize: 0 },
+  chat: { flexGrow: 1, minBlockSize: 0 },
+})
 
 type Failure = { message: string; unavailable: boolean; retry: () => void }
 
@@ -41,10 +46,12 @@ export function NewChat() {
   const schedule = params.get('schedule')
   // `?prompt=` (Connectors page Connect) prefills sanitized, length-limited text; the user still presses send.
   const prompt = params.get('prompt')
+  // `?environment=` (an environment's "New chat here") preselects it in the environment menu.
+  const [wantedEnvironment] = useState(() => params.get('environment'))
   const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : promptText(prompt)))
   useEffect(() => {
-    if (seed !== null || schedule !== null || prompt !== null) router.replace('/')
-  }, [seed, schedule, prompt, router])
+    if (seed !== null || schedule !== null || prompt !== null || wantedEnvironment !== null) router.replace('/')
+  }, [seed, schedule, prompt, wantedEnvironment, router])
   const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
@@ -53,11 +60,13 @@ export function NewChat() {
   const [agents, setAgents] = useState<OAIAgent[]>([])
   const [agentId, setAgentId] = useState('')
   // Ready sandbox environments for the environment menu; '' is the default workspace. A failed load hides the menu.
-  const [environments, setEnvironments] = useState<{ id: string; name: string }[]>([])
+  const [environments, setEnvironments] = useState<{ id: string; name: string; group?: 'new'; description?: string }[]>([])
   const [environmentId, setEnvironmentId] = useState('')
   const [failure, setFailure] = useState<Failure | null>(null)
   // The message being sent, shown with a thinking state until the session exists and the chat opens.
   const [pending, setPending] = useState<{ text: string; files?: UserFile[] } | null>(null)
+  // A failed first send gives its text back: the composer remounts in the start layout with it.
+  const [restore, setRestore] = useState<{ text: string; n: number } | null>(null)
 
   const loadModels = useCallback(async () => {
     try {
@@ -80,9 +89,28 @@ export function NewChat() {
       .then(() => api.listAgents())
       .then((list) => setAgents(list.data), () => undefined)
     Promise.resolve()
-      .then(() => api.listSandboxEnvironments())
-      .then((list) => setEnvironments(list.data.filter((e) => e.status === 'connected').map((e) => ({ id: e.id, name: e.id }))), () => undefined)
-  }, [])
+      .then(() => Promise.all([
+        api.listSandboxEnvironments(),
+        // Fresh sandboxes are offered only while the isolated sandbox is up; either list failing just offers less.
+        Promise.resolve().then(() => api.listSandboxProviders()).catch(() => ({ data: [] as SandboxProvider[] })),
+        Promise.resolve().then(() => api.listSandboxTemplates()).catch(() => ({ data: [] as SandboxTemplate[] })),
+      ]))
+      .then(([list, providers, templates]) => {
+        // Running and stopped sandboxes (a stopped one starts on send) and ready local environments.
+        const usable = list.data.filter(canChatIn)
+        const sandboxUp = providers.data.some((p) => p.name === 'sandbox' && p.available !== false && p.capabilities.exec)
+        const fresh = sandboxUp
+          ? [
+              { id: NEW_SANDBOX, name: 'Empty sandbox', group: 'new' as const, description: 'Standard image; deleted with the chat.' },
+              ...templates.data
+                .filter((t) => t.provider === 'sandbox' && t.unsupported_fields.length === 0)
+                .map((t) => ({ id: `${NEW_SANDBOX}${t.id}`, name: t.name || 'Untitled template', group: 'new' as const, description: `${templateSummary(t)}; deleted with the chat.` })),
+            ]
+          : []
+        setEnvironments([...usable.map((e) => ({ id: e.id, name: environmentMenuLabel(e) })), ...fresh])
+        if (wantedEnvironment && usable.some((e) => e.id === wantedEnvironment)) setEnvironmentId(wantedEnvironment)
+      }, () => undefined)
+  }, [wantedEnvironment])
 
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })
@@ -93,6 +121,7 @@ export function NewChat() {
       router.push(`/c/${encodeURIComponent(session.id)}`)
     } catch (error) {
       setPending(null)
+      setRestore((r) => ({ text, n: (r?.n ?? 0) + 1 }))
       if (isSignedOut(error)) goToLogin()
       else setFailure({ message: error instanceof ApiError ? error.message : 'Could not start the chat.', unavailable: isUnavailable(error), retry: () => setFailure(null) })
       throw error
@@ -120,43 +149,57 @@ export function NewChat() {
     [model, models, effort],
   )
   const noModels = models !== null && models.length === 0 && !failure
+  const settings: ComposerSettings = { models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }
+  const composer = (
+    <VStack gap={2}>
+      <Composer
+      onSend={start}
+      autoFocus
+      isDisabled={!model}
+      commands={commands}
+      appHandlers={appHandlers}
+      density="spacious"
+      key={restore?.n ?? 0}
+      initialValue={restore?.text ?? initialValue}
+      placeholder="How can Agentry help today?"
+      status={
+        failure && !failure.unavailable
+          ? { type: 'error', message: failure.message }
+          : noModels
+            ? { type: 'warning', message: 'No models are configured.' }
+            : undefined
+      }
+      settings={settings}
+      />
+      {/* Who runs the chat and where: under the input, so a long sandbox name does not crowd it. */}
+      {!pending && <ContextMenus settings={settings} />}
+    </VStack>
+  )
   return (
     <VStack xstyle={styles.page}>
       <TopBar />
       {failure?.unavailable && <ErrorBanner message={failure.message} onRetry={failure.retry} />}
-      <Center axis="both" padding={6} paddingBlockStart={10} minHeight="85%">
-        <VStack gap={6} width="100%" maxWidth={760} hAlign="stretch">
-          {pending ? (
-            <>
+      {pending ? (
+        // Like an open chat from the first send: the message on top, the composer docked at the bottom.
+        <VStack xstyle={styles.chat} data-testid="new-chat-pending">
+          <ChatLayout xstyle={styles.chat} density="spacious" composer={composer}>
+            <ChatMessageList isStreaming={false}>
               <Message view={{ kind: 'user', id: 'pending', text: pending.text, ...(pending.files ? { files: pending.files } : {}) }} answer={async () => undefined} />
               <Thinking label="Agentry is thinking…" />
-            </>
-          ) : (
+            </ChatMessageList>
+          </ChatLayout>
+        </VStack>
+      ) : (
+        <Center axis="both" padding={6} paddingBlockStart={10} minHeight="85%" data-testid="new-chat-start">
+          <VStack gap={6} width="100%" maxWidth={760} hAlign="stretch">
             <Center>
               <Wordmark size="lg" />
             </Center>
-          )}
-          <Composer
-            onSend={start}
-            autoFocus
-            isDisabled={!model}
-            commands={commands}
-            appHandlers={appHandlers}
-            density="spacious"
-            initialValue={initialValue}
-            placeholder="How can Agentry help today?"
-            status={
-              failure && !failure.unavailable
-                ? { type: 'error', message: failure.message }
-                : noModels
-                  ? { type: 'warning', message: 'No models are configured.' }
-                  : undefined
-            }
-            settings={{ models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }}
-          />
-          {!pending && <RecentFiles />}
-        </VStack>
-      </Center>
+            {composer}
+            <RecentFiles />
+          </VStack>
+        </Center>
+      )}
     </VStack>
   )
 }

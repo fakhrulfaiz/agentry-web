@@ -71,7 +71,7 @@ describe('ConnectorsForm', () => {
     render(<ConnectorsForm configured={false} />)
     await user.type(screen.getByLabelText('Connector key'), 'bad')
     await user.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText(/starts with ck_/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/starts with ck_/))[0]).toBeInTheDocument()
     expect(refresh).not.toHaveBeenCalled()
   })
 })

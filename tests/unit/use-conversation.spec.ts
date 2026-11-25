@@ -118,6 +118,50 @@ describe('useConversation', () => {
     unmount()
   })
 
+  it('requests the session snapshot together with the items, not after them', async () => {
+    let answerItems!: () => void
+    itemsResponse = () => new Promise<Response>((resolve) => (answerItems = () => resolve(itemsList(APPROVAL.items.slice(0, 1)))))
+    const { unmount } = renderHook(() => useConversation(SID))
+    await flush()
+    const sessionReads = () => fetchMock.mock.calls.filter(([url, init]) => String(url) === `/api/agentry/agents/sessions/${SID}` && (init?.method ?? 'GET') === 'GET')
+    expect(sessionReads()).toHaveLength(1)
+    answerItems()
+    await flush()
+    expect(sessionReads()).toHaveLength(1)
+    expect(streamCalls()).toHaveLength(1)
+    unmount()
+  })
+
+  it('opened again, shows the last history and idle status at once while it reloads', async () => {
+    itemsResponse = () => itemsList(APPROVAL.items.slice(0, 1))
+    const first = renderHook(() => useConversation(SID))
+    await flush()
+    expect(first.result.current.state.items.map((v) => v.kind)).toEqual(['user'])
+    first.unmount()
+
+    itemsResponse = () => new Promise<Response>(() => {}) // the reload never answers
+    const again = renderHook(() => useConversation(SID))
+    expect(again.result.current.loaded).toBe(true)
+    expect(again.result.current.ready).toBe(true)
+    expect(again.result.current.state.items.map((v) => v.kind)).toEqual(['user'])
+    again.unmount()
+  })
+
+  it('opened again while a turn was running, waits for a fresh status (no stale approval)', async () => {
+    itemsResponse = () => itemsList(APPROVAL.items.slice(0, 1))
+    session = sessionResource('requires_action', [{ type: 'approval', id: 'appr_1', kind: 'tool_approval', prompt: 'Approve', options: ['approve', 'deny'] }])
+    const first = renderHook(() => useConversation(SID))
+    await flush()
+    first.unmount()
+
+    itemsResponse = () => new Promise<Response>(() => {})
+    const again = renderHook(() => useConversation(SID))
+    expect(again.result.current.loaded).toBe(true)
+    expect(again.result.current.ready).toBe(false)
+    expect(again.result.current.state.items.some((v) => v.kind === 'action')).toBe(false)
+    again.unmount()
+  })
+
   it('reconnects after 1s, then 2s, doubling to a 30s cap, resending the last id', async () => {
     const first = FRAMES.filter((f) => f.id !== undefined).slice(0, 3)
     streams.push(() => streamResponse(sse(first)))

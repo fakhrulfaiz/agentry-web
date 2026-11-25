@@ -40,3 +40,7 @@ next-env.d.ts
 # local data (connector keys)
 /.data/
 .data-e2e/
+
+# launcher tools (gum)
+/.tools/
+/dist/

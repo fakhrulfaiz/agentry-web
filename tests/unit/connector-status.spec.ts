@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 
-const { cachedConnectedToolkits, connectedToolkits, forgetConnectedToolkits, parseConnected, parseRpcBody } = await import('@/server/connector-status')
+const { connectedToolkits, listConnectionsResult, parseConnected, parseRpcBody } = await import('@/server/connector-status')
 
 const fetchMock = vi.fn<typeof fetch>()
 
@@ -22,7 +22,6 @@ const gmailActive = listResult({
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
-  forgetConnectedToolkits('alice')
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -81,17 +80,13 @@ describe('connectedToolkits', () => {
   })
 })
 
-describe('cachedConnectedToolkits', () => {
-  it('caches per owner until forgotten, and does not cache failures', async () => {
+describe('listConnectionsResult', () => {
+  it('reports a refused key as rejected and other failures as unavailable', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+    expect(await listConnectionsResult('ck_bad', ['gmail'])).toEqual({ ok: false, reason: 'rejected' })
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 502 }))
+    expect(await listConnectionsResult('ck_test', ['gmail'])).toEqual({ ok: false, reason: 'unavailable' })
     fetchMock.mockRejectedValueOnce(new Error('offline'))
-    expect(await cachedConnectedToolkits('alice', 'ck_test', ['gmail'])).toBeNull()
-    fetchMock.mockResolvedValueOnce(initOk()).mockResolvedValueOnce(sse(gmailActive))
-    expect((await cachedConnectedToolkits('alice', 'ck_test', ['gmail']))?.has('gmail')).toBe(true)
-    const calls = fetchMock.mock.calls.length
-    expect((await cachedConnectedToolkits('alice', 'ck_test', ['gmail']))?.has('gmail')).toBe(true)
-    expect(fetchMock.mock.calls.length).toBe(calls)
-    forgetConnectedToolkits('alice')
-    fetchMock.mockResolvedValueOnce(initOk()).mockResolvedValueOnce(sse(listResult({})))
-    expect((await cachedConnectedToolkits('alice', 'ck_test', ['gmail']))?.size).toBe(0)
+    expect(await listConnectionsResult('ck_test', ['gmail'])).toEqual({ ok: false, reason: 'unavailable' })
   })
 })

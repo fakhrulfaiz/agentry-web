@@ -16,7 +16,7 @@ export default defineConfig({
     // Node by default; DOM tests opt in per file with `// @vitest-environment jsdom`.
     environment: 'node',
     // Our stylex.create() calls are not compiled under Vitest; see the stub.
-    setupFiles: ['tests/stubs/stylex-setup.ts'],
+    setupFiles: ['tests/stubs/stylex-setup.ts', 'tests/stubs/page-cache-reset.ts'],
     include: ['tests/unit/**/*.spec.ts', 'tests/component/**/*.spec.tsx'],
     // next-auth imports `next/server` without an extension, which Node's ESM loader cannot
     // resolve (next has no exports map); inlining lets Vite resolve it.

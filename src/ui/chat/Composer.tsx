@@ -39,6 +39,7 @@ import { ChatComposer, ChatComposerDrawer, ChatComposerInput, ChatSendButton, ty
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { Selector } from '@astryxdesign/core/Selector'
+import * as stylex from '@stylexjs/stylex'
 import { Text } from '@astryxdesign/core/Text'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
@@ -85,17 +86,24 @@ export interface ComposerSettings {
   agentId?: string
   onAgentChange?(id: string): void
   /** Ready sandbox environments for the environment menu (new chats only); hidden without any. */
-  environments?: { id: string; name: string }[]
+  environments?: { id: string; name: string; group?: 'new'; description?: string }[]
   /** The chosen environment's id; `''` is the default workspace. */
   environmentId?: string
   onEnvironmentChange?(id: string): void
 }
 
-/** Left of the footer: who runs the chat and where (new chats only). Renders nothing without any choice. */
-function ContextMenus({ settings }: { settings: ComposerSettings }) {
+/**
+ * Who runs the chat and where (new chats only), in a row under the composer
+ * so a long agent or sandbox name never crowds the input's footer; each menu
+ * is capped and truncates its value. Renders nothing without any choice.
+ */
+export function ContextMenus({ settings }: { settings: ComposerSettings }) {
   const { agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange } = settings
+  const hasAgents = agents && agents.length > 0 && onAgentChange
+  const hasEnvironments = environments && environments.length > 0 && onEnvironmentChange
+  if (!hasAgents && !hasEnvironments) return null
   return (
-    <>
+    <HStack gap={1} vAlign="center" wrap="wrap" data-testid="composer-context">
       {agents && agents.length > 0 && onAgentChange && (
         <Selector
           label="Agent"
@@ -103,6 +111,7 @@ function ContextMenus({ settings }: { settings: ComposerSettings }) {
           size="sm"
           variant="ghost"
           startIcon={UserGroupIcon}
+          containerXstyle={contextStyles.menu}
           options={[{ value: '', label: 'Default agent' }, ...agents.map((a) => ({ value: a.id, label: a.name || 'Untitled agent' }))]}
           value={agentId}
           onChange={onAgentChange}
@@ -115,13 +124,31 @@ function ContextMenus({ settings }: { settings: ComposerSettings }) {
           size="sm"
           variant="ghost"
           startIcon={ServerStackIcon}
-          options={[{ value: '', label: 'Default workspace' }, ...environments.map((e) => ({ value: e.id, label: e.name }))]}
+          containerXstyle={contextStyles.menu}
+          options={environmentOptions(environments)}
           value={environmentId}
           onChange={onEnvironmentChange}
         />
       )}
-    </>
+    </HStack>
   )
+}
+
+const contextStyles = stylex.create({
+  // Wide enough for a usual name; a longer one truncates instead of stretching the row.
+  menu: { maxWidth: 280, minWidth: 0 },
+})
+
+/** The environment menu: the default workspace, existing environments, then fresh sandboxes for this chat. */
+function environmentOptions(environments: NonNullable<ComposerSettings['environments']>) {
+  const option = (e: (typeof environments)[number]) => ({ value: e.id, label: e.name, ...(e.description ? { description: e.description } : {}) })
+  const existing = environments.filter((e) => e.group !== 'new')
+  const fresh = environments.filter((e) => e.group === 'new')
+  return [
+    { value: '', label: 'Default workspace' },
+    ...(existing.length > 0 ? [{ type: 'section' as const, title: 'Your environments', options: existing.map(option) }] : []),
+    ...(fresh.length > 0 ? [{ type: 'section' as const, title: 'New sandbox for this chat', options: fresh.map(option) }] : []),
+  ]
 }
 
 /** Right of the footer, beside the send button: the model and its reasoning effort. */
@@ -360,7 +387,6 @@ export function Composer({
       footerActions={
         <>
           <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly onClick={() => picker.current?.click()} />
-          {settings && <ContextMenus settings={settings} />}
         </>
       }
       sendActions={settings ? <ModelMenus settings={settings} /> : undefined}

@@ -11,12 +11,14 @@ import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
+import { StackItem } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { VStack } from "@astryxdesign/core/VStack";
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { checkedLabel, useConnectionStatus, type ConnectionStatus } from "@/connectors/status";
 import {
   categoryLabel,
   connectHref,
@@ -140,23 +142,16 @@ export function ConnectorDirectory({
   entries,
   featured,
   failed,
+  initialStatus,
 }: {
   entries: CatalogEntry[];
   featured: CatalogEntry[];
   failed: boolean;
+  /** The server's last known status, painted at once; checked again only when stale. */
+  initialStatus?: ConnectionStatus;
 }) {
-  // Connected status needs a slow upstream call, so it loads after the page paints.
-  const [connected, setConnected] = useState<string[] | null>(null);
-  useEffect(() => {
-    const ctl = new AbortController();
-    fetch("/api/agentry/connectors/status", { signal: ctl.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: { connected?: string[] | null } | null) =>
-        setConnected(j?.connected ?? null),
-      )
-      .catch(() => {});
-    return () => ctl.abort();
-  }, []);
+  const { status, checking, refresh } = useConnectionStatus(initialStatus);
+  const connected = status?.connected ?? null;
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
@@ -169,6 +164,25 @@ export function ConnectorDirectory({
     [entries, connectedSet],
   );
   const filtering = query.trim() !== "" || category !== null;
+  const statusLine = (
+    <HStack gap={1} vAlign="center">
+      <Text type="supporting" color="secondary" role="status">
+        {checking && !status?.checkedAt
+          ? "Checking your connections…"
+          : status?.checkedAt
+            ? checkedLabel(status.checkedAt)
+            : "Connection status unknown"}
+      </Text>
+      <Button
+        label="Refresh status"
+        size="sm"
+        variant="ghost"
+        isLoading={checking}
+        onClick={() => void refresh()}
+      />
+    </HStack>
+  );
+  const showConnected = !filtering && connectedEntries.length > 0;
   const results = useMemo(
     () => filterEntries(entries, query, category),
     [entries, query, category],
@@ -180,6 +194,20 @@ export function ConnectorDirectory({
         <Banner
           status="warning"
           title="The full connector list is unavailable right now. Showing popular connectors instead."
+        />
+      )}
+
+      {status?.problem === "rejected" && (
+        <Banner
+          status="error"
+          title="Composio rejected your key, so Agentry can't see which apps are connected. Replace the key above."
+        />
+      )}
+      {status?.problem === "unavailable" && connected === null && (
+        <Banner
+          status="warning"
+          title="Couldn't reach Composio to check your connections."
+          endContent={<Button label="Try again" size="sm" onClick={() => void refresh()} />}
         />
       )}
 
@@ -216,11 +244,18 @@ export function ConnectorDirectory({
         </div>
       </VStack>
 
-      {!filtering && connectedEntries.length > 0 && (
+      {!showConnected && !filtering && <HStack hAlign="end">{statusLine}</HStack>}
+
+      {showConnected && (
         <VStack gap={3} as="section" aria-labelledby="connectors-connected">
-          <Heading level={2} type="display-3" id="connectors-connected">
-            Connected
-          </Heading>
+          <HStack gap={3} vAlign="center">
+            <StackItem size="fill">
+              <Heading level={2} type="display-3" id="connectors-connected">
+                Connected
+              </Heading>
+            </StackItem>
+            {statusLine}
+          </HStack>
           <Grid
             entries={connectedEntries}
             connected={connectedSet}

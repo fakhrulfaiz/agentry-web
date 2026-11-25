@@ -14,7 +14,7 @@ describe('agent form', () => {
     expect(form).toMatchObject({ allTools: false, tools: ['read_file'], apps: { gmail: 'all', github: 'all' }, subagents: true, maxSubagents: 2, effort: 'high', extraMetadata: { owner_note: 'x' } })
     const params = formToParams(form, ['read_file', 'write_file'])
     expect(params.host_tools).toEqual({ allow: ['read_file'] })
-    expect(params.metadata).toEqual({ owner_note: 'x' })
+    expect(params.metadata).toEqual({ owner_note: 'x', icon: expect.any(String), color: expect.any(String) })
     expect(params.apps).toEqual({ gmail: 'all', github: 'all' })
     expect(params.reasoning).toEqual({ effort: 'high' })
   })
@@ -23,7 +23,7 @@ describe('agent form', () => {
     const params = formToParams(form, ['a', 'b'])
     expect(params.host_tools).toBeNull()
     expect(params.name).toBe('A')
-    expect(params.metadata).toEqual({})
+    expect(params.metadata).toEqual({ icon: expect.any(String), color: expect.any(String) })
     expect(params.multi_agent).toEqual({ enabled: false })
   })
 })
@@ -39,7 +39,7 @@ describe('skills, apps and sending', () => {
     const form = { ...emptyForm('m1'), name: 'A', apps: { gmail: 'all' as const }, skills: { builtin: ['create-agent'], library: ['skill_x'] }, sendPolicy: 'auto' as const }
     const params = formToParams(form)
     expect(params).toMatchObject({ apps: { gmail: 'all' }, skills: { builtin: ['create-agent'], library: ['skill_x'] }, send_policy: 'auto' })
-    expect(params.metadata).toEqual({})
+    expect(params.metadata).toEqual({ icon: expect.any(String), color: expect.any(String) })
     expect(formToParams({ ...emptyForm('m1'), name: 'B' })).toMatchObject({ apps: null, skills: null, send_policy: 'ask' })
   })
 })
@@ -63,5 +63,20 @@ describe('starters', () => {
   it('has unique ids and non-empty prompts', () => {
     expect(new Set(STARTERS.map((s) => s.id)).size).toBe(STARTERS.length)
     for (const s of STARTERS) expect(s.instructions.length).toBeGreaterThan(40)
+  })
+})
+
+describe('review fixes: tool masks', () => {
+  it('keeps a saved deny list through edit and save (chat-created agents)', async () => {
+    const { agentToForm: toForm, formToParams: toParams } = await import('@/agents/form')
+    const form = toForm({ id: 'agent_1', object: 'agent', name: 'Made in chat', model: 'm1', host_tools: { deny: ['agent_create', 'agent_update'] } } as never)
+    expect(form.allTools).toBe(true)
+    expect(toParams({ ...form, color: 'teal' }, ['read', 'agent_create', 'agent_update']).host_tools).toEqual({ deny: ['agent_create', 'agent_update'] })
+  })
+
+  it('keeps the deny list next to a chosen allow list', async () => {
+    const { agentToForm: toForm, formToParams: toParams } = await import('@/agents/form')
+    const form = toForm({ id: 'agent_1', object: 'agent', name: 'X', model: 'm1', host_tools: { allow: ['read'], deny: ['agent_create'] } } as never)
+    expect(toParams(form, ['read', 'write', 'agent_create']).host_tools).toEqual({ allow: ['read'], deny: ['agent_create'] })
   })
 })

@@ -9,16 +9,25 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
-import { List, ListItem } from '@astryxdesign/core/List'
+import { StackItem } from '@astryxdesign/core/Layout'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import type { AgentSkill, InstalledSkill, SkillManifest } from '@/api/types'
+import { announceSkillsChanged } from '@/skills/skills-store'
+import { CardGrid, EntityCard } from '@/ui/cards/EntityCard'
+import { IconTile } from '@/ui/shared/IconTile'
 import { AddSkillMenu } from './AddSkillMenu'
+import { SkillDetail } from './SkillDetail'
+import { skillVisual } from './skill-visual'
 import { SkillEditorDialog, SkillReviewDialog, type SkillDraft } from './SkillDialogs'
+import { useCachedState } from '@/ui/page-cache'
+
+const NO_NAMES = new Map<string, string>()
 
 const SOURCE: Record<InstalledSkill['source'], string> = { upload: 'Upload', github: 'GitHub', editor: 'Written here', chat: 'Made in chat' }
 const message = (error: unknown): string => (error instanceof Error ? error.message : 'Something went wrong.')
@@ -28,10 +37,13 @@ const plural = (n: number, word: string) => `${String(n)} ${word}${n === 1 ? '' 
 const bodyOf = (text: string): string => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/u, '').trim()
 
 export function SkillsTab() {
+  const router = useRouter()
+  const opened = useSearchParams().get('skill')
   const [view, setView] = useState<'builtin' | 'library'>('builtin')
-  const [catalog, setCatalog] = useState<AgentSkill[] | null>(null)
-  const [installed, setInstalled] = useState<InstalledSkill[] | null>(null)
-  const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map())
+  const [catalog, setCatalog] = useCachedState<AgentSkill[]>('skills.catalog')
+  const [installed, setInstalled] = useCachedState<InstalledSkill[]>('skills.library')
+  const [cachedNames, setAgentNames] = useCachedState<Map<string, string>>('skills.agentNames')
+  const agentNames = cachedNames ?? NO_NAMES
   const [error, setError] = useState<string | null>(null)
   const [review, setReview] = useState<SkillManifest | null>(null)
   const [busy, setBusy] = useState(false)
@@ -62,6 +74,7 @@ export function SkillsTab() {
     setBusy(true)
     try {
       await run()
+      announceSkillsChanged()
       await load()
     } catch (e) {
       setError(message(e))
@@ -89,6 +102,7 @@ export function SkillsTab() {
     setBusy(true)
     try {
       await api.editSkill(editing.skill.id, { description: draft.description, body: draft.body })
+      announceSkillsChanged()
       setEditing(null)
       await load()
     } catch (e) {
@@ -110,42 +124,60 @@ export function SkillsTab() {
       {error && <Banner status="error" title={error} />}
 
       {view === 'builtin' ? (
-        <List hasDividers>
-          {builtins.map((s) => (
-            <ListItem key={s.name} label={s.name} description={<Text type="supporting" color="secondary">{s.description}</Text>} endContent={s.kind === 'bundled' ? <Token label="Always on" size="sm" /> : undefined} />
-          ))}
-        </List>
+        <CardGrid label="Built-in skills">
+          {builtins.map((s) => {
+            const visual = skillVisual(s)
+            return (
+              <EntityCard
+                key={s.name}
+                href={`/plugins?tab=skills&skill=${encodeURIComponent(s.name)}`}
+                title={s.name}
+                leading={<IconTile icon={visual.icon} hue={visual.hue} />}
+                trailing={<Token label={s.kind === 'bundled' ? 'Always on' : 'Built-in'} size="sm" />}
+              >
+                <Text type="supporting" color="secondary" maxLines={2}>{s.description}</Text>
+              </EntityCard>
+            )
+          })}
+        </CardGrid>
       ) : (
         <VStack gap={4}>
-          <AddSkillMenu target={{ scope: 'library' }} onStaged={(s) => { void load(); void openReview(s) }} onCreated={() => void load()} />
+          <AddSkillMenu target={{ scope: 'library' }} onStaged={(s) => { void load(); void openReview(s) }} onCreated={() => { announceSkillsChanged(); void load() }} />
           {installed !== null && installed.length === 0 ? (
             <EmptyState title="No skills yet" description="Upload a skill, import one from GitHub, write one here, or ask a chat to make one." />
           ) : (
-            <List hasDividers>
-              {(installed ?? []).map((s) => (
-                <ListItem
-                  key={s.id}
-                  label={s.name}
-                  description={<Text type="supporting" color="secondary">{s.description}</Text>}
-                  endContent={
-                    <HStack gap={2} vAlign="center">
-                      <Text type="supporting" color="secondary">{SOURCE[s.source]}</Text>
-                      {s.has_scripts && <Token label="Has scripts" size="sm" color="orange" />}
-                      {s.status === 'pending_review' && <Token label="Pending review" size="sm" color="yellow" />}
-                      {s.used_by.length > 0 && <Text type="supporting" color="secondary">Used by {plural(s.used_by.length, 'agent')}</Text>}
-                      {s.status === 'pending_review' && <Button label="Review" size="sm" variant="secondary" onClick={() => void openReview(s)} />}
-                      {(s.source === 'editor' || s.source === 'chat') && <Button label="Edit" size="sm" variant="ghost" onClick={() => void startEdit(s)} />}
-                      {s.source === 'github' && <Button label="Check for update" size="sm" variant="ghost" onClick={() => checkUpdate(s)} isDisabled={busy} />}
-                      <Button label="Delete" aria-label={`Delete ${s.name}`} size="sm" variant="ghost" onClick={() => setDeleting(s)} />
-                    </HStack>
-                  }
-                />
-              ))}
-            </List>
+            <CardGrid label="Library skills">
+              {(installed ?? []).map((s) => {
+                const visual = skillVisual({ name: s.name, kind: 'library' })
+                return (
+                  <EntityCard
+                    key={s.id}
+                    href={s.status === 'active' ? `/plugins?tab=skills&skill=${encodeURIComponent(s.name)}` : undefined}
+                    title={s.name}
+                    leading={<IconTile icon={visual.icon} hue={visual.hue} />}
+                    trailing={s.status === 'pending_review' ? <Token label="Pending review" size="sm" color="yellow" /> : <Text type="supporting" color="secondary">{SOURCE[s.source]}</Text>}
+                    footer={
+                      <HStack gap={2} vAlign="center" wrap="wrap">
+                        {s.has_scripts && <Token label="Has scripts" size="sm" color="orange" />}
+                        {s.used_by.length > 0 && <Text type="supporting" color="secondary">Used by {plural(s.used_by.length, 'agent')}</Text>}
+                        <StackItem size="fill" />
+                        {s.status === 'pending_review' && <Button label="Review" size="sm" variant="secondary" onClick={() => void openReview(s)} />}
+                        {(s.source === 'editor' || s.source === 'chat') && <Button label="Edit" size="sm" variant="ghost" onClick={() => void startEdit(s)} />}
+                        {s.source === 'github' && <Button label="Check for update" size="sm" variant="ghost" onClick={() => checkUpdate(s)} isDisabled={busy} />}
+                        <Button label="Delete" aria-label={`Delete ${s.name}`} size="sm" variant="ghost" onClick={() => setDeleting(s)} />
+                      </HStack>
+                    }
+                  >
+                    <Text type="supporting" color="secondary" maxLines={2}>{s.description}</Text>
+                  </EntityCard>
+                )
+              })}
+            </CardGrid>
           )}
         </VStack>
       )}
 
+      <SkillDetail name={opened} description={catalog?.find((c) => c.name === opened)?.description} onClose={() => router.replace('/plugins?tab=skills', { scroll: false })} />
       <SkillReviewDialog manifest={review} onInstall={install} onDiscard={discard} onClose={() => setReview(null)} busy={busy} />
       {editing && <SkillEditorDialog isOpen initial={editing.draft} onSave={(d) => void saveEdit(d)} onClose={() => setEditing(null)} error={editError} busy={busy} />}
       <AlertDialog

@@ -109,7 +109,9 @@ function Row({ record, selected, onSelect, muted }: { record: TrajectoryRecord; 
   const name = isTool ? recordName(record) : record.title || recordName(record)
   const detail = description(record)
   const result = isTool ? resultPreview(record) : undefined
-  const time = record.startedAt !== undefined && record.endedAt !== undefined ? formatSeconds(record.endedAt - record.startedAt) : ''
+  // A user message is a moment, not a span: it has no duration to show.
+  const timed = (record.subKind ?? record.kind) !== 'user' && record.startedAt !== undefined && record.endedAt !== undefined
+  const time = timed ? formatSeconds(record.endedAt! - record.startedAt!) : ''
   return (
     <ListItem
       label={

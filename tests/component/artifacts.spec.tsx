@@ -72,7 +72,7 @@ describe('ArtifactsPage', () => {
     expect(within(grid).getByText('report.docx')).toBeInTheDocument()
     expect(within(grid).getAllByText(/Planning/)).toHaveLength(2)
     expect(grid.querySelector('img')).toHaveAttribute('src', '/api/agentry/agents/sessions/sesn_1/artifacts/chart.png')
-    expect(apiMock.listSessionDeliverables).toHaveBeenCalledWith('sesn_1')
+    expect(apiMock.listSessionDeliverables).toHaveBeenCalledWith('sesn_1', expect.any(AbortSignal))
   })
 
   it('shows the empty state', async () => {

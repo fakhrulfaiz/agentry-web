@@ -33,6 +33,12 @@
  * subagent's turns and items are not read again. A hidden tab does not poll;
  * it refreshes when it becomes visible. Polling stops once nothing runs.
  *
+ * Opening a chat again in this tab shows its last read history at once (kept
+ * in memory, see `page-cache`) while the reads above refresh it; the cached
+ * status counts only for an idle session, so no stale approval is offered.
+ * The session snapshot is requested together with the first items read (its
+ * answer is still applied after them), so opening costs one round trip, not two.
+ *
  * Reconnecting: when the stream ends or fails it is retried after 1s, doubling
  * to a 30s cap, always resending the last seen id. A connection that delivered
  * an event, or stayed open for `STABLE_CONNECTION_MS`, resets the delay. A
@@ -57,6 +63,7 @@ import {
 } from './reducer'
 import { clearPendingFirst, peekPendingFirst } from './pending-first'
 import { readSse } from './sse'
+import { cached, remember } from '@/ui/page-cache'
 
 export type Connection = 'live' | 'reconnecting' | 'closed'
 /** Why the stream was closed for good (403 or 404 from the stream route). */
@@ -98,6 +105,17 @@ type Action =
   | { type: 'drop-local'; text: string }
 
 /** Initial state; a first message sent from the new-chat page is already on screen. */
+/** What a revisit shows at once: the last history and session this tab read. */
+interface ChatMemory {
+  items?: StoredSessionItem[]
+  turns?: OAITurn[]
+  session?: OAIAgentSession
+}
+const memoryKey = (sessionId: string) => `chat:${sessionId}`
+function recall(sessionId: string, part: Partial<ChatMemory>): void {
+  remember(memoryKey(sessionId), { ...cached<ChatMemory>(memoryKey(sessionId)), ...part })
+}
+
 function seededState(sessionId: string): ConversationState {
   const first = peekPendingFirst(sessionId)
   const empty = initialState(sessionId)
@@ -185,6 +203,16 @@ export function useConversation(
     setClosedReason(null)
     setLoaded(false)
     setReady(false)
+    const memory = cached<ChatMemory>(memoryKey(sessionId))
+    if (memory?.items) {
+      dispatch({ type: 'items', items: memory.items })
+      if (memory.turns) dispatch({ type: 'turns', turns: memory.turns })
+      setLoaded(true)
+      if (memory.session && !ACTIVE.has(memory.session.status)) {
+        dispatch({ type: 'event', event: snapshotEvent(memory.session) })
+        setReady(true)
+      }
+    }
     const abort = new AbortController()
     const { signal } = abort
     let lastId = '0'
@@ -235,11 +263,13 @@ export function useConversation(
     }
     document.addEventListener('visibilitychange', onVisibility)
 
-    const snapshot = async () => {
+    /** `early`: a read already started (with the first items read), else a new one. */
+    const snapshot = async (early?: Promise<OAIAgentSession>) => {
       const requestedAt = applied
       try {
-        const session = await api.getSession(sessionId)
+        const session = await (early ?? api.getSession(sessionId))
         if (!signal.aborted && applied === requestedAt) {
+          recall(sessionId, { session })
           active = ACTIVE.has(session.status)
           dispatch({ type: 'event', event: snapshotEvent(session) })
           setReady(true)
@@ -270,6 +300,7 @@ export function useConversation(
           known = new Set(log.map((item) => item.id))
           changed = added.length > 0
           dispatch({ type: 'items', items: log })
+          recall(sessionId, { items: log })
         }
         const records = await turns
         if (!signal.aborted && records) {
@@ -278,6 +309,7 @@ export function useConversation(
           if (full || seen !== turnsSeen) {
             changed ||= !full
             dispatch({ type: 'turns', turns: records })
+            if (full) recall(sessionId, { turns: records })
           }
           turnsSeen = seen
         }
@@ -402,6 +434,9 @@ export function useConversation(
     }
 
     const run = async () => {
+      // No stream event can arrive before the first snapshot, so starting its read now is safe.
+      let early: Promise<OAIAgentSession> | undefined = api.getSession(sessionId)
+      early.catch(() => {})
       const history = await loadItems(true)
       if (history === null) return
       setLoaded(true)
@@ -410,7 +445,8 @@ export function useConversation(
       while (!signal.aborted) {
         let received = false
         let openedAt: number | null = null
-        await withTimeout(snapshot(), SNAPSHOT_WAIT_MS)
+        await withTimeout(snapshot(early), SNAPSHOT_WAIT_MS)
+        early = undefined
         if (signal.aborted) return
         try {
           const res = await fetch(streamUrl(sessionId), {

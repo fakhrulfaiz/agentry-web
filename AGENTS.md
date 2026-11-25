@@ -13,6 +13,7 @@ Read this first in every session. `CLAUDE.md` is a symlink to this file; edit `A
   - Plan: `docs/superpowers/plans/2026-11-08-agentry-web-f1.md` (8 tasks)
 - F1.1 (chat fidelity): **implemented** on `feat/f1-1` and through its final review fix wave. Live reasoning and tool cards from the real backend's item log, expandable subagent cards, the Trajectory view (ledger, overview, Event details), the full-featured composer (model and effort for new chats and mid-chat, slash-command slot), chat title menu with starred chats, and less rounded inputs. Pinned by fixtures recorded from the live backend (`tests/fixtures/live/`).
   - Plan: `docs/superpowers/plans/2026-11-09-f1-1-chat-fidelity.md`
+- Agentry Sandbox (2026-11-24, backend only): separate service `~/code/agentry-sandbox` (Docker, E2B envd, egress guard, configurable limits) is the API's `sandbox` environment provider; chats on a sandbox environment run every tool inside it (plan `docs/superpowers/plans/2026-11-25-agentry-sandbox-integration.md`, spec `docs/superpowers/specs/2026-11-25-agentry-sandbox-design.md`). Plan 3 (web, 2026-11-24, complete): named environments with live sandbox state, Start/Stop/Reset and New chat here on the detail page, the two-pane template editor (software, startup, variables, internet and CPU/memory limits), "Runs on" choices in plain words with availability, the Providers tab with the standard image's software, and provider and state in the composer's environment menu. Dev: start `agentry-sandbox` before the API and set `AGENTRY_SANDBOX_URL`/`AGENTRY_SANDBOX_KEY` for it. User guide (setup, tutorial, limits, API, troubleshooting): `docs/sandboxes.md`.
 - Agents page (2026-11-10): saved agents CRUD at `/agents`, bundled starters, agent menu in new chats, soft per-agent app limit (spec `docs/superpowers/specs/2026-11-10-agents-page-design.md`). Not yet: ECC/URL import, subagent deployment as a named agent, agent-authoring tools and skill, per-agent skills, hard app limits.
 - Later specs: F2 admin, F3 artifacts/files, F4 trace inspector + subagent views (F4 also: keyboard access for the trajectory overview).
 
@@ -52,6 +53,8 @@ Progress is tracked in the plan's ledger under `.superpowers/sdd/` (git-ignored)
 ## Toolchain and commands
 
 - The `pnpm` on the default WSL PATH is a Windows binary. Prefix shells with `export PATH=$HOME/.nvm/versions/node/v24.19.0/bin:$PATH` (Node 24, pnpm 11).
+- Launchers (README "Running it"): `scripts/dev.sh` (`next dev`), `scripts/dev.sh image` (Docker image → `dist/agentry-web-<tag>.tar`), `scripts/start.sh` (deploys the newest tar as container `agentry-web`; `--no-docker` for `next start`). All check that the Agentry API is up first.
+- Branches: work on `develop`; `main` only via a `develop` → `main` PR. CI (`.github/workflows/ci.yml`) runs typecheck + Vitest on pushes to `develop`, plus e2e and a Docker build on PRs to `main`; `publish.yml` releases on merge to `main`: image to GHCR, tag `v<version>`, GitHub Release. A release needs a new `package.json` version (the PR fails otherwise) and a `## <version>` CHANGELOG section for its notes.
 - `pnpm dev` · `pnpm build` · `pnpm start` · `pnpm typecheck` · `pnpm test` (Vitest) · `pnpm test:e2e` (Playwright).
 - pnpm 11 blocks dependency build scripts; decisions live in `pnpm-workspace.yaml` (`allowBuilds`).
 

@@ -10,7 +10,7 @@ import { Link } from '@astryxdesign/core/Link'
 import { Text } from '@astryxdesign/core/Text'
 import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
 const styles = stylex.create({
   grid: {
@@ -38,14 +38,15 @@ const styles = stylex.create({
     backgroundColor: { default: colorVars['--color-background-card'], ':hover': colorVars['--color-overlay-hover'] },
   },
   dimmed: { opacity: 0.7 },
-  head: { display: 'flex', alignItems: 'flex-start', gap: 8 },
+  head: { display: 'flex', alignItems: 'center', gap: 12 },
   title: { flex: 1, minWidth: 0 },
   // The title link's click area covers the whole card.
   stretch: {
     '::after': { content: '""', position: 'absolute', inset: 0, borderRadius: radiusVars['--radius-container'] },
   },
   trailing: { position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 },
-  footer: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, marginTop: 'auto', paddingTop: 4 },
+  // Above the stretched title link, so footer buttons stay clickable.
+  footer: { position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, marginTop: 'auto', paddingTop: 4 },
 })
 
 export function CardGrid({ label, children }: { label: string; children: ReactNode }) {
@@ -58,7 +59,9 @@ export function CardGrid({ label, children }: { label: string; children: ReactNo
 
 export function EntityCard({
   href,
+  onClick,
   title,
+  leading,
   trailing,
   children,
   footer,
@@ -66,7 +69,11 @@ export function EntityCard({
 }: {
   /** Where the card goes; without it the title is plain text (a card that only shows facts). */
   href?: string
+  /** Runs on a click of the card's link (call `preventDefault` to handle it in place). */
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void
   title: string
+  /** An icon tile or avatar before the title. */
+  leading?: ReactNode
   trailing?: ReactNode
   children?: ReactNode
   footer?: ReactNode
@@ -75,11 +82,12 @@ export function EntityCard({
   return (
     <li {...stylex.props(styles.card, dimmed && styles.dimmed)}>
       <div {...stylex.props(styles.head)}>
+        {leading}
         <div {...stylex.props(styles.title)}>
           {href === undefined ? (
             <Text weight="medium" maxLines={1}>{title}</Text>
           ) : (
-            <Link href={href}>
+            <Link href={href} onClick={onClick}>
               <span {...stylex.props(styles.stretch)}>
                 <Text weight="medium" maxLines={1}>{title}</Text>
               </span>

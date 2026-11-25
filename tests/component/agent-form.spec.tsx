@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentForm } from '@/ui/agents/AgentForm'
+import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
 
 const { apiMock, nav } = vi.hoisted(() => ({
   apiMock: {
@@ -27,10 +28,26 @@ vi.mock('@/api/client', async (orig) => ({ ...(await orig<object>()), api: apiMo
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: nav.push }), useSearchParams: () => nav.params }))
 
 afterEach(() => {
+  for (const memo of [modelsMemo, hostToolsMemo, connectedAppsMemo]) memo.clear()
+  apiMock.listHostTools.mockImplementation(async () => [{ name: 'read_file' }, { name: 'grep' }, { name: 'shell' }])
   cleanup()
   vi.clearAllMocks()
   nav.params = new URLSearchParams()
   vi.unstubAllGlobals()
+})
+
+describe('AgentForm avatar', () => {
+  it('picking an icon and a colour saves them on the agent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Inbox')
+    await userEvent.click(screen.getByRole('button', { name: 'Change avatar' }))
+    await userEvent.click(within(await screen.findByRole('group', { name: 'Agent icon' })).getByRole('button', { name: 'Email' }))
+    await userEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Teal' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
+    expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ metadata: { icon: 'mail', color: 'teal' } })
+  })
 })
 
 describe('AgentForm skills and apps', () => {
@@ -39,12 +56,13 @@ describe('AgentForm skills and apps', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Poet')
-    await userEvent.click(screen.getByRole('switch', { name: /Use all built-in skills/ }))
+    await userEvent.click(screen.getByRole('tab', { name: /^Skills/ }))
+    await userEvent.click(await screen.findByRole('switch', { name: /Use all built-in skills/ }))
     const office = await screen.findByRole('checkbox', { name: /office-docx/ })
     expect(office).toBeChecked()
     expect(office).toHaveAttribute('aria-disabled', 'true')
     await userEvent.click(screen.getByRole('checkbox', { name: /haiku/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ skills: { builtin: ['composio', 'create-agent'], library: [LIB] } })
   })
@@ -53,12 +71,13 @@ describe('AgentForm skills and apps', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: ['gmail', 'github'] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Mail')
+    await userEvent.click(await screen.findByRole('tab', { name: /^Apps/ }))
     await userEvent.click(await screen.findByRole('switch', { name: /Limit this agent to specific apps/ }))
     await userEvent.click(within(screen.getByRole('group', { name: 'github access' })).getByRole('button', { name: 'Off' }))
     await userEvent.click(within(screen.getByRole('group', { name: 'gmail access' })).getByRole('button', { name: 'Choose tools' }))
     await userEvent.type(screen.getByRole('textbox', { name: /gmail tools/ }), 'GMAIL_FETCH_EMAILS, GMAIL_SEND_EMAIL')
     await userEvent.click(screen.getByRole('button', { name: 'Send without asking' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ apps: { gmail: ['GMAIL_FETCH_EMAILS', 'GMAIL_SEND_EMAIL'] }, send_policy: 'auto' })
   })
@@ -70,21 +89,73 @@ describe('AgentForm', () => {
     render(<AgentForm />)
     const name = await screen.findByRole('textbox', { name: /Name/ })
     await userEvent.type(name, ' Reviewer ')
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect(apiMock.createAgent).toHaveBeenCalledWith({
-      model: 'm1', name: 'Reviewer', instructions: '', metadata: {}, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask',
+      model: 'm1', name: 'Reviewer', instructions: '', metadata: { icon: expect.any(String), color: expect.any(String) }, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask',
     })
     expect(nav.push).toHaveBeenCalledWith('/agents')
   })
   it('opens a starter prefilled and refuses to save without a name', async () => {
-    nav.params = new URLSearchParams('starter=planner')
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: null })))
-    render(<AgentForm />)
+    render(<AgentForm starterId="planner" />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('Planner'))
     await userEvent.clear(screen.getByRole('textbox', { name: /Name/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     expect(await screen.findByText('Give the agent a name.')).toBeInTheDocument()
     expect(apiMock.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('says what is missing before saving, and Start from fills the form', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    const checks = await screen.findByRole('list', { name: 'Before you save' })
+    expect(within(checks).getByText('Name needed')).toBeInTheDocument()
+    expect(within(checks).getByText('Add instructions')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Start from' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Planner/ }))
+    expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('Planner')
+    expect(within(checks).queryByText('Name needed')).toBeNull()
+    expect(screen.getByRole('tab', { name: /^Tools/ })).toHaveTextContent(/\d/)
+  })
+
+  it('tool search narrows the list and Select all ticks only the matches', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Reader')
+    await userEvent.click(screen.getByRole('switch', { name: /Allow every tool/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search tools' }), 'read')
+    expect(screen.queryByRole('checkbox', { name: /shell/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Select all' }))
+    expect(screen.getByText('1 of 3 tools allowed')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
+    expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ host_tools: { allow: ['read_file'] } })
+  })
+})
+
+describe('AgentForm review fixes', () => {
+  it('refuses to save with tools turned off and none chosen, instead of granting every tool', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Nothing')
+    await userEvent.click(screen.getByRole('switch', { name: /Allow every tool/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(within(screen.getByRole('list', { name: 'Before you save' })).getByText('Choose at least one tool')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    expect(await screen.findByText(/Choose at least one tool, or allow every tool/)).toBeInTheDocument()
+    expect(apiMock.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('does not keep a failed tool list, so the next open asks again', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    apiMock.listHostTools.mockRejectedValueOnce(new Error('down'))
+    render(<AgentForm />)
+    await screen.findByRole('textbox', { name: /Name/ })
+    cleanup()
+    render(<AgentForm />)
+    await screen.findByRole('textbox', { name: /Name/ })
+    expect(apiMock.listHostTools).toHaveBeenCalledTimes(2)
   })
 })

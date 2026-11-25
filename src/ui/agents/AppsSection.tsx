@@ -8,6 +8,7 @@
 import { HStack } from '@astryxdesign/core/HStack'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { Link } from '@astryxdesign/core/Link'
+import { List, ListItem } from '@astryxdesign/core/List'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -15,6 +16,13 @@ import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import { useState } from 'react'
 import type { AgentAppGrants } from '@/api/types'
+import { logoUrl } from '@/connectors/catalog'
+
+/** The app's logo, decorative (the name sits beside it). */
+function AppLogo({ slug }: { slug: string }) {
+  // eslint-disable-next-line @next/next/no-img-element -- external logo host; next/image does not apply
+  return <img src={logoUrl(slug)} alt="" width={24} height={24} loading="lazy" referrerPolicy="no-referrer" />
+}
 
 type Mode = 'all' | 'choose' | 'off'
 const MODES: { mode: Mode; label: string }[] = [{ mode: 'all', label: 'All tools' }, { mode: 'choose', label: 'Choose tools' }, { mode: 'off', label: 'Off' }]
@@ -50,8 +58,8 @@ export function AppsSection({ connected, value, onChange, sendPolicy, onSendPoli
   }
 
   return (
-    <VStack gap={2}>
-      <Text weight="medium">Apps</Text>
+    <VStack gap={5}>
+      <VStack gap={3}>
       {apps.length === 0 ? (
         <Text type="supporting" color="secondary">Connect apps on the <Link href="/plugins?tab=connectors">Plugins page</Link> to choose which this agent may use.</Text>
       ) : (
@@ -62,9 +70,15 @@ export function AppsSection({ connected, value, onChange, sendPolicy, onSendPoli
             value={value !== null}
             onChange={(limit) => onChange(limit ? Object.fromEntries(apps.map((slug) => [slug, 'all' as const])) : null)}
           />
+          {value === null && (
+            <List hasDividers density="compact" header={<Text type="supporting" color="secondary">Connected ({apps.length})</Text>}>
+              {apps.map((slug) => <ListItem key={slug} startContent={<AppLogo slug={slug} />} label={slug} description="All tools" />)}
+            </List>
+          )}
           {value !== null && apps.map((slug) => (
             <VStack key={slug} gap={1}>
               <HStack gap={2} vAlign="center">
+                <AppLogo slug={slug} />
                 <StackItem size="fill"><Text>{slug}</Text></StackItem>
                 <HStack gap={1} role="group" aria-label={`${slug} access`}>
                   {MODES.map(({ mode, label }) => (
@@ -79,11 +93,15 @@ export function AppsSection({ connected, value, onChange, sendPolicy, onSendPoli
           ))}
         </>
       )}
-      <HStack gap={2} vAlign="center" role="group" aria-label="Sending on your behalf">
-        <StackItem size="fill"><Text type="supporting" color="secondary">Sending on your behalf</Text></StackItem>
-        <ToggleButton label="Ask every time" size="sm" isPressed={sendPolicy === 'ask'} onPressedChange={() => onSendPolicy('ask')} />
-        <ToggleButton label="Send without asking" size="sm" isPressed={sendPolicy === 'auto'} onPressedChange={() => onSendPolicy('auto')} />
-      </HStack>
+      </VStack>
+      <VStack gap={2}>
+        <Text weight="medium">Sending on your behalf</Text>
+        <Text type="supporting" color="secondary">Emails, messages, posts and other changes an app makes for you.</Text>
+        <HStack gap={1} role="group" aria-label="Sending on your behalf">
+          <ToggleButton label="Ask every time" size="sm" isPressed={sendPolicy === 'ask'} onPressedChange={() => onSendPolicy('ask')} />
+          <ToggleButton label="Send without asking" size="sm" isPressed={sendPolicy === 'auto'} onPressedChange={() => onSendPolicy('auto')} />
+        </HStack>
+      </VStack>
     </VStack>
   )
 }

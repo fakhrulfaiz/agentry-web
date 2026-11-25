@@ -23,14 +23,52 @@ Copy `.env.example` to `.env.local` and fill it in. The server validates these v
 
 Behind a reverse proxy, forward `X-Forwarded-Proto` and `X-Forwarded-Host` (the app uses them for same-origin checks and Keycloak redirect URIs), or set Auth.js's `AUTH_URL` to the public URL.
 
-The session cookie is `Secure` whenever `NODE_ENV=production`, so `pnpm start` over plain `http://` needs HTTPS in front of it (Safari drops `Secure` cookies on `http://localhost`); use `pnpm dev` for local http.
+The session cookie is `Secure` whenever `NODE_ENV=production`. Chrome, Edge and Firefox accept it on `http://localhost`, so `scripts/start.sh` works locally in those; Safari drops it, and any other host over plain `http://` needs HTTPS in front.
 
-## Development
+## Running it
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:3000
+scripts/dev.sh          # next dev with hot reload (while changing the code)
+scripts/dev.sh image    # build the Docker image, export it to dist/agentry-web-<tag>.tar
+scripts/start.sh        # deploy: load the newest dist/*.tar and run it as container agentry-web
 ```
+
+**Branches and CI.** Work lands on `develop`; `main` changes only through a `develop` → `main` pull request. GitHub Actions (`.github/workflows/`):
+
+| When | What runs |
+|---|---|
+| Push to `develop` | `ci.yml`: `next typegen`, typecheck, Vitest |
+| Pull request to `main` | `ci.yml`: the same, then Playwright e2e (mock API) and a Docker build check |
+| Merge to `main` | `publish.yml`: builds the image and pushes `ghcr.io/<owner>/agentry-web:<version>-<sha>`, `:<version>` and `:latest` |
+
+**Releasing a version.** The version is `"version"` in `package.json`; a `develop` → `main` merge is a release.
+
+```bash
+git checkout develop
+npm version 0.2.0 --no-git-tag-version   # or minor / major / patch
+# add a "## 0.2.0 — <date>" section at the top of CHANGELOG.md (the release notes)
+git commit -am "release: 0.2.0" && git push
+# then the develop → main pull request; merge it
+```
+
+The pull request fails ("Version not yet released") when `package.json` names a version that already has a `v<version>` tag. After the merge, `publish.yml` pushes the image (`<version>-<sha>`, `<version>`, `latest`), tags the commit `v<version>` and creates the GitHub Release from that CHANGELOG section (or from the commits when there is none). A version that is already released is never published again; that run only warns. Deploy a pinned version with `AGENTRY_WEB_GHCR_IMAGE=ghcr.io/fakhrulfaiz/agentry-web:0.2.0 scripts/start.sh --ghcr`.
+
+`scripts/start.sh` uses a local `dist/*.tar` first, then pulls `ghcr.io/<owner>/agentry-web:latest` (`--ghcr` pulls even when a tar is here; `AGENTRY_WEB_GHCR_IMAGE` picks another tag). The package is private like the repo: the machine needs `docker login ghcr.io` with a token that has `read:packages`.
+
+**Deploying from the image.** `scripts/dev.sh image` builds the `Dockerfile` (Next's standalone server on `node:24.19.0-bookworm-slim`, no configuration baked in) and saves it as `dist/agentry-web-<version>-<commit>[-dirty].tar`. `scripts/start.sh` takes the newest tar there (or `AGENTRY_WEB_IMAGE_TAR`), loads it unless that tag is already loaded, and replaces the container `agentry-web` (`--restart unless-stopped`, port `PORT`, default 3000). On another machine, copy the tar into `dist/` next to the scripts and the env file; Docker is all it needs (no Node or pnpm).
+
+- The container's environment comes from `.env` then `.env.local` (quotes stripped; `PORT`, `NODE_ENV` and the dist/data dir keys left out). An `AGENTRY_API_URL` on `localhost`/`127.0.0.1` is rewritten to `host.docker.internal` (mapped to the Docker host), so the container reaches an API running on the host. A Keycloak issuer on `localhost` is not rewritten: the browser uses it too.
+- Connector keys persist in `.data/` (mounted at `/data`; `AGENTRY_WEB_HOST_DATA_DIR` to move it).
+- No tar: a terminal run offers to build it now or to run without Docker; `NONINTERACTIVE=1` fails. `scripts/start.sh --no-docker` runs `next build` (when the source changed; `--rebuild` forces it) + `next start` instead.
+- Logs: `docker logs -f agentry-web`. Stop: `docker rm -f agentry-web`.
+- Docker Desktop's credential helper fails from WSL ("A specified logon session does not exist"); the image build needs no login, so the launcher builds with a copy of the Docker config without `credsStore`.
+
+Both launchers first check that the Agentry API answers `GET $AGENTRY_API_URL/health` (read from `.env.local`). When it does not, they offer to start it (its own `~/code/dsh-agents-api/scripts/dev.sh`, in the herdr terminal `agentry-api`), wait for it, continue without it, or quit; with `NONINTERACTIVE=1` they wait up to `AGENTRY_API_WAIT_SECONDS` (120) and then fail. A port already in use (other than by the container being replaced) stops them.
+
+- Use the image (or `--no-docker`) for real use: Next prefetches pages and keeps them in the client cache only in a production build, so `next dev` is several times slower per click and compiles each page on its first visit.
+- Menus use [gum](https://github.com/charmbracelet/gum) `0.17.0` when it is on the `PATH` or in `.tools/bin` (the first terminal run offers to download it there); without it they fall back to numbered prompts. Shared code: `scripts/lib/launch.sh`.
+- Overrides: `AGENTRY_API_REPO` (default `~/code/dsh-agents-api`), `AGENTRY_API_HERDR_NAME` (default `agentry-api`), `AGENTRY_WEB_IMAGE_NAME`, `AGENTRY_WEB_CONTAINER`, `AGENTRY_WEB_DIST`.
 
 Other scripts:
 

@@ -29,6 +29,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
+  useRef,
   useEffect,
   useState,
   type ComponentType,
@@ -45,11 +46,14 @@ import {
 } from "@/artifacts/kind";
 import { seedHref, type ArtifactSeedId } from "@/artifacts/seed";
 import { goToLogin } from "@/chat/use-conversation";
+import { useCachedState } from "@/ui/page-cache";
 
 /** Width of the page column, as on claude.ai. */
 const COLUMN_WIDTH = 880;
 /** Recent chats whose artifacts the page walks; Load more pulls the next page. */
 const SESSIONS_PAGE = 25;
+/** Deliverables requests in flight at once; the rest wait their turn. */
+const DELIVERABLE_CONCURRENCY = 3;
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -208,11 +212,12 @@ function ArtifactCard({
 
 export function ArtifactsPage() {
   const router = useRouter();
-  const [items, setItems] = useState<Artifact[] | null>(null);
+  const [items, setItems] = useCachedState<Artifact[]>("artifacts");
   const [hasMore, setHasMore] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const abortRef = useRef(new AbortController());
 
   const load = useCallback(async (after?: string) => {
     try {
@@ -222,13 +227,28 @@ export function ArtifactsPage() {
       });
       // The backend keeps artifacts per session, so the page walks the recent
       // sessions; one without a workspace (404) simply contributes nothing.
-      const lists = await Promise.allSettled(
-        page.data.map((session) => api.listSessionDeliverables(session.id)),
+      // At most DELIVERABLE_CONCURRENCY requests at once, cancelled when the page
+      // unmounts: a burst of per-session calls would otherwise hold every browser
+      // connection and stall sidebar navigation behind them.
+      const signal = abortRef.current.signal;
+      const lists: PromiseSettledResult<Awaited<ReturnType<typeof api.listSessionDeliverables>>>[] = [];
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(DELIVERABLE_CONCURRENCY, page.data.length) }, async () => {
+          while (next < page.data.length && !signal.aborted) {
+            const index = next++;
+            lists[index] = await api.listSessionDeliverables(page.data[index]!.id, signal).then(
+              (value) => ({ status: "fulfilled" as const, value }),
+              (reason: unknown) => ({ status: "rejected" as const, reason }),
+            );
+          }
+        }),
       );
+      if (signal.aborted) return;
       const rows: Artifact[] = [];
       page.data.forEach((session, index) => {
         const result = lists[index];
-        if (result.status === "fulfilled") {
+        if (result?.status === "fulfilled") {
           for (const entry of deliverableEntries(result.value))
             rows.push(toArtifact(session, entry));
         }
@@ -250,7 +270,9 @@ export function ArtifactsPage() {
   }, []);
 
   useEffect(() => {
+    abortRef.current = new AbortController();
     void load();
+    return () => abortRef.current.abort();
   }, [load]);
 
   const more = async () => {

@@ -1,72 +1,198 @@
 'use client'
 
-/** Create or edit one saved agent. `agentId` absent means a new agent (optionally from `?starter=`). */
+/**
+ * The agent editor, shown in a wide dialog over the Agents page. The left pane
+ * is who the agent is (name, model, instructions); the right pane is what it
+ * may use (tools, skills, apps, subagents), one tab each. The header shows the
+ * avatar and takes the agent's colour as it is picked, and the footer says what
+ * is still missing before it can be saved. `agentId` absent means a new agent.
+ */
 import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
-import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
 import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { StackItem } from '@astryxdesign/core/Layout'
-import { Link } from '@astryxdesign/core/Link'
+import { Popover } from '@astryxdesign/core/Popover'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { Switch } from '@astryxdesign/core/Switch'
+import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Text } from '@astryxdesign/core/Text'
 import { TextArea } from '@astryxdesign/core/TextArea'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { CheckCircleIcon, ExclamationCircleIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import * as stylex from '@stylexjs/stylex'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { HostToolInfo } from '@/api/types'
+import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
 import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, toolMask, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
-import { STARTERS } from '@/agents/starters'
+import { STARTERS, type Starter } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
+import { HUES, tint } from '@/ui/brand/palette'
+import { AgentAvatar } from './AgentAvatar'
 import { AppsSection } from './AppsSection'
+import { AvatarPicker } from './AvatarPicker'
 import { SkillsSection } from './SkillsSection'
+import { ToolsPicker } from './ToolsPicker'
 
-const COLUMN_WIDTH = 720
 const EFFORTS: { value: EffortChoice; label: string }[] = [
   { value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' },
 ]
 
-async function connectedApps(): Promise<string[] | null> {
-  try {
-    const res = await fetch('/api/agentry/connectors/status', { credentials: 'same-origin' })
-    return res.ok ? (((await res.json()) as { connected?: string[] | null }).connected ?? null) : null
-  } catch {
-    return null
+type Section = 'tools' | 'skills' | 'apps' | 'subagents'
+
+const SECTIONS: { value: Section; label: string }[] = [
+  { value: 'tools', label: 'Tools' },
+  { value: 'skills', label: 'Skills' },
+  { value: 'apps', label: 'Apps' },
+  { value: 'subagents', label: 'Subagents' },
+]
+
+const WIDE = '@media (min-width: 900px)'
+
+const ui = stylex.create({
+  shell: { display: 'flex', flexDirection: 'column', blockSize: 'min(860px, 94dvh)' },
+  header: {
+    display: 'flex',
+    flexWrap: { default: 'wrap', [WIDE]: 'nowrap' },
+    alignItems: 'center',
+    columnGap: 16,
+    rowGap: 12,
+    paddingBlock: 18,
+    paddingInlineStart: 24,
+    paddingInlineEnd: 16,
+    borderBlockEndWidth: 1,
+    borderBlockEndStyle: 'solid',
+    borderBlockEndColor: 'var(--color-border)',
+    transitionProperty: 'background-color',
+    transitionDuration: { default: '240ms', '@media (prefers-reduced-motion: reduce)': '0s' },
+  },
+  titles: { flexGrow: 1, flexBasis: 0, minInlineSize: 0 },
+  starter: { order: { default: 4, [WIDE]: 0 }, flexBasis: { default: '100%', [WIDE]: 'auto' } },
+  body: {
+    flexGrow: 1,
+    minBlockSize: 0,
+    overflowY: { default: 'auto', [WIDE]: 'hidden' },
+    display: { default: 'block', [WIDE]: 'grid' },
+    gridTemplateColumns: { default: 'none', [WIDE]: 'minmax(0, 5fr) minmax(0, 6fr)' },
+  },
+  profile: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 20,
+    padding: 24,
+    overflowY: { default: 'visible', [WIDE]: 'auto' },
+    borderStyle: 'solid',
+    borderColor: 'var(--color-border)',
+    borderWidth: 0,
+    borderInlineEndWidth: { default: 0, [WIDE]: 1 },
+    borderBlockEndWidth: { default: 1, [WIDE]: 0 },
+  },
+  capabilities: {
+    display: 'flex',
+    flexDirection: 'column',
+    minBlockSize: 0,
+    backgroundColor: 'var(--color-background-muted)',
+  },
+  tabs: { paddingInline: 24, paddingBlockStart: 8, flexShrink: 0 },
+  panel: { padding: 24, flexGrow: 1, minBlockSize: 0, overflowY: { default: 'visible', [WIDE]: 'auto' } },
+  footer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 12,
+    paddingBlock: 14,
+    paddingInline: 24,
+    borderBlockStartWidth: 1,
+    borderBlockStartStyle: 'solid',
+    borderBlockStartColor: 'var(--color-border)',
+  },
+  checks: { flexGrow: 1, minInlineSize: 0 },
+  avatarButton: { padding: 0, borderWidth: 0, backgroundColor: 'transparent', cursor: 'pointer', borderRadius: 14, display: 'block', flexShrink: 0 },
+})
+
+/** What each capability tab is for, shown at the top of its panel. */
+const INTROS: Record<Section, string> = {
+  tools: 'Actions the agent can take on its own, such as reading files, searching the web or running code.',
+  skills: 'Know-how the agent loads when a task calls for it, such as writing a Word document or using an app.',
+  apps: 'Your connected accounts, such as Gmail or GitHub, that the agent may use for you.',
+  subagents: 'Helpers the agent can start to work on parts of a task at the same time.',
+}
+
+/** What blocks saving (`required`) and what is worth doing first. */
+export function readiness(form: FormState): { label: string; ok: boolean; required: boolean }[] {
+  return [
+    { label: 'Name', ok: form.name.trim() !== '', required: true },
+    { label: 'Model', ok: form.model !== '', required: true },
+    { label: 'Tools', ok: form.allTools || form.tools.length > 0, required: true },
+    { label: 'Instructions', ok: form.instructions.trim().length >= 20, required: false },
+  ]
+}
+
+/** The short note on a capability tab. */
+export function tabNote(section: Section, form: FormState): string {
+  switch (section) {
+    case 'tools':
+      return form.allTools ? 'All' : String(form.tools.length)
+    case 'skills':
+      return form.skills === null ? 'Built-in' : String(form.skills.builtin.length + form.skills.library.length)
+    case 'apps':
+      return form.apps === null ? 'Any' : String(Object.keys(form.apps).length)
+    case 'subagents':
+      return form.subagents ? `Up to ${String(form.maxSubagents)}` : 'Off'
   }
 }
 
-export function AgentForm({ agentId }: { agentId?: string }) {
+function applyStarter(base: FormState, starter: Starter, toolNames: string[]): FormState {
+  const names = toolMask(starter.tools, toolNames)
+  return { ...base, name: starter.name, icon: starter.icon, color: starter.color, instructions: starter.instructions, subagents: starter.subagents ?? false, allTools: names === null, tools: names ?? [] }
+}
+
+export function AgentForm({ agentId, starterId, onClose, onSaved }: {
+  agentId?: string
+  starterId?: string | null
+  /** Close without saving. Defaults to going back to the Agents page. */
+  onClose?: () => void
+  /** After a create, save or delete. Without it, create and delete go back to the Agents page. */
+  onSaved?: (change: 'created' | 'updated' | 'deleted') => void
+}) {
   const router = useRouter()
-  const starterId = useSearchParams().get('starter')
+  const close = onClose ?? (() => router.push('/agents'))
   const [form, setForm] = useState<FormState | null>(null)
   const [tools, setTools] = useState<HostToolInfo[]>([])
   const [apps, setApps] = useState<string[] | null>(null)
+  const [models, setModels] = useState<string[]>([])
+  const [section, setSection] = useState<Section>('tools')
   const [error, setError] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [models, setModels] = useState<string[]>([])
+  const [avatarOpen, setAvatarOpen] = useState(false)
 
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const [modelList, toolList, connected] = await Promise.all([api.models(), api.listHostTools().catch(() => []), connectedApps()])
-        const defaultModel = modelList[0] ?? ''
-        const base = agentId ? agentToForm(await api.getAgent(agentId), defaultModel) : emptyForm(defaultModel)
+        const [modelList, toolList, connected, agent] = await Promise.all([
+          modelsMemo.get(),
+          hostToolsMemo.get().catch((): HostToolInfo[] => []),
+          connectedAppsMemo.get().catch(() => null),
+          agentId ? api.getAgent(agentId) : Promise.resolve(null),
+        ])
         if (!alive) return
+        const defaultModel = modelList[0] ?? ''
+        let base = agent ? agentToForm(agent, defaultModel) : emptyForm(defaultModel)
         const starter = !agentId ? STARTERS.find((s) => s.id === starterId) : undefined
-        if (starter) {
-          const names = toolMask(starter.tools, toolList.map((t) => t.name))
-          Object.assign(base, { name: starter.name, instructions: starter.instructions, subagents: starter.subagents ?? false, allTools: names === null, tools: names ?? [] })
-        }
+        if (starter) base = applyStarter(base, starter, toolList.map((t) => t.name))
         setModels(modelList)
         setTools(toolList)
         setApps(connected)
@@ -84,6 +210,7 @@ export function AgentForm({ agentId }: { agentId?: string }) {
 
   const set = (patch: Partial<FormState>) => {
     setSaved(false)
+    setError(null)
     setForm((cur) => (cur ? { ...cur, ...patch } : cur))
   }
 
@@ -91,16 +218,21 @@ export function AgentForm({ agentId }: { agentId?: string }) {
     if (!form) return
     if (!form.name.trim()) return setError('Give the agent a name.')
     if (!form.model) return setError('Choose a model.')
+    if (!form.allTools && form.tools.length === 0) return setError('Choose at least one tool, or allow every tool.')
     setSaving(true)
     setError(null)
     try {
       const params = formToParams(form, tools.map((t) => t.name))
       if (agentId) {
         await api.updateAgent(agentId, params)
+        modelsMemo.clear()
         setSaved(true)
+        onSaved?.('updated')
       } else {
         await api.createAgent(params)
-        router.push('/agents')
+        modelsMemo.clear()
+        if (onSaved) onSaved('created')
+        else router.push('/agents')
       }
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
@@ -114,7 +246,8 @@ export function AgentForm({ agentId }: { agentId?: string }) {
     if (!agentId) return
     try {
       await api.deleteAgent(agentId)
-      router.push('/agents')
+      if (onSaved) onSaved('deleted')
+      else router.push('/agents')
     } catch (err) {
       setConfirmDelete(false)
       setError(err instanceof ApiError ? err.message : 'Could not delete the agent.')
@@ -123,32 +256,74 @@ export function AgentForm({ agentId }: { agentId?: string }) {
 
   if (missing)
     return (
-      <div style={{ maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
-        <VStack gap={3}>
-          <Banner status="warning" title="This agent no longer exists." />
-          <Link href="/agents">Back to agents</Link>
-        </VStack>
-      </div>
+      <VStack gap={4} padding={6}>
+        <Banner status="warning" title="This agent no longer exists." />
+        <HStack hAlign="end"><Button label="Close" onClick={close} /></HStack>
+      </VStack>
     )
 
-  const toolNames = tools.map((t) => t.name)
+  const title = form?.name.trim() || (agentId ? 'Untitled agent' : 'New agent')
+  const hue = form ? HUES[form.color] : undefined
+  const checks = form ? readiness(form) : []
+
   return (
-    <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
-      <VStack gap={5}>
-        <HStack gap={3} vAlign="center">
-          <StackItem size="fill">
-            <Heading level={1} type="display-2">{agentId ? 'Edit agent' : 'New agent'}</Heading>
-          </StackItem>
-          {agentId && <Button label="Delete" variant="ghost" onClick={() => setConfirmDelete(true)} />}
-          <Button label="Cancel" variant="ghost" onClick={() => router.push('/agents')} />
-          <Button label={saved ? 'Saved' : 'Save'} variant="primary" isLoading={saving} isDisabled={!form} onClick={() => void save()} />
-        </HStack>
-        {error !== null && <Banner status="error" title={error} isDismissable onDismiss={() => setError(null)} />}
-        {!form ? (
-          <Skeleton height={240} />
+    <div {...stylex.props(ui.shell)}>
+      <header {...stylex.props(ui.header)} style={hue ? { backgroundColor: tint(hue, 8) } : undefined}>
+        {form ? (
+          <Popover
+            isOpen={avatarOpen}
+            onOpenChange={setAvatarOpen}
+            label="Agent avatar"
+            width={340}
+            content={<AvatarPicker icon={form.icon} color={form.color} onChange={(patch) => set(patch)} />}
+          >
+            <button type="button" aria-label="Change avatar" title="Change avatar" {...stylex.props(ui.avatarButton)}>
+              <AgentAvatar avatar={{ icon: form.icon, color: form.color }} size="lg" />
+            </button>
+          </Popover>
         ) : (
-          <VStack gap={5}>
-            <TextInput label="Name" value={form.name} onChange={(name) => set({ name })} isRequired />
+          <Skeleton width={56} height={56} radius={4} />
+        )}
+        <div {...stylex.props(ui.titles)}>
+          <Heading level={2} maxLines={1}>{title}</Heading>
+          <Text type="supporting" color="secondary" maxLines={1}>
+            {agentId ? 'Changes apply to new chats with this agent.' : 'Not saved yet. Click the avatar to change it.'}
+          </Text>
+        </div>
+        {!agentId && form && (
+          <div {...stylex.props(ui.starter)}>
+          <DropdownMenu
+            button={{ label: 'Start from', size: 'sm', variant: 'secondary' }}
+            menuWidth={320}
+            alignment="end"
+            items={STARTERS.map((s) => ({
+              id: s.id,
+              label: s.name,
+              description: s.summary,
+              onClick: () => setForm((cur) => (cur ? applyStarter(cur, s, tools.map((t) => t.name)) : cur)),
+            }))}
+          />
+          </div>
+        )}
+        <IconButton label="Close" icon={<Icon icon={XMarkIcon} />} variant="ghost" size="sm" onClick={close} />
+      </header>
+
+      {!form ? (
+        <div {...stylex.props(ui.body)} aria-busy="true" aria-label="Loading agent">
+          <VStack gap={4} padding={6}>
+            <Skeleton height={40} />
+            <Skeleton height={40} index={1} />
+            <Skeleton height={260} index={2} />
+          </VStack>
+          <VStack gap={4} padding={6}>
+            <Skeleton height={32} />
+            <Skeleton height={300} index={1} />
+          </VStack>
+        </div>
+      ) : (
+        <div {...stylex.props(ui.body)}>
+          <section aria-label="Profile" {...stylex.props(ui.profile)}>
+            <TextInput label="Name" value={form.name} onChange={(name) => set({ name })} placeholder="Inbox assistant" isRequired />
             <HStack gap={3}>
               <StackItem size="fill">
                 <Selector label="Model" options={models.length > 0 ? models : [form.model]} value={form.model} onChange={(model) => set({ model })} />
@@ -157,42 +332,89 @@ export function AgentForm({ agentId }: { agentId?: string }) {
                 <Selector label="Reasoning effort" options={EFFORTS} value={form.effort} onChange={(v) => set({ effort: v as EffortChoice })} />
               </StackItem>
             </HStack>
-            <TextArea label="Instructions" description="What this agent is for and how it should work. This is its system prompt." rows={10} value={form.instructions} onChange={(instructions) => set({ instructions })} />
+            <TextArea
+              label="Instructions"
+              description="What this agent is for and how it should work. It reads this at the start of every chat."
+              rows={16}
+              value={form.instructions}
+              onChange={(instructions) => set({ instructions })}
+              placeholder={'You keep my inbox under control.\nEach morning, sort new mail into Reply, Read later and Ignore, then draft replies for the first group.'}
+            />
+          </section>
 
-            <VStack gap={2}>
-              <Text weight="medium">Tools</Text>
-              <Switch label="Allow every tool" description="Turn off to choose which tools this agent can use." value={form.allTools} onChange={(allTools) => set({ allTools, ...(allTools ? {} : { tools: form.tools.length > 0 ? form.tools : toolNames }) })} />
-              {!form.allTools &&
-                (toolNames.length === 0 ? (
-                  <Text type="supporting" color="secondary">The tool list is unavailable right now.</Text>
-                ) : (
-                  <CheckboxList label="Allowed tools" isLabelHidden density="compact" value={form.tools} onChange={(tools) => set({ tools })}>
-                    {tools.map((t) => (
-                      <CheckboxListItem key={t.name} value={t.name} label={t.name} description={t.description} />
-                    ))}
-                  </CheckboxList>
+          <section aria-label="Capabilities" {...stylex.props(ui.capabilities)}>
+            <div {...stylex.props(ui.tabs)}>
+              <TabList value={section} onChange={(v) => setSection(v as Section)} role="tablist" hasDivider aria-label="Capabilities">
+                {SECTIONS.map((s) => (
+                  <Tab
+                    key={s.value}
+                    value={s.value}
+                    label={s.label}
+                    panelId="agent-capability-panel"
+                    endContent={<Text type="supporting" color="secondary">{tabNote(s.value, form)}</Text>}
+                  />
                 ))}
-            </VStack>
-
-            <SkillsSection agentId={agentId} value={form.skills} onChange={(skills) => set({ skills })} />
-
-            <AppsSection connected={apps} value={form.apps} onChange={(grants) => set({ apps: grants })} sendPolicy={form.sendPolicy} onSendPolicy={(sendPolicy) => set({ sendPolicy })} />
-
-            <VStack gap={2}>
-              <Text weight="medium">Subagents</Text>
-              <Switch label="Let this agent delegate to subagents" value={form.subagents} onChange={(subagents) => set({ subagents })} />
-              {form.subagents && (
-                <HStack gap={1} vAlign="center" role="group" aria-label="Most subagents at once">
-                  <Text type="supporting" color="secondary">Most at once</Text>
-                  {Array.from({ length: MAX_SUBAGENTS }, (_, i) => i + 1).map((n) => (
-                    <ToggleButton key={n} label={String(n)} size="sm" isPressed={form.maxSubagents === n} onPressedChange={() => set({ maxSubagents: n })} />
-                  ))}
-                </HStack>
+              </TabList>
+            </div>
+            <div {...stylex.props(ui.panel)} role="tabpanel" id="agent-capability-panel" aria-label={SECTIONS.find((s) => s.value === section)?.label}>
+              <VStack gap={5}>
+              <Text type="supporting" color="secondary">{INTROS[section]}</Text>
+              {section === 'tools' && <ToolsPicker tools={tools} allTools={form.allTools} value={form.tools} onChange={(next) => set(next)} />}
+              {section === 'skills' && <SkillsSection agentId={agentId} value={form.skills} onChange={(skills) => set({ skills })} />}
+              {section === 'apps' && (
+                <AppsSection connected={apps} value={form.apps} onChange={(grants) => set({ apps: grants })} sendPolicy={form.sendPolicy} onSendPolicy={(sendPolicy) => set({ sendPolicy })} />
               )}
-            </VStack>
-          </VStack>
-        )}
-      </VStack>
+              {section === 'subagents' && (
+                <VStack gap={4}>
+                  <Switch
+                    label="Let this agent delegate to subagents"
+                    description="It can hand parts of a task to helpers that work in parallel and report back."
+                    value={form.subagents}
+                    onChange={(subagents) => set({ subagents })}
+                  />
+                  {form.subagents && (
+                    <VStack gap={2}>
+                      <Text weight="medium">Most at once</Text>
+                      <HStack gap={1} wrap="wrap" role="group" aria-label="Most subagents at once">
+                        {Array.from({ length: MAX_SUBAGENTS }, (_, i) => i + 1).map((n) => (
+                          <ToggleButton key={n} label={String(n)} size="sm" isPressed={form.maxSubagents === n} onPressedChange={() => set({ maxSubagents: n })} />
+                        ))}
+                      </HStack>
+                    </VStack>
+                  )}
+                </VStack>
+              )}
+              </VStack>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <div {...stylex.props(ui.footer)}>
+        <div {...stylex.props(ui.checks)}>
+          {error !== null ? (
+            <HStack gap={1} vAlign="center" role="alert">
+              <Icon icon={ExclamationCircleIcon} size="sm" color="error" />
+              <Text>{error}</Text>
+            </HStack>
+          ) : (
+            <HStack gap={4} wrap="wrap" role="list" aria-label="Before you save">
+              {checks.map((c) => (
+                <HStack key={c.label} gap={1} vAlign="center" role="listitem">
+                  <Icon icon={c.ok ? CheckCircleIcon : ExclamationCircleIcon} size="sm" color={c.ok ? 'success' : c.required ? 'error' : 'secondary'} />
+                  <Text type="supporting" color={c.ok ? 'secondary' : 'primary'}>
+                    {c.ok ? c.label : c.label === 'Tools' ? 'Choose at least one tool' : c.required ? `${c.label} needed` : `Add ${c.label.toLowerCase()}`}
+                  </Text>
+                </HStack>
+              ))}
+            </HStack>
+          )}
+        </div>
+        {agentId && <Button label="Delete" variant="ghost" onClick={() => setConfirmDelete(true)} />}
+        <Button label="Cancel" variant="ghost" onClick={close} />
+        <Button label={saved ? 'Saved' : agentId ? 'Save changes' : 'Create agent'} variant="primary" isLoading={saving} isDisabled={!form} onClick={() => void save()} />
+      </div>
+
       <AlertDialog
         isOpen={confirmDelete}
         onOpenChange={(open) => !open && setConfirmDelete(false)}

@@ -1,7 +1,6 @@
-import { forgetConnectedAccounts } from '@/server/connector-inventory'
 import { jsonError } from '@/server/agentry'
 import { checkCsrf } from '@/server/csrf'
-import { forgetConnectedToolkits } from '@/server/connector-status'
+import { connections } from '@/server/connections'
 import { hasKey, InvalidConnectorKeyError, ownerOf, removeKey, setKey } from '@/server/connectors-store'
 import { authFailure, requireCredential } from '@/server/require-auth'
 
@@ -33,9 +32,7 @@ export async function PUT(req: Request): Promise<Response> {
   if (typeof body?.key !== 'string') return jsonError(400, 'invalid_key')
   try {
     await setKey(ownerOf(auth.session.identity), body.key)
-    forgetConnectedToolkits(ownerOf(auth.session.identity))
-  forgetConnectedAccounts(ownerOf(auth.session.identity))
-    forgetConnectedAccounts(ownerOf(auth.session.identity))
+    connections.forget(ownerOf(auth.session.identity))
   } catch (error) {
     if (error instanceof InvalidConnectorKeyError) return jsonError(400, 'invalid_key')
     throw error
@@ -53,7 +50,6 @@ export async function DELETE(req: Request): Promise<Response> {
   }
   if (!checkCsrf(req, auth.session)) return jsonError(403, 'forbidden')
   await removeKey(ownerOf(auth.session.identity))
-  forgetConnectedToolkits(ownerOf(auth.session.identity))
-  forgetConnectedAccounts(ownerOf(auth.session.identity))
+  connections.forget(ownerOf(auth.session.identity))
   return Response.json({ configured: false }, { headers: NO_STORE })
 }
