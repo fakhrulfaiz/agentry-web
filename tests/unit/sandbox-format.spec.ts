@@ -87,4 +87,8 @@ describe('place kinds in plain words', () => {
     expect(placeKindTitle('docker-ssh')).toBe('Docker over SSH')
     expect(placeKindTitle('docker')).toBe('Docker on this server')
   })
+
+  it('names E2B places', () => {
+    expect(placeKindTitle('e2b')).toBe('E2B (hosted)')
+  })
 })

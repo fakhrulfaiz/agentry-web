@@ -843,6 +843,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       { id: 'local-docker', name: 'This server', kind: 'docker', default: true, available: true, capabilities: { reset: true, isolated: true, gpu: false } },
       { id: 'gpu-box', name: 'GPU box', kind: 'docker-ssh', default: false, available: true, gpus: { count: 2, models: ['NVIDIA A100', 'NVIDIA A100'] }, capabilities: { reset: false, isolated: true, gpu: true } },
       { id: 'lab-pc', name: 'Lab PC', kind: 'ssh-machine', default: false, available: true, capabilities: { reset: false, isolated: false, gpu: false } },
+      { id: 'e2b', name: 'E2B', kind: 'e2b', default: false, available: true, capabilities: { reset: true, isolated: true, gpu: false } },
     ]
     const providers = [
       { object: 'sandbox.provider', name: 'local', default: false, available: true, capabilities: { templateFields: ['files'], files: true, exec: true } },

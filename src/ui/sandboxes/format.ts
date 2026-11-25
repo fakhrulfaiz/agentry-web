@@ -53,6 +53,7 @@ export function providerTitle(name: string): string {
 export function placeKindTitle(kind: string): string {
   if (kind === 'docker') return 'Docker on this server'
   if (kind === 'docker-ssh') return 'Docker over SSH'
+  if (kind === 'e2b') return 'E2B (hosted)'
   return kind === 'ssh-machine' ? 'Machine over SSH (no isolation)' : kind
 }
 
