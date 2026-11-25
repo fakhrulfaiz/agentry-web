@@ -123,6 +123,16 @@ describe('SandboxesPage', () => {
     }))
   })
 
+  it('marks built-in templates and offers no delete for them', async () => {
+    apiMock.listSandboxTemplates.mockResolvedValue(page([{ ...template, id: 'tpl_builtin_offline', name: 'Offline', built_in: true, provider: 'sandbox', unsupported_fields: [] }, template]))
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    await user.click(await screen.findByRole('button', { name: 'Templates' }))
+    expect(await screen.findByText('Built in')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete Offline' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete Python data' })).toBeInTheDocument()
+  })
+
   it('on this server the template editor offers only starter files', async () => {
     const user = userEvent.setup()
     render(<SandboxesPage />)

@@ -15,7 +15,7 @@ import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { StackItem } from '@astryxdesign/core/Layout'
-import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
+import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
@@ -114,16 +114,14 @@ function NewEnvironmentDialog({
           onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
           onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
         />}
-        {fitting.length > 0 ? (
-          <RadioList label="Start from" description="A saved setup, or an empty environment." size="sm" value={templateId} onChange={setTemplateId}>
-            <RadioListItem value="" label="Nothing" aria-label="Nothing" description="The standard setup, with no extra software." />
-            {fitting.map((t) => (
-              <RadioListItem key={t.id} value={t.id} label={t.name || 'Untitled template'} aria-label={t.name || 'Untitled template'} description={templateSummary(t)} />
-            ))}
-          </RadioList>
-        ) : (
-          <Text type="supporting" color="secondary">{`No templates for ${providerTitle(provider).toLowerCase()} yet, so it starts from nothing. Make one on the Templates tab.`}</Text>
-        )}
+        <Selector
+          label="Template"
+          description={fitting.length > 0 ? 'Start from a saved setup, or from nothing.' : `No templates for ${providerTitle(provider).toLowerCase()} yet. It starts from nothing.`}
+          options={[{ value: '', label: 'Start from nothing' }, ...fitting.map((t) => ({ value: t.id, label: t.name || 'Untitled template', description: templateSummary(t) }))]}
+          value={templateId}
+          onChange={setTemplateId}
+          isDisabled={fitting.length === 0}
+        />
         {chosen && chosen.unsupported_fields.length > 0 && (
           <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
         )}
@@ -310,7 +308,7 @@ export function SandboxesPage() {
                   key={tpl.id}
                   title={tpl.name || 'Untitled template'}
                   leading={<IconTile icon={Square3Stack3DIcon} hue="violet" />}
-                  trailing={<IconButton label={`Delete ${tpl.name || 'template'}`} size="sm" variant="ghost" icon={<Icon icon={TrashIcon} />} onClick={() => setRemoving(tpl)} />}
+                  trailing={tpl.built_in ? <Text type="supporting" color="secondary">Built in</Text> : <IconButton label={`Delete ${tpl.name || 'template'}`} size="sm" variant="ghost" icon={<Icon icon={TrashIcon} />} onClick={() => setRemoving(tpl)} />}
                   footer={
                     <>
                       <Meta icon={providerIcon(tpl.provider)}>{providerTitle(tpl.provider)}</Meta>

@@ -660,6 +660,8 @@ export interface SandboxTemplate {
   gpus?: number | 'all'
   /** Fields the provider cannot apply; provisioning fails while any remain. */
   unsupported_fields: string[]
+  /** A template every owner has; it cannot be changed or deleted. */
+  built_in?: boolean
 }
 
 /** An environment (`agent.environment`). */
