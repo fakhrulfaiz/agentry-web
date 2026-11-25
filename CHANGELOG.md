@@ -6,16 +6,13 @@ All notable changes to Agentry Web are recorded here.
 
 
 
-## 2026-11-25 — environment page
-
-- A gone environment now shows one calm panel ("This sandbox is gone") with Delete and Back to sandboxes, and no longer asks for files. Files errors are shown in plain words: Retry only when the sandbox could not be reached, "Start the environment to see its files." for a stopped one. Uploads are disabled with a reason unless the environment is running.
-
 ## 0.3.0 — 2026-11-25
 
 Everything since 0.1.0 (0.2.0 was prepared but never released).
 
 - **Sandbox places:** "Runs on" lists every Agentry Sandbox place — Docker on this server, Docker over SSH, Machine over SSH (no isolation), E2B (hosted) — with availability, the reason when one is off, and GPU count; the default place is preselected. Templates save a place and a GPUs choice; new environments send the place; the environment page shows where it runs and its GPUs; Reset is hidden on places that can't reset, and warns that it deletes all files where files can't be kept.
 - **Run from the published images:** one compose file (`deploy/compose.yaml`, attached to the release) for web only or the full stack (`COMPOSE_PROFILES=full`: Agentry Web, the Agentry API, Postgres), with one settings file (`agentry.env.example`); in full mode the web app waits until the API is healthy.
+- **Environment page:** A gone environment now shows one calm panel ("This sandbox is gone") with Delete and Back to sandboxes, and no longer asks for files. Files errors are shown in plain words: Retry only when the sandbox could not be reached, "Start the environment to see its files." for a stopped one. Uploads are disabled with a reason unless the environment is running.
 - **Fixed:** signing in over plain `http://` on a LAN address or a server's port failed in production. The session cookie is now `Secure` when the request came over HTTPS; `AGENTRY_WEB_COOKIE_SECURE=always` forces it behind a TLS proxy that does not send `X-Forwarded-Proto`.
 
 ## 2026-11-25 — run the published image without the repository
