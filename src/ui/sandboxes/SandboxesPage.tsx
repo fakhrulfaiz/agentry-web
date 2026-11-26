@@ -17,6 +17,7 @@ import { IconButton } from '@astryxdesign/core/IconButton'
 import { Layout, LayoutContent, LayoutFooter, StackItem } from '@astryxdesign/core/Layout'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { Spinner } from '@astryxdesign/core/Spinner'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -35,7 +36,7 @@ import {
   Square3Stack3DIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
@@ -59,15 +60,43 @@ function Meta({ icon, children }: { icon: typeof FolderOpenIcon; children: strin
 const providerIcon = (name: string) => (name === 'local' ? ServerIcon : CubeTransparentIcon)
 const settling = (env: SandboxEnvironment) => env.status === 'pending' || env.sandbox?.state === 'provisioning' || env.sandbox?.state === 'deleting'
 
+type NewEnvironmentInput = { templateId?: string; provider?: string; name?: string; place?: string }
+interface PendingEnvironment { key: number; name: string; provider: string; error?: string }
+
+/** An environment still being created (or refused): a card in the grid, so the dialog never has to wait. */
+function PendingEnvironmentCard({ item, onDismiss }: { item: PendingEnvironment; onDismiss(): void }) {
+  return (
+    <div data-testid="environment-pending">
+      <EntityCard
+        title={item.name || 'New environment'}
+        leading={<IconTile icon={providerIcon(item.provider)} hue={item.error ? 'red' : 'slate'} />}
+        trailing={
+          item.error
+            ? <HStack gap={2} vAlign="center"><StatusDot variant="error" label="Failed" /><Text type="supporting" color="secondary">Failed</Text></HStack>
+            : <HStack gap={2} vAlign="center"><Spinner size="sm" /><Text type="supporting" color="secondary">Setting up…</Text></HStack>
+        }
+        footer={<Meta icon={providerIcon(item.provider)}>{providerTitle(item.provider)}</Meta>}
+      >
+        {item.error ? (
+          <VStack gap={2} hAlign="start">
+            <Text type="supporting" color="secondary">{item.error}</Text>
+            <Button label="Dismiss" size="sm" variant="ghost" onClick={onDismiss} />
+          </VStack>
+        ) : (
+          <Text type="supporting" color="secondary">{item.provider === 'sandbox' ? 'Starting the sandbox and installing its software. This can take a few minutes.' : 'Preparing the folder.'}</Text>
+        )}
+      </EntityCard>
+    </div>
+  )
+}
+
 function NewEnvironmentDialog({
-  isOpen, onClose, templates, providers, onCreated,
-}: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreated(): void }) {
+  isOpen, onClose, templates, providers, onCreate,
+}: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreate(input: NewEnvironmentInput): void }) {
   const [name, setName] = useState('')
   const [provider, setProvider] = useState('')
   const [place, setPlace] = useState('')
   const [templateId, setTemplateId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -76,31 +105,16 @@ function NewEnvironmentDialog({
     setProvider(first)
     setPlace(defaultPlace(providers.find((p) => p.name === first)))
     setTemplateId('')
-    setError(null)
   }, [isOpen, providers])
 
   // Only templates made for the chosen place can start here.
   const fitting = templates.filter((t) => t.provider === provider)
   const chosen = fitting.find((t) => t.id === templateId)
 
-  async function create() {
-    setBusy(true)
-    setError(null)
-    try {
-      const created = await api.createSandboxEnvironment({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
-      // A refused sandbox (a limit, a failed setup) is recorded as failed: show why here instead of closing.
-      if (created.status === 'failed' && created.error) {
-        onCreated()
-        return setError(created.error)
-      }
-      onCreated()
-      onClose()
-    } catch (err) {
-      if (isSignedOut(err)) return goToLogin()
-      setError(err instanceof ApiError ? err.message : 'Could not create the environment.')
-    } finally {
-      setBusy(false)
-    }
+  // Setting up a sandbox can take minutes (image, packages, setup commands): the page shows it as a card instead of holding the dialog open.
+  function create() {
+    onCreate({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
+    onClose()
   }
 
   return (
@@ -129,7 +143,6 @@ function NewEnvironmentDialog({
               {chosen && chosen.unsupported_fields.length > 0 && (
                 <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
               )}
-              {error !== null && <Banner status="error" title={error} />}
             </VStack>
           </LayoutContent>
         }
@@ -137,7 +150,7 @@ function NewEnvironmentDialog({
           <LayoutFooter>
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="ghost" onClick={onClose} />
-              <Button label="Create environment" variant="primary" isLoading={busy} isDisabled={!provider} onClick={() => void create()} />
+              <Button label="Create environment" variant="primary" isDisabled={!provider} onClick={create} />
             </HStack>
           </LayoutFooter>
         }
@@ -196,6 +209,27 @@ export function SandboxesPage() {
   const [runtimes, setRuntimes] = useCachedState<SandboxRuntimes>('sandboxes.runtimes')
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
+  const [pending, setPending] = useState<PendingEnvironment[]>([])
+  const nextKey = useRef(0)
+  const dismiss = (key: number) => setPending((cur) => cur.filter((p) => p.key !== key))
+  const startCreate = (input: NewEnvironmentInput) => {
+    const key = ++nextKey.current
+    setPending((cur) => [...cur, { key, name: input.name ?? '', provider: input.provider ?? 'local' }])
+    const fail = (message: string) => setPending((cur) => cur.map((p) => (p.key === key ? { ...p, error: message } : p)))
+    api.createSandboxEnvironment(input).then(
+      async (created) => {
+        const list = await api.listSandboxEnvironments().catch(() => null)
+        if (list) setEnvironments(list.data)
+        // A refused sandbox is saved as failed and listed with its reason; if it is not listed, keep the reason on this card.
+        if (created.status === 'failed' && created.error && !list?.data.some((e) => e.id === created.id)) fail(created.error)
+        else dismiss(key)
+      },
+      (err: unknown) => {
+        if (isSignedOut(err)) return goToLogin()
+        fail(err instanceof ApiError ? err.message : 'Could not create the environment.')
+      },
+    )
+  }
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)
   const [viewing, setViewing] = useState<SandboxTemplate | null>(null)
 
@@ -268,7 +302,7 @@ export function SandboxesPage() {
         {loading ? (
           <Skeleton height={160} />
         ) : view === 'environments' ? (
-          environments.length === 0 ? (
+          environments.length === 0 && pending.length === 0 ? (
             <EmptyState
               icon={<Icon icon={CircleStackIcon} size="lg" color="secondary" />}
               title="No environments yet."
@@ -277,6 +311,7 @@ export function SandboxesPage() {
             />
           ) : (
             <CardGrid label="Environments">
+              {pending.map((p) => <PendingEnvironmentCard key={`pending-${String(p.key)}`} item={p} onDismiss={() => dismiss(p.key)} />)}
               {environments.map((env) => {
                 const look = environmentLook(env)
                 const from = templateName(env.template_id)
@@ -348,7 +383,7 @@ export function SandboxesPage() {
         )}
       </VStack>
 
-      <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreated={() => void load()} />
+      <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreate={startCreate} />
       <TemplateDetailsDialog template={viewing} onClose={() => setViewing(null)} />
       <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onCreated={() => void load()} />
       <AlertDialog

@@ -103,7 +103,25 @@ describe('SandboxesPage', () => {
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   })
 
-  it('creates a named environment and keeps the dialog open with the reason when the sandbox is refused', async () => {
+  it('closes the dialog at once and shows a setting-up card until the environment is ready', async () => {
+    let finish: (v: unknown) => void = () => {}
+    apiMock.createSandboxEnvironment.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    await user.click((await screen.findAllByRole('button', { name: 'New environment' }))[0]!)
+    await user.type(await screen.findByRole('textbox', { name: /Name/ }), 'Data box')
+    await user.click(screen.getByRole('button', { name: 'Create environment' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const card = await screen.findByTestId('environment-pending')
+    expect(card).toHaveTextContent('Data box')
+    expect(card).toHaveTextContent('Setting up')
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([env, { ...env, id: 'env_new', name: 'Data box' }]))
+    finish({ ...env, id: 'env_new', name: 'Data box' })
+    await waitFor(() => expect(screen.queryByTestId('environment-pending')).not.toBeInTheDocument())
+    expect(await screen.findByRole('link', { name: 'Data box' })).toBeInTheDocument()
+  })
+
+  it('shows the reason on the card when the sandbox is refused', async () => {
     apiMock.listSandboxEnvironments.mockResolvedValue(page([]))
     apiMock.createSandboxEnvironment.mockResolvedValue({ ...env, status: 'failed', error: 'sandbox limit reached: owner-a has 5 sandboxes (limit 5)' })
     const user = userEvent.setup()
@@ -113,6 +131,9 @@ describe('SandboxesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Create environment' }))
     await waitFor(() => expect(apiMock.createSandboxEnvironment).toHaveBeenCalledWith({ name: 'Data box', provider: 'local' }))
     expect(await screen.findByText(/limit 5/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText(/limit 5/)).not.toBeInTheDocument()
   })
 
   it('edits a template on the isolated sandbox and sends only what it applies', async () => {
