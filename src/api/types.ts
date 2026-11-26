@@ -352,6 +352,19 @@ export interface OAIFunctionCallOutputItem {
   timing?: OAIItemTiming
   /** A sign-in link for a connected app; shown as a Connect button. */
   connect_request?: ConnectRequest
+  /** Images the tool returned; bytes via `GET /agents/files/{file_id}/content`. */
+  images?: OAIOutputImagePart[]
+}
+
+/** One image a tool returned (a screenshot, `read_image`). */
+export interface OAIOutputImagePart {
+  type: 'output_image'
+  file_id?: string
+  filename?: string
+  media_type: string
+  bytes: number
+  width?: number
+  height?: number
 }
 
 /** Saved MCP tool call. */

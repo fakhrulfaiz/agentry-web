@@ -169,6 +169,15 @@ describe('conversation reducer', () => {
     expect(kinds(live)).toEqual(['user', 'reasoning', 'assistant', 'user', 'tool', 'assistant'])
   })
 
+  it('applyItems keeps the images a tool returned on its card', () => {
+    const image = { type: 'output_image' as const, file_id: 'timg_s_ab', filename: 'shot.png', media_type: 'image/png', bytes: 10 }
+    const items: StoredSessionItem[] = [
+      { id: 'f1', type: 'function_call', name: 'screenshot', call_id: 'c1', arguments: {}, status: 'in_progress', turn_id: 't' },
+      { id: 'o1', type: 'function_call_output', call_id: 'c1', output: 'ok', images: [image], status: 'completed', turn_id: 't' },
+    ]
+    expect(applyItems(initialState(SID), items).items[0]).toMatchObject({ kind: 'tool', images: [image] })
+  })
+
   it('applyItems maps function call outputs, skips subagent items and does not touch event ids', () => {
     const items: StoredSessionItem[] = [
       { id: 'u1', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }], status: 'completed', turn_id: 't' },

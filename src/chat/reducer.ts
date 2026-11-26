@@ -59,7 +59,7 @@
  * drops an approval that the session snapshot reported. Action views are kept
  * at the end of `items`.
  */
-import type { ConnectRequest } from '@/api/types'
+import type { ConnectRequest, OAIOutputImagePart } from '@/api/types'
 import type { UserFile } from './attachments'
 import type {
   OAIRequiredAction,
@@ -77,7 +77,7 @@ export type MessageView =
   | { kind: 'user'; id: string; text: string; files?: UserFile[] }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
-  | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown; connect?: ConnectRequest }
+  | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown; connect?: ConnectRequest; images?: OAIOutputImagePart[] }
   | {
     kind: 'subagent'
     id: string
@@ -509,7 +509,7 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
         s.items.findLast((v): v is ToolView => v.kind === 'tool' && v.name === COMMAND && v.output === undefined && (!turn || s.turnOf.get(v.id) === turn))
       if (!call) return s
       const failed = item.status === 'failed' || item.status === 'incomplete' || Boolean(item.error)
-      return place(s, { ...call, status: failed ? 'failed' : 'done', output: item.output, ...(item.connect_request ? { connect: item.connect_request } : {}) }, turn)
+      return place(s, { ...call, status: failed ? 'failed' : 'done', output: item.output, ...(item.connect_request ? { connect: item.connect_request } : {}), ...(item.images?.length ? { images: item.images } : {}) }, turn)
     }
     default:
       return s

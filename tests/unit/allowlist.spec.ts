@@ -54,6 +54,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/skills'],
     ['POST', '/agents/files'],
     ['GET', '/agents/files/file_abc/content'],
+    ['GET', '/agents/files/timg_ses_0123456789abcdef0123456789abcdef/content'],
     ['DELETE', '/agents/files/file_abc'],
     ['GET', '/agents/commands'],
     ['POST', `/agents/sessions/${ID}/commands/compact`],
