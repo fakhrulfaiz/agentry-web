@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { RendererId } from '@/preview/renderers'
 import { fileUrl, useFileText } from '@/preview/use-file-bytes'
 import { Markdown } from '@/ui/chat/Markdown'
+import { OfficePdfView } from './OfficePdfView'
 
 const TABLE_ROW_LIMIT = 2000
 
@@ -244,6 +245,8 @@ export function RendererBody(props: RendererProps) {
       return <iframe title={path} src={fileUrl(sessionId, path)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
     case 'docx':
       return <DocxView {...props} />
+    case 'officePdf':
+      return <OfficePdfView sessionId={sessionId} path={path} reloadKey={props.reloadKey} onMissing={props.onMissing} onRetry={props.onRetry} />
     case 'download':
       return <DownloadCard sessionId={sessionId} path={path} />
     case 'source':

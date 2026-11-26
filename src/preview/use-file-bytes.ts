@@ -40,3 +40,8 @@ export function useFileText(sessionId: string, path: string, reloadKey: number, 
   }, [sessionId, path, reloadKey, enabled])
   return result
 }
+
+/** Browser URL of an Office file rendered as PDF by the API. */
+export function pdfRenderUrl(sessionId: string, path: string): string {
+  return `/api/agentry/agents/sessions/${encodeURIComponent(sessionId)}/renders/pdf/${path.split('/').map(encodeURIComponent).join('/')}`
+}

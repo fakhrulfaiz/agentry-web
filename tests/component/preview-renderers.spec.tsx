@@ -41,3 +41,23 @@ describe('RendererBody docx', () => {
     await screen.findByText('File no longer exists.')
   })
 })
+
+describe('RendererBody officePdf', () => {
+  const office = { sessionId: 's1', path: 'deck.pptx', reloadKey: 0, wrap: true, runScripts: false, id: 'officePdf' as const }
+  it('shows the rendered PDF from a blob URL, fetched with no-cache so the etag is used', async () => {
+    const fetchMock = vi.fn(async () => new Response('%PDF-1.7', { status: 200, headers: { 'x-agentry-missing-fonts': 'Calibri,Noto%20Sans' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    URL.createObjectURL = vi.fn(() => 'blob:pdf-1')
+    URL.revokeObjectURL = vi.fn()
+    const { container } = render(<RendererBody {...office} />)
+    await waitFor(() => expect(container.querySelector('iframe')?.getAttribute('src')).toBe('blob:pdf-1'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/agentry/agents/sessions/s1/renders/pdf/deck.pptx', expect.objectContaining({ cache: 'no-cache' }))
+    expect(screen.getByText('Some fonts are not installed; the layout may differ.')).toBeInTheDocument()
+  })
+  it('explains a document that cannot be read and offers Download', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'invalid_document' } }, { status: 422 })))
+    render(<RendererBody {...office} />)
+    await screen.findByText('This file could not be read as a document.')
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/agentry/agents/sessions/s1/artifacts/deck.pptx?download=1')
+  })
+})
