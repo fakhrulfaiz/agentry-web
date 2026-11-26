@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
 import { applyItems, initialState, type MessageView } from '@/chat/reducer'
+import { Conversation } from '@/ui/chat/Conversation'
 import { ConnectionPill } from '@/ui/chat/ConnectionPill'
 import { SessionFilesContext } from '@/ui/chat/session-files'
 import { Message } from '@/ui/chat/Message'
@@ -293,6 +294,32 @@ describe('QuestionCard', () => {
     expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'answer', payload: { selected: [], custom: 'Agentry' } })
   })
 
+  it('multi-select: shows checkboxes, needs one choice, and sends every chosen option', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    const multi: OAIApprovalAction = { ...question, questions: [{ id: 'q1', question: 'Which colours?', multiSelect: true, options: [{ label: 'Red' }, { label: 'Green' }, { label: 'Blue' }] }] }
+    render(<Message view={{ kind: 'action', id: 'action:appr_q', action: multi }} answer={answer} />)
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    expect(isDisabled(screen.getByRole('button', { name: 'Send answer' }))).toBe(true)
+    await user.click(screen.getByRole('checkbox', { name: 'Red' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Blue' }))
+    await user.click(screen.getByRole('button', { name: 'Send answer' }))
+    expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'answer', payload: { selected: ['Red', 'Blue'] } })
+  })
+
+  it('multi-select: unchecking removes an option and typed text is sent alongside the choices', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    const multi: OAIApprovalAction = { ...question, questions: [{ id: 'q1', question: 'Which colours?', multiSelect: true, options: [{ label: 'Red' }, { label: 'Green' }] }] }
+    render(<Message view={{ kind: 'action', id: 'action:appr_q', action: multi }} answer={answer} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Red' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Green' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Red' }))
+    await user.type(screen.getByRole('textbox', { name: 'Or type your own answer' }), 'Teal')
+    await user.click(screen.getByRole('button', { name: 'Send answer' }))
+    expect(answer).toHaveBeenCalledWith('appr_q', { decision: 'answer', payload: { selected: ['Green'], custom: 'Teal' } })
+  })
+
   it('Skip declines', async () => {
     const user = userEvent.setup()
     const answer = vi.fn(async () => {})
@@ -312,7 +339,6 @@ describe('action cards inside the list', () => {
 
 describe('Conversation', () => {
   it('shows a notice when the stream route refuses the chat (403)', async () => {
-    const { Conversation } = await import('@/ui/chat/Conversation')
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {

@@ -17,6 +17,9 @@ export default defineConfig({
     environment: 'node',
     // Our stylex.create() calls are not compiled under Vitest; see the stub.
     setupFiles: ['tests/stubs/stylex-setup.ts', 'tests/stubs/page-cache-reset.ts'],
+    // jsdom renders of the whole app are CPU heavy: with a worker per core the 5s test timeout
+    // trips under contention (reveal, schedule-detail, agent-form, sandboxes). Fewer workers keep it steady.
+    maxWorkers: 3,
     include: ['tests/unit/**/*.spec.ts', 'tests/component/**/*.spec.tsx'],
     // next-auth imports `next/server` without an extension, which Node's ESM loader cannot
     // resolve (next has no exports map); inlining lets Vite resolve it.
