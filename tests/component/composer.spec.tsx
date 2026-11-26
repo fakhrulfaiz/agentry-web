@@ -134,7 +134,7 @@ describe('Composer footer and header', () => {
 
   it('an open chat starts at its stored model and effort, and both menus are live', async () => {
     const user = userEvent.setup()
-    const settings = live({ model: 'mock-large', effort: 'low', efforts: ['low', 'medium', 'high'] })
+    const settings = live({ model: 'mock-large', effort: 'low' })
     render(<Composer onSend={vi.fn(async () => {})} settings={settings} />)
     const model = screen.getByRole('combobox', { name: 'Model' })
     const effort = screen.getByRole('combobox', { name: 'Reasoning effort' })
@@ -142,9 +142,9 @@ describe('Composer footer and header', () => {
     expect(effort).toHaveTextContent('Low')
     expect(isDisabled(model)).toBe(false)
     expect(isDisabled(effort)).toBe(false)
-    // A stored effort cannot go back to Auto (Agentry has no value for it), so Auto is not offered.
+    // Auto stays offered over a stored effort: choosing it sends effort: null.
     await user.click(effort)
-    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Low', 'Medium', 'High'])
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Auto', 'Low', 'Medium', 'High'])
     await user.click(screen.getByRole('option', { name: 'High' }))
     expect(settings.onEffortChange).toHaveBeenCalledWith('high')
   })

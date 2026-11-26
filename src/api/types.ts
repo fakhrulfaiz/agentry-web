@@ -449,8 +449,8 @@ export type OAIInputEvent =
       input: OAIInputMessage[]
       /** Switches the session's model before the message is queued. */
       model?: string
-      /** Switches the session's reasoning effort before the message is queued. */
-      reasoning?: { effort: ReasoningEffort }
+      /** Switches the session's reasoning effort before the message is queued; `null` clears it back to the agent's default. */
+      reasoning?: { effort: ReasoningEffort | null }
     }
   | { type: 'agent.session.input.cancel' }
   | OAIApprovalResponseInputEvent

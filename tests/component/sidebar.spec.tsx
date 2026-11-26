@@ -130,9 +130,9 @@ describe('Sidebar', () => {
   })
 
   it('title search filters the loaded rows, and scrolling to the end loads the next page', async () => {
-    apiMock.listSessions
-      .mockResolvedValueOnce(page([session('s1', 'Plan the launch'), session('s2', 'Fix the build')], true))
-      .mockResolvedValueOnce(page([session('s3', 'Launch retro')]))
+    apiMock.listSessions.mockImplementation(async (q: { after?: string; metadata?: unknown }) =>
+      q.metadata ? page([]) : q.after ? page([session('s3', 'Launch retro')]) : page([session('s1', 'Plan the launch'), session('s2', 'Fix the build')], true),
+    )
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
     await screen.findByRole('link', { name: 'Plan the launch' })
@@ -143,7 +143,7 @@ describe('Sidebar', () => {
 
     act(() => intersect())
     expect(await screen.findByRole('link', { name: 'Launch retro' })).toBeInTheDocument()
-    expect(apiMock.listSessions).toHaveBeenLastCalledWith({ limit: 30, after: 's2' })
+    expect(apiMock.listSessions).toHaveBeenCalledWith({ limit: 30, after: 's2' })
     expect(screen.queryByRole('link', { name: 'Fix the build' })).not.toBeInTheDocument()
 
     await user.clear(screen.getByRole('searchbox', { name: 'Search chats' }))
@@ -213,6 +213,16 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('group', { name: 'Earlier' })).not.toBeInTheDocument()
     // Starred comes first.
     expect(star.compareDocumentPosition(group('Today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('the Starred section comes from the metadata filter, so a starred chat beyond the loaded pages shows', async () => {
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: Record<string, string> }) =>
+      q.metadata ? page([starred('s9', 'Ancient plan', NOW_S - 400 * DAY_S)]) : page([session('s1', 'Plan the launch')], true),
+    )
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Plan the launch' })
+    expect(await within(await screen.findByRole('group', { name: 'Starred' })).findByRole('link', { name: 'Ancient plan' })).toBeInTheDocument()
+    expect(apiMock.listSessions).toHaveBeenCalledWith({ limit: 100, metadata: { starred: 'true' } })
   })
 
   it('Star moves a chat into Starred at once and broadcasts the change; Unstar moves it back', async () => {

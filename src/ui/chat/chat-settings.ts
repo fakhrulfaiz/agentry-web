@@ -28,20 +28,24 @@ export function storedSettings(session: OAIAgentSession | null): ChatSettings {
   }
 }
 
-/** The fields of `chosen` that differ from `stored`. Auto is never sent: Agentry has no "default effort" value. */
+/** The fields of `chosen` that differ from `stored`. Choosing Auto over a stored effort sends `effort: null`, which clears it. */
 export function settingsChange(stored: ChatSettings, chosen: ChatSettings): SettingsChange {
   return {
     ...(chosen.model && chosen.model !== stored.model ? { model: chosen.model } : {}),
-    ...(chosen.effort !== 'auto' && chosen.effort !== stored.effort ? { effort: chosen.effort } : {}),
+    ...(chosen.effort !== stored.effort ? { effort: chosen.effort === 'auto' ? null : chosen.effort } : {}),
   }
 }
 
 /** `session` with an accepted change applied to its agent settings. */
 export function withSettings(session: OAIAgentSession, change: SettingsChange): OAIAgentSession {
-  if (!change.model && !change.effort) return session
+  if (!change.model && change.effort === undefined) return session
   const agent = { ...session.agent }
   if (change.model) agent.model = change.model
   if (change.effort) agent.reasoning = { ...agent.reasoning, effort: change.effort }
+  else if (change.effort === null) {
+    const { effort: _cleared, ...rest } = agent.reasoning ?? {}
+    agent.reasoning = rest
+  }
   return { ...session, agent }
 }
 
@@ -54,8 +58,6 @@ export function useChatSettings(session: OAIAgentSession | null) {
   const current: ChatSettings = { model: own.model ?? stored.model, effort: own.effort ?? stored.effort }
   return {
     ...current,
-    /** Auto is offered only while the session has no stored effort (it cannot be sent). */
-    efforts: stored.effort === 'auto' ? undefined : (['low', 'medium', 'high'] as EffortChoice[]),
     change: settingsChange(stored, current),
     setModel: (model: string) => setChosen({ ...own, model }),
     setEffort: (effort: EffortChoice) => setChosen({ ...own, effort }),
