@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-27: Fixed: on a phone the side panel kept its desktop width and its right side (the close button, row statuses) was cut off; it now fills the screen.
 - 2026-11-27: Sidebar: chats are grouped Today, Yesterday, Previous 7 days, Previous 30 days and Older; a chat's options menu shows on the open chat and appears on the others under the pointer or keyboard focus, instead of on every row; the nav icons are one outline set; the footer is just the account menu (Settings lives in it).
 - 2026-11-27: A new chat no longer says "Agentry is thinking…" before the chat exists: it says "Starting the chat…" ("Starting a sandbox…" for a new sandbox) until the session is created. Measured on the dev stack: about 1.8–2 s of a new chat's wait is the API creating the session, which waits for the connected-apps (Composio) MCP server to connect when the owner has a key; creating without it takes 0.1 s.
 - 2026-11-27: A finished reply's work block says what the turn did: "Worked for 48s · 6 commands · 3 files edited · 2 subagents" (a turn that only reasoned reads "Thought for 12s"). A single quick tool call with nothing else stays one line instead of a block, and a failed tool call is never folded away. Settings → Chat → "Always show steps" opens every block by default.

@@ -63,7 +63,7 @@ const styles = stylex.create({
     position: { default: 'relative', '@media (max-width: 767px)': 'fixed' },
     inset: { default: 'auto', '@media (max-width: 767px)': 0 },
     zIndex: { default: 'auto', '@media (max-width: 767px)': 20 },
-    width,
+    width: { default: width, '@media (max-width: 767px)': '100%' },
     minWidth: { default: 0, '@media (max-width: 767px)': '100%' },
     flexShrink: 0,
     display: 'flex',
