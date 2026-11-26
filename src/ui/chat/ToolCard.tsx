@@ -8,7 +8,8 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState } from "react";
 import type { MessageView } from "@/chat/reducer";
-import { ConnectCard } from "./ConnectCard";
+import { ConnectCard, ConnectSettingsLink } from "./ConnectCard";
+import { notConnectedApp } from "@/chat/not-connected";
 import "./shimmer.css";
 
 type ToolView = Extract<MessageView, { kind: "tool" }>;
@@ -146,7 +147,14 @@ export function ToolCard({ view }: { view: ToolView }) {
           },
         ]}
       />
-      {view.connect && <ConnectCard request={view.connect} />}
+      {view.connect ? (
+        <ConnectCard request={view.connect} />
+      ) : (
+        (() => {
+          const app = notConnectedApp(view.name, view.args, full ?? undefined, view.status === "failed");
+          return app ? <ConnectSettingsLink toolkit={app} /> : null;
+        })()
+      )}
     </div>
   );
 }
