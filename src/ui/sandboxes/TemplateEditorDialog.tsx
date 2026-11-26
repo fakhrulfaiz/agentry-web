@@ -27,7 +27,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { SandboxProvider } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
-import { fieldWords, formatBytes, providerTitle, splitList, templateBody, toBase64, type TemplateForm } from './format'
+import { BROWSER_SANDBOX_IMAGE, fieldWords, formatBytes, providerTitle, splitList, templateBody, toBase64, type TemplateForm } from './format'
 import { defaultPlace, richestProvider, RunsOnPicker } from './RunsOnPicker'
 
 const MAX_STARTER_FILE = 1024 * 1024
@@ -151,6 +151,7 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
   const current = sections.find((s) => s.value === section) ?? sections[0]
   const unsupported = SECTIONS.flatMap((s) => s.fields).filter((f) => !has(f))
   const defaultImage = target?.default_image
+  const imageChoice = form.image === '' ? 'standard' : form.image === BROWSER_SANDBOX_IMAGE ? 'browser' : 'custom'
   const chosenPlace = target?.places?.find((pl) => pl.id === form.place)
   const gpuCount = chosenPlace?.gpus?.count ?? 0
 
@@ -231,6 +232,19 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
 
                 {current?.value === 'software' && (
                   <>
+                    {has('image') && (
+                      <Selector
+                        label="Image preset"
+                        description="Web browser adds Chromium and Playwright MCP for agents with the browser turned on."
+                        options={[
+                          { value: 'standard', label: 'Standard', description: 'No browser; the smaller default image' },
+                          { value: 'browser', label: 'Web browser', description: 'Chromium and Playwright MCP' },
+                          { value: 'custom', label: 'Custom image', description: 'Type a reference below' },
+                        ]}
+                        value={imageChoice}
+                        onChange={(value) => set('image')(value === 'browser' ? BROWSER_SANDBOX_IMAGE : '')}
+                      />
+                    )}
                     {has('image') && (
                       <TextInput
                         label="Image"

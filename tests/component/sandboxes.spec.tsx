@@ -76,6 +76,18 @@ describe('SandboxesPage', () => {
     await waitFor(() => expect(apiMock.createSandboxEnvironment).toHaveBeenCalledWith({ provider: 'local' }))
   })
 
+  it('keeps the new-environment form scrollable and its actions outside the scroll area', async () => {
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    await user.click((await screen.findAllByRole('button', { name: 'New environment' }))[0]!)
+    const dialog = await screen.findByRole('dialog')
+    const content = dialog.querySelector('.astryx-layout-content') as HTMLElement | null
+    expect(content).not.toBeNull()
+    expect(within(content!).getByRole('textbox', { name: /Name/ })).toBeInTheDocument()
+    expect(within(content!).getByRole('radiogroup', { name: 'Runs on' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Create environment' }).closest('.astryx-layout-footer')).not.toBeNull()
+  })
+
   it('shows a named sandbox with its live state, image and last use; an unavailable provider says why', async () => {
     const sandboxEnv = { ...env, id: 'env_sbx', name: 'Data box', provider: 'sandbox', type: 'openai_hosted', template_id: undefined, sandbox: { state: 'stopped', image: 'python:3.13', last_used_at: Math.floor(Date.now() / 1000) - 120 } }
     apiMock.listSandboxEnvironments.mockResolvedValue(page([sandboxEnv]))

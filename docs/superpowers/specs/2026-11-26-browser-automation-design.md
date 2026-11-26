@@ -1,6 +1,6 @@
 # Browser automation (design)
 
-Status: 2026-11-26, implemented on `fix/browser` with the user's decisions: Playwright MCP, Chromium in the standard image, off by default per agent, and **no host browser** (`browser.host` was dropped: local chats never get one). The web side also has a read-only Browser tab. Backlog item 3 in `AGENTS.md`. Plan: `docs/superpowers/plans/2026-11-26-browser-automation.md`.
+Status: 2026-11-26, implemented on `fix/browser` with the user's decisions: Playwright MCP, off by default per agent, and **no host browser** (`browser.host` was dropped: local chats never get one). The web side also has a read-only Browser tab. On 2026-11-27 the browser moved out of the standard sandbox image into a separate `agentry-sandbox-browser:1` image, offered through a built-in **Web browser** template and a template-editor preset. Backlog item 3 in `AGENTS.md`. Plan: `docs/superpowers/plans/2026-11-26-browser-automation.md`.
 
 ## Goal
 
@@ -40,7 +40,7 @@ Agentry starts its own per-session browser MCP server, using the API's existing 
 
 ### The sandbox image
 
-- `agentry-sandbox/images/sandbox/Dockerfile` gains Chromium and the pinned `@playwright/mcp` (`npm install -g @playwright/mcp@0.0.80` and `npx playwright install --with-deps chromium`), adding a few hundred MB to the image. The Providers tab already lists the standard image's software; it gains "Chromium (web browser)".
+- `agentry-sandbox/images/sandbox-browser/Dockerfile` builds `agentry-sandbox-browser:1` from the standard image with the pinned `@playwright/mcp` (`npm install -g @playwright/mcp@0.0.80` and `playwright install --with-deps chromium`). The slim standard image is unchanged. The Providers tab lists each image's software, and the API's built-in **Web browser** template (`tpl_builtin_web_browser`) points at the browser image.
 - A sandbox made from an older image has no `playwright-mcp`: the bridge's process exits at once with "command not found"; the session starts without browser tools (`required: false`) and the guidance line (below) is not shown. The web switch says "Reset this sandbox to get the browser" when the environment's `image` is older than the first image that has it.
 
 ### Model guidance and screenshots
@@ -81,6 +81,6 @@ Chrome DevTools MCP and Stagehand (Stagehand needs its own model configuration a
 
 1. **Provider:** Playwright MCP (recommended: DSH pins it, works from text snapshots, no extra model) or Chrome DevTools MCP?
 2. **Host browser for local chats:** allow it behind `browser.host` for single-user/dev setups (recommended), or sandbox-only everywhere?
-3. **Image size:** put Chromium into the standard sandbox image (simple, every sandbox has it) or ship a separate "Browser" template image?
+3. **Image size:** ~~put Chromium into the standard sandbox image or ship a separate "Browser" template image?~~ Resolved 2026-11-27: separate browser image with a built-in template; the standard image stays slim.
 4. **Default:** browser off unless turned on per agent or chat (recommended), or on by default in sandbox chats?
 5. **Inline stdio MCP tools in sandbox chats** run on the API host today (the MCP client spawns them directly). Should all of them go through the new bridge (a separate, security-relevant change)?

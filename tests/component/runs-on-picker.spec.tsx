@@ -10,6 +10,7 @@ vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<ty
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
 
 import type { SandboxProvider } from '@/api/types'
+import { BROWSER_SANDBOX_IMAGE } from '@/ui/sandboxes/format'
 import { RunsOnPicker } from '@/ui/sandboxes/RunsOnPicker'
 import { TemplateEditorDialog } from '@/ui/sandboxes/TemplateEditorDialog'
 
@@ -45,8 +46,16 @@ describe('RunsOnPicker places', () => {
   })
 })
 
-describe('template editor GPUs', () => {
+describe('template editor', () => {
   const open = () => render(<TemplateEditorDialog isOpen onClose={() => {}} providers={[sandbox()]} onCreated={() => {}} />)
+
+  it('offers the browser image as a preset', async () => {
+    const user = userEvent.setup()
+    open()
+    await user.click(screen.getByRole('combobox', { name: /Image preset/ }))
+    await user.click(screen.getByRole('option', { name: /Web browser/ }))
+    expect(screen.getByRole('textbox', { name: /^Image/ })).toHaveValue(BROWSER_SANDBOX_IMAGE)
+  })
 
   it('GPU field appears only for a place with GPUs and caps at its count', async () => {
     const user = userEvent.setup()

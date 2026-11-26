@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { SandboxEnvironment } from '@/api/types'
-import { canChatIn, environmentLook, environmentName, lastUsed, parseEnvLines, placeKindTitle, templateBody } from '@/ui/sandboxes/format'
+import type { SandboxEnvironment, SandboxTemplate } from '@/api/types'
+import { BROWSER_SANDBOX_IMAGE, canChatIn, environmentLook, environmentName, lastUsed, parseEnvLines, placeKindTitle, templateBody, templateSummary } from '@/ui/sandboxes/format'
 
 const env = (over: Partial<SandboxEnvironment> = {}): SandboxEnvironment => ({ id: 'env_1', object: 'agent.environment', type: 'openai_hosted', status: 'connected', provider: 'sandbox', created_at: 1, ...over })
 
@@ -69,6 +69,19 @@ describe('session environment for a menu choice', () => {
     expect(sessionEnvironment('env_1')).toEqual({ type: 'sandbox', environment_id: 'env_1' })
     expect(sessionEnvironment(NEW_SANDBOX)).toEqual({ type: 'openai_hosted', provider: 'sandbox' })
     expect(sessionEnvironment(`${NEW_SANDBOX}tpl_9`)).toEqual({ type: 'sandbox', template_id: 'tpl_9' })
+  })
+})
+
+describe('template summaries', () => {
+  const template = (over: Partial<SandboxTemplate> = {}): SandboxTemplate => ({
+    id: 'tpl_1', object: 'agent.environment.template', name: 'T', created_at: 1, updated_at: 1,
+    files: [], network: { access: 'enabled', allowed_domains: [] }, packages: { npm: [], python: [], system: [] },
+    provider: 'sandbox', unsupported_fields: [], ...over,
+  })
+
+  it('names the browser image in plain words', () => {
+    expect(templateSummary(template({ image: BROWSER_SANDBOX_IMAGE }))).toBe('Chromium and Playwright MCP')
+    expect(templateSummary(template({ image: 'debian:bookworm' }))).toBe('debian:bookworm')
   })
 })
 

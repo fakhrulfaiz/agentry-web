@@ -14,7 +14,7 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
-import { StackItem } from '@astryxdesign/core/Layout'
+import { Layout, LayoutContent, LayoutFooter, StackItem } from '@astryxdesign/core/Layout'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
@@ -105,33 +105,43 @@ function NewEnvironmentDialog({
 
   return (
     <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={520}>
-      <DialogHeader title="New environment" subtitle="A workspace an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />
-      <VStack gap={4} padding={4}>
-        <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat environment menu." value={name} onChange={setName} />
-        {providers.length > 0 && <RunsOnPicker
-          providers={providers}
-          value={provider}
-          place={place}
-          onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
-          onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
-        />}
-        <Selector
-          label="Template"
-          description={fitting.length > 0 ? 'Start from a saved setup, or from nothing.' : `No templates for ${providerTitle(provider).toLowerCase()} yet. It starts from nothing.`}
-          options={[{ value: '', label: 'Start from nothing' }, ...fitting.map((t) => ({ value: t.id, label: t.name || 'Untitled template', description: templateSummary(t) }))]}
-          value={templateId}
-          onChange={setTemplateId}
-          isDisabled={fitting.length === 0}
-        />
-        {chosen && chosen.unsupported_fields.length > 0 && (
-          <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
-        )}
-        {error !== null && <Banner status="error" title={error} />}
-        <HStack gap={2} hAlign="end">
-          <Button label="Cancel" variant="ghost" onClick={onClose} />
-          <Button label="Create environment" variant="primary" isLoading={busy} isDisabled={!provider} onClick={() => void create()} />
-        </HStack>
-      </VStack>
+      <Layout
+        header={<DialogHeader title="New environment" subtitle="A workspace an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />}
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat environment menu." value={name} onChange={setName} />
+              {providers.length > 0 && <RunsOnPicker
+                providers={providers}
+                value={provider}
+                place={place}
+                onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
+                onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
+              />}
+              <Selector
+                label="Template"
+                description={fitting.length > 0 ? 'Start from a saved setup, or from nothing.' : `No templates for ${providerTitle(provider).toLowerCase()} yet. It starts from nothing.`}
+                options={[{ value: '', label: 'Start from nothing' }, ...fitting.map((t) => ({ value: t.id, label: t.name || 'Untitled template', description: templateSummary(t) }))]}
+                value={templateId}
+                onChange={setTemplateId}
+                isDisabled={fitting.length === 0}
+              />
+              {chosen && chosen.unsupported_fields.length > 0 && (
+                <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
+              )}
+              {error !== null && <Banner status="error" title={error} />}
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Cancel" variant="ghost" onClick={onClose} />
+              <Button label="Create environment" variant="primary" isLoading={busy} isDisabled={!provider} onClick={() => void create()} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   )
 }

@@ -1,5 +1,8 @@
 import type { CreateTemplateParams, SandboxEnvironment, SandboxPlace, SandboxProvider, SandboxTemplate } from '@/api/types'
 
+/** The separate browser-enabled sandbox image, used by the built-in Web browser template and the editor preset. */
+export const BROWSER_SANDBOX_IMAGE = 'ghcr.io/fakhrulfaiz/agentry-sandbox-browser:1'
+
 /** Status dot variant and the word shown beside it. */
 export function statusLook(status: SandboxEnvironment['status']): { variant: 'success' | 'warning' | 'error' | 'neutral'; text: string } {
   switch (status) {
@@ -126,7 +129,8 @@ export function providerAbilities(provider: SandboxProvider): string[] {
 export function templateSummary(template: SandboxTemplate): string {
   const parts: string[] = []
   const names = [...template.packages.system, ...template.packages.python, ...template.packages.npm]
-  if (template.image) parts.push(template.image)
+  if (template.image === BROWSER_SANDBOX_IMAGE) parts.push('Chromium and Playwright MCP')
+  else if (template.image) parts.push(template.image)
   if (template.files.length > 0) parts.push(`${template.files.length} ${template.files.length === 1 ? 'file' : 'files'}`)
   if (names.length > 0) parts.push(names.length <= 4 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`)
   if (template.network.access !== 'enabled') parts.push(`network ${template.network.access}`)
