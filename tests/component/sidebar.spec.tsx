@@ -98,7 +98,7 @@ afterEach(() => {
 })
 
 describe('groupSessions', () => {
-  it('groups by local calendar date', () => {
+  it('groups by local calendar date: Today, Yesterday, Previous 7 days, Previous 30 days, Older', () => {
     const now = new Date(2026, 10, 9, 0, 30) // 00:30 local, Nov 9
     const at = (d: Date) => Math.floor(d.getTime() / 1000)
     const s = [
@@ -106,17 +106,22 @@ describe('groupSessions', () => {
       { id: 'b', created_at: at(new Date(2026, 10, 8, 23, 59)) }, // one minute before midnight
       { id: 'c', created_at: at(new Date(2026, 10, 8, 0, 0)) }, // start of yesterday
       { id: 'd', created_at: at(new Date(2026, 10, 7, 23, 59)) }, // the day before
-      { id: 'e', created_at: at(new Date(2025, 0, 1)) },
+      { id: 'e', created_at: at(new Date(2026, 10, 2, 0, 0)) }, // 7 days before today
+      { id: 'f', created_at: at(new Date(2026, 10, 1, 23, 0)) }, // 8 days before
+      { id: 'g', created_at: at(new Date(2026, 9, 10, 0, 0)) }, // 30 days before
+      { id: 'h', created_at: at(new Date(2025, 0, 1)) },
     ]
     const g = groupSessions(s, now)
     expect(g.today.map((x) => x.id)).toEqual(['a'])
     expect(g.yesterday.map((x) => x.id)).toEqual(['b', 'c'])
-    expect(g.earlier.map((x) => x.id)).toEqual(['d', 'e'])
+    expect(g.week.map((x) => x.id)).toEqual(['d', 'e'])
+    expect(g.month.map((x) => x.id)).toEqual(['f', 'g'])
+    expect(g.older.map((x) => x.id)).toEqual(['h'])
   })
 })
 
 describe('Sidebar', () => {
-  it('shows sessions under Today / Yesterday / Earlier with links to each chat', async () => {
+  it('shows sessions under Today / … / Older with links to each chat', async () => {
     apiMock.listSessions.mockResolvedValue(
       page([session('s1', 'Plan the launch'), session('s2', 'Old notes', NOW_S - 400 * DAY_S)]),
     )
@@ -124,7 +129,7 @@ describe('Sidebar', () => {
     const link = await screen.findByRole('link', { name: 'Plan the launch' })
     expect(link).toHaveAttribute('href', '/c/s1')
     expect(screen.getByText('Today')).toBeInTheDocument()
-    expect(screen.getByText('Earlier')).toBeInTheDocument()
+    expect(screen.getByText('Older')).toBeInTheDocument()
     expect(screen.queryByText('Yesterday')).not.toBeInTheDocument()
     expect(apiMock.listSessions).toHaveBeenCalledWith({ limit: 30 })
   })
@@ -210,7 +215,7 @@ describe('Sidebar', () => {
     const star = group('Starred')
     expect(within(star).getAllByRole('link').map((a) => a.textContent)).toEqual(['Fix the build', 'Old notes'])
     expect(within(group('Today')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Plan the launch'])
-    expect(screen.queryByRole('group', { name: 'Earlier' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Previous 30 days' })).not.toBeInTheDocument()
     // Starred comes first.
     expect(star.compareDocumentPosition(group('Today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })

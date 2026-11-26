@@ -15,8 +15,8 @@ import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, Cog6ToothIcon, MagnifyingGlassIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
-import { ClockIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/16/solid'
+import { ChatBubbleLeftIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
@@ -25,6 +25,12 @@ import { AgentryMark } from '@/ui/brand/Wordmark'
 import { groupSessions, sessionTitle } from './group'
 import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChanges, useStarToggle } from './session-actions'
 import { UserMenu, type ShellIdentity } from './UserMenu'
+
+const styles = stylex.create({
+  // Row menus fade in under the pointer or keyboard focus (and stay on the open chat).
+  rowActions: { display: 'flex', opacity: { default: 0, ':hover': 1, ':focus-within': 1 }, transitionProperty: 'opacity', transitionDuration: '120ms' },
+  rowActionsShown: { opacity: 1 },
+})
 
 export const SIDEBAR_COLLAPSED_KEY = 'agentry.sidebar.collapsed'
 export const PAGE_SIZE = 30
@@ -199,6 +205,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         href={`/c/${encodeURIComponent(s.id)}`}
         isSelected={s.id === currentId}
         actions={
+          // Shown on the open chat; on the others it appears under the pointer or keyboard focus, so the list stays calm.
+          <span {...stylex.props(styles.rowActions, s.id === currentId && styles.rowActionsShown)}>
           <MoreMenu
             label={`Options for ${sessionTitle(s)}`}
             size="sm"
@@ -208,6 +216,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
               { label: 'Delete', variant: 'destructive', onClick: () => setDeleting(s) },
             ]}
           />
+          </span>
         }
       />
     ))
@@ -264,16 +273,15 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           </VStack>
         }
         footer={
-          <VStack gap={1}>
-            <SideNavItem label="Settings" icon={Cog6ToothIcon} href="/settings" isSelected={pathname === '/settings'} />
-            <UserMenu identity={identity} />
-          </VStack>
+          <UserMenu identity={identity} />
         }
       >
         {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
         {groups.today.length > 0 && <SideNavSection title="Today">{rows(groups.today)}</SideNavSection>}
         {groups.yesterday.length > 0 && <SideNavSection title="Yesterday">{rows(groups.yesterday)}</SideNavSection>}
-        {groups.earlier.length > 0 && <SideNavSection title="Earlier">{rows(groups.earlier)}</SideNavSection>}
+        {groups.week.length > 0 && <SideNavSection title="Previous 7 days">{rows(groups.week)}</SideNavSection>}
+        {groups.month.length > 0 && <SideNavSection title="Previous 30 days">{rows(groups.month)}</SideNavSection>}
+        {groups.older.length > 0 && <SideNavSection title="Older">{rows(groups.older)}</SideNavSection>}
         {!loading && !loadError && visible.length === 0 && starred.length === 0 && (
           <VStack padding={3} gap={1}>
             <Icon icon={ChatBubbleLeftIcon} color="secondary" />
