@@ -31,8 +31,8 @@ async function startChat(page: Page, text: string) {
   await page.waitForURL(/\/c\/[A-Za-z0-9_-]+$/)
 }
 
-/** The label of a finished turn's fold: "Used 2 tools" or "Thought for 8s · 5 steps". */
-const FOLD = /^(Used \d+ tools?|Thought( for [^·]+)? · \d+ steps?)$/
+/** The label of a finished turn's fold: "Worked for 8s · 2 commands" or "Thought for 8s". */
+const FOLD = /^(Worked( for [^·]+)?( · [^·]+)+|Thought( for .+)?)$/
 /** One reasoning row, not the fold. */
 const THOUGHT = /^Thought(?!.* · \d+ steps?$)/
 

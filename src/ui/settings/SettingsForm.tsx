@@ -11,6 +11,7 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList'
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { Selector } from '@astryxdesign/core/Selector'
+import { Switch } from '@astryxdesign/core/Switch'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
 import { useRouter } from 'next/navigation'
@@ -18,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import { goToLogin } from '@/chat/use-conversation'
 import { pickModel, writeModelCookie } from '@/ui/chat/model-cookie'
+import { readShowSteps, writeShowSteps } from '@/chat/show-steps'
 import type { ShellIdentity } from '@/ui/shell/UserMenu'
 import { parseThemeMode, writeThemeCookie, type ThemeMode } from '@/ui/theme/theme-cookie'
 
@@ -36,6 +38,8 @@ export function SettingsForm({
   const [model, setModel] = useState(savedModel ?? '')
   const [modelError, setModelError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [showSteps, setShowSteps] = useState(false)
+  useEffect(() => setShowSteps(readShowSteps()), [])
 
   useEffect(() => {
     api.models().then(
@@ -84,6 +88,20 @@ export function SettingsForm({
             <SegmentedControlItem value="light" label="Light" />
             <SegmentedControlItem value="dark" label="Dark" />
           </SegmentedControl>
+        </VStack>
+      </Card>
+      <Card padding={5}>
+        <VStack gap={3}>
+          <Heading level={2}>Chat</Heading>
+          <Switch
+            label="Always show steps"
+            description="Show every command, edit and subagent of a finished reply. When off, they fold into one summary line you can open."
+            value={showSteps}
+            onChange={(on) => {
+              setShowSteps(on)
+              writeShowSteps(on)
+            }}
+          />
         </VStack>
       </Card>
       <Card padding={5}>

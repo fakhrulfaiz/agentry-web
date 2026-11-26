@@ -9,11 +9,18 @@ import { formatDuration } from './group-turns'
 
 type Group = Extract<ChatEntry, { type: 'group' }>
 
-/** The summary text: "Thought for 2m · 14 steps", or "Used 6 tools" without thinking. */
-export function groupLabel(g: Pick<Group, 'thinking' | 'tools' | 'steps' | 'seconds'>): string {
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
-  if (!g.thinking) return `Used ${plural(g.tools, 'tool')}`
-  return [g.seconds === undefined ? 'Thought' : `Thought for ${formatDuration(g.seconds)}`, plural(g.steps, 'step')].join(' · ')
+/** The summary says what the turn did: "Worked for 48s · 6 commands · 3 files edited · 2 subagents"; a turn that only reasoned reads "Thought for 12s". */
+export function groupLabel(g: Pick<Group, 'thinking' | 'commands' | 'edits' | 'subagents' | 'tools' | 'steps' | 'seconds'>): string {
+  const plural = (n: number, one: string, many = `${one}s`) => `${String(n)} ${n === 1 ? one : many}`
+  const time = g.seconds === undefined ? '' : ` for ${formatDuration(g.seconds)}`
+  const parts = [
+    g.commands > 0 && plural(g.commands, 'command'),
+    g.edits > 0 && `${plural(g.edits, 'file')} edited`,
+    g.subagents > 0 && plural(g.subagents, 'subagent'),
+    g.tools > 0 && plural(g.tools, 'tool'),
+  ].filter((p): p is string => typeof p === 'string')
+  if (parts.length === 0) return `Thought${time}`
+  return [`Worked${time}`, ...parts].join(' · ')
 }
 
 /** A finished turn's process rows behind one collapsed summary row; `children` is the full timeline. */

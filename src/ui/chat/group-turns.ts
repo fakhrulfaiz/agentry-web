@@ -2,14 +2,19 @@ import type { OAITurn } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
 
 /** A top-level row: one view, or a finished turn's process rows folded into one summary. */
-export type ChatEntry = { type: 'view'; view: MessageView } | { type: 'group'; turnId: string; views: MessageView[]; thinking: boolean; tools: number; steps: number; seconds?: number }
+export type ChatEntry = { type: 'view'; view: MessageView } | { type: 'group'; turnId: string; views: MessageView[]; thinking: boolean; commands: number; edits: number; subagents: number; tools: number; steps: number; seconds?: number }
 
 const FINISHED = new Set<OAITurn['status']>(['completed', 'failed', 'cancelled'])
 
 /** Rows that belong to the process of a turn (everything but the final answer, files, commands, notices and actions). */
 function isProcess(v: MessageView): boolean {
-  return v.kind === 'reasoning' || v.kind === 'tool' || v.kind === 'subagent' || (v.kind === 'assistant' && v.text.trim() !== '')
+  // A failed tool call stays visible as its own row; it is never folded away.
+  return v.kind === 'reasoning' || (v.kind === 'tool' && v.status !== 'failed') || v.kind === 'subagent' || (v.kind === 'assistant' && v.text.trim() !== '')
 }
+
+const COMMANDS = new Set(['command', 'bash', 'shell', 'sandbox_exec', 'run_code'])
+const EDITS = new Set(['write', 'edit', 'multi_edit', 'apply_patch', 'sandbox_push'])
+const toolsOf = (views: MessageView[], names: Set<string>) => views.filter((v) => v.kind === 'tool' && names.has(v.name)).length
 
 function isRunning(v: MessageView): boolean {
   return (
@@ -38,7 +43,10 @@ export function groupTurns(items: MessageView[], turnOf: ReadonlyMap<string, str
     if (views.some((v) => isRunning(v) || v.kind === 'action')) continue
     const lastAnswer = views.findLast((v) => v.kind === 'assistant' && v.text.trim() !== '')
     const process = views.filter((v) => isProcess(v) && v !== lastAnswer)
-    if (process.some((v) => v.kind !== 'assistant') && process[0]) grouped.set(id, { views: process, first: process[0] })
+    const steps = process.filter((v) => v.kind !== 'assistant')
+    // One quick tool call and nothing else is just that line, not a block.
+    const single = steps.length === 1 && steps[0]!.kind === 'tool' && process.length === 1
+    if (steps.length > 0 && !single && process[0]) grouped.set(id, { views: process, first: process[0] })
   }
   const out: ChatEntry[] = []
   for (const v of items) {
@@ -57,7 +65,10 @@ export function groupTurns(items: MessageView[], turnOf: ReadonlyMap<string, str
       turnId: id,
       views: g.views,
       thinking: g.views.some((x) => x.kind === 'reasoning'),
-      tools: g.views.filter((x) => x.kind === 'tool' || x.kind === 'subagent').length,
+      commands: toolsOf(g.views, COMMANDS),
+      edits: toolsOf(g.views, EDITS),
+      subagents: g.views.filter((x) => x.kind === 'subagent').length,
+      tools: g.views.filter((x) => x.kind === 'tool' && !COMMANDS.has(x.name) && !EDITS.has(x.name)).length,
       steps: g.views.filter((x) => x.kind !== 'assistant').length,
       ...(typeof start === 'number' && typeof end === 'number' && end >= start ? { seconds: end - start } : {}),
     })

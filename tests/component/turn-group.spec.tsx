@@ -24,10 +24,34 @@ describe('groupTurns', () => {
   it('keeps a running turn expanded', () => {
     expect(groupTurns(items, turnOf, [turn('in_progress')]).every((e) => e.type === 'view')).toBe(true)
   })
+  it('says what the turn did: commands, files edited, subagents, other tools', () => {
+    const views: MessageView[] = [
+      { kind: 'user', id: 'u', text: 'go' },
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'command', args: {}, status: 'done' },
+      { kind: 'tool', id: 'c2', callId: 'c2', name: 'sandbox_exec', args: {}, status: 'done' },
+      { kind: 'tool', id: 'w1', callId: 'w1', name: 'write', args: {}, status: 'done' },
+      { kind: 'tool', id: 'e1', callId: 'e1', name: 'edit', args: {}, status: 'done' },
+      { kind: 'assistant', id: 'a', text: 'Done', streaming: false },
+    ]
+    const of = new Map(views.slice(1).map((v) => [v.id, 't1']))
+    const g = groupTurns(views, of, [turn('completed')])[1]
+    expect(groupLabel(g as never)).toBe('Worked for 2m 5s · 2 commands · 2 files edited')
+  })
+  it('reads "Thought for" when the turn only reasoned', () => {
+    expect(groupLabel({ thinking: true, commands: 0, edits: 0, subagents: 0, tools: 0, steps: 1, seconds: 12 })).toBe('Thought for 12s')
+  })
+  it('leaves a single quick tool call as one line, and keeps a failed tool visible', () => {
+    const one: MessageView[] = [{ kind: 'user', id: 'u', text: 'go' }, { kind: 'tool', id: 't', callId: 'c', name: 'ls', args: {}, status: 'done' }, { kind: 'assistant', id: 'a', text: 'ok', streaming: false }]
+    const of = new Map([['t', 't1'], ['a', 't1']])
+    expect(groupTurns(one, of, [turn('completed')]).every((e) => e.type === 'view')).toBe(true)
+    const failed: MessageView[] = [...items.slice(0, 3), { kind: 'tool', id: 'f', callId: 'f', name: 'command', args: {}, status: 'failed' }, items[3]!]
+    const entries = groupTurns(failed, new Map([...turnOf, ['f', 't1']]), [turn('completed')])
+    expect(entries.map((e) => (e.type === 'group' ? 'group' : e.view.id))).toEqual(['u', 'group', 'f', 'a'])
+  })
   it('folds a finished turn above its final answer', () => {
     const entries = groupTurns(items, turnOf, [turn('completed')])
     expect(entries.map((e) => (e.type === 'group' ? 'group' : e.view.id))).toEqual(['u', 'group', 'a'])
-    expect(groupLabel(entries[1] as never)).toBe('Thought for 2m 5s · 2 steps')
+    expect(groupLabel(entries[1] as never)).toBe('Worked for 2m 5s · 1 tool')
   })
 })
 
@@ -38,8 +62,8 @@ describe('TurnGroup', () => {
     let open = false
     const view = () => <TurnGroup group={group} open={open} onOpenChange={(o) => { open = o; rerender(view()) }}><p>inside</p></TurnGroup>
     const { rerender } = render(view())
-    expect(screen.getByText('Thought for 2m 5s · 2 steps')).toBeInTheDocument()
-    const trigger = screen.getByRole('button', { name: /Thought for/ })
+    expect(screen.getByText('Worked for 2m 5s · 1 tool')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: /Worked for/ })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     await userEvent.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')

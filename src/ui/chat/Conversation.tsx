@@ -68,6 +68,7 @@ import { splitSubagentActions, waitingOnSubagentsOnly } from '@/chat/subagent-ac
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
 import { TurnGroup } from './TurnGroup'
+import { readShowSteps, waitingLabel } from '@/chat/show-steps'
 import { readOpenFolds, writeOpenFolds } from '@/chat/open-folds'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
@@ -162,7 +163,9 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [reveal, setReveal] = useState<string | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
-  // Finished turns whose process group the user expanded; the rest stay collapsed.
+  // Finished turns whose work block the user toggled away from the default (collapsed, or expanded with "Always show steps").
+  const [showSteps, setShowSteps] = useState(false)
+  useEffect(() => setShowSteps(readShowSteps()), [])
   // Kept per chat for the browser session, so a remount or reload does not close them.
   const [expanded, setExpandedState] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => setExpandedState(readOpenFolds(sessionId)), [sessionId])
@@ -476,11 +479,11 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                     <TurnGroup
                       key={`group-${entry.turnId}`}
                       group={entry}
-                      open={expanded.has(entry.turnId) || entry.views.some((v) => v.id === reveal || v.id === highlight)}
+                      open={expanded.has(entry.turnId) !== showSteps || entry.views.some((v) => v.id === reveal || v.id === highlight)}
                       onOpenChange={(open) =>
                         setExpanded((cur) => {
                           const next = new Set(cur)
-                          if (open) next.add(entry.turnId)
+                          if (open !== showSteps) next.add(entry.turnId)
                           else next.delete(entry.turnId)
                           return next
                         })
@@ -491,7 +494,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   )
                   return card ? [group, card] : group
                 })}
-                {waiting && <Thinking label={loading && state.items.length === 0 ? 'Loading conversation…' : 'Agentry is thinking…'} />}
+                {waiting && <Thinking label={waitingLabel(loading, state.status)} />}
                 {/* The files the agent created, as a card at the end of the chat (claude.ai's
                     artifacts), not pinned to the composer. */}
                 {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}
