@@ -2,7 +2,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAIAgentSession, OAIRequiredAction, OAISessionEvent, OAISubagent, OAITurn } from '@/api/types'
-import { ITEMS_POLL_MAX_MS, ITEMS_POLL_MS, ITEMS_REFRESH_DELAY_MS, useConversation } from '@/chat/use-conversation'
+import { useConversation } from '@/chat/use-conversation'
 import approvalTurn from '../fixtures/approval-turn.json'
 import delegation from '../fixtures/live/subagent.json'
 import twoTurns from '../fixtures/two-turns.json'
@@ -422,7 +422,7 @@ describe('useConversation', () => {
   })
 
   describe('history before replay (R14)', () => {
-    // Shaped like the real backend: the stream has assistant messages only, `items` has the rest.
+    // Shaped like the backend before 2026-11-26: the stream has assistant messages only, `items` has the rest.
     const TWO = twoTurns as unknown as { historyThrough: number; frames: Frame[]; items: unknown[] }
     const TURN1_ITEMS = TWO.items.slice(0, 3)
 
@@ -475,129 +475,82 @@ describe('useConversation', () => {
       unmount()
     })
 
-    it('reconnects resume from the last id without reloading items', async () => {
+    it('reconnects resume from the last id without reloading items, and re-read the subagents', async () => {
       itemsResponse = () => itemsList(TWO.items)
       streams.push(() => streamResponse(sse(TWO.frames)))
+      const subagentReads = () => fetchMock.mock.calls.filter(([url]) => String(url) === `/api/agentry/agents/sessions/${SID}/subagents`)
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
-      // The replayed burst asks for one coalesced refresh of the new items only; the reconnect itself loads nothing.
-      await advance(ITEMS_REFRESH_DELAY_MS)
-      expect(itemsCalls()).toHaveLength(2)
-      expect(String(itemsCalls()[1][0])).toContain(`after=${(TWO.items.at(-1) as { id: string }).id}`)
-      await advance(1_000 - ITEMS_REFRESH_DELAY_MS)
+      expect(itemsCalls()).toHaveLength(1)
+      expect(subagentReads()).toHaveLength(1)
+      await advance(1_000)
       expect(streamCalls()).toHaveLength(2)
       expect(lastEventIds()).toEqual(['0', TWO.frames.at(-1)?.id])
+      // Subagent events are never replayed, so a reconnect reads the subagents again; the items it does not.
+      expect(subagentReads()).toHaveLength(2)
       await advance(5_000)
-      expect(itemsCalls()).toHaveLength(2)
+      expect(itemsCalls()).toHaveLength(1)
       expect(result.current.state.items.filter((v) => v.kind === 'assistant')).toHaveLength(2)
       unmount()
     })
 
-    it('refreshes items after an assistant message is done, so tool calls and reasoning appear live', async () => {
-      const turn2 = TWO.frames.slice(TWO.historyThrough)
-      const doneAt = turn2.findIndex((f) => f.event.type === 'agent.session.turn.item.done')
-      let saved: unknown[] = TURN1_ITEMS
-      itemsResponse = () => itemsList(saved)
-      const live = pushableStream([...TWO.frames.slice(0, TWO.historyThrough), ...turn2.slice(0, doneAt)])
+    it('shows streamed item frames live and never polls the items while a turn runs', async () => {
+      session = sessionResource('in_progress')
+      itemsResponse = () => itemsList(TURN1_ITEMS)
+      const live = pushableStream(TWO.frames.slice(0, TWO.historyThrough + 3)) // turn 2 has started
       streams.push(live.response)
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
-      await advance(ITEMS_REFRESH_DELAY_MS)
-      expect(result.current.state.items.map((v) => v.kind)).toEqual(['user', 'reasoning', 'assistant', 'assistant'])
-      // The reply is saved together with the user message, the call and its output.
-      saved = TWO.items
+      const user = { id: 'item_msg_7', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Search the docs' }], status: 'completed', turn_id: 'turn_6' }
+      const call = { id: 'item_fn_8', type: 'function_call', call_id: 'call_1', name: 'search', arguments: '{"query":"docs"}', status: 'in_progress', turn_id: 'turn_6' }
+      const last = TWO.frames[TWO.historyThrough + 2].id
       await act(async () => {
-        live.push([turn2[doneAt]])
-        await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
+        live.push([
+          { id: `${last}.1`, event: { type: 'agent.session.turn.item.done', event_id: 'a', session_id: SID, turn_id: 'turn_6', item: user } as OAISessionEvent },
+          { id: `${last}.2`, event: { type: 'agent.session.turn.item.added', event_id: 'b', session_id: SID, turn_id: 'turn_6', item: call } as OAISessionEvent },
+        ])
+        await vi.advanceTimersByTimeAsync(0)
       })
-      expect(result.current.state.items.map((v) => v.kind)).toEqual(['user', 'reasoning', 'assistant', 'user', 'tool', 'assistant'])
+      expect(result.current.state.items.slice(-2)).toEqual([
+        { kind: 'user', id: 'item_msg_7', text: 'Search the docs' },
+        { kind: 'tool', id: 'item_fn_8', callId: 'call_1', name: 'search', args: { query: 'docs' }, status: 'running' },
+      ])
+      expect(result.current.state.lastEventId).toBe(`${last}.2`)
+      await advance(30_000)
+      expect(itemsCalls()).toHaveLength(1)
       unmount()
     })
 
-    it('polls items while the session is in progress and stops once it is idle', async () => {
-      const running = TWO.frames.slice(0, TWO.historyThrough + 3) // turn 2 has started
-      session = sessionResource('in_progress')
-      itemsResponse = () => itemsList(TURN1_ITEMS)
-      const live = pushableStream(running)
-      streams.push(live.response)
-      const { unmount } = renderHook(() => useConversation(SID))
-      await flush()
-      await advance(ITEMS_REFRESH_DELAY_MS)
-      const start = itemsCalls().length
-      // The replay's refresh found nothing new, so the poll has backed off from 1.5s to 3s, then to 5s.
-      // Each poll reads only the items after the last one.
-      await advance(3_000 - 1)
-      expect(itemsCalls()).toHaveLength(start)
-      await advance(1)
-      expect(itemsCalls()).toHaveLength(start + 1)
-      expect(String(itemsCalls().at(-1)?.[0])).toContain(`after=${(TURN1_ITEMS.at(-1) as { id: string }).id}`)
-      await advance(ITEMS_POLL_MAX_MS - 1)
-      expect(itemsCalls()).toHaveLength(start + 1)
-      await advance(1)
-      expect(itemsCalls()).toHaveLength(start + 2)
-      await advance(ITEMS_POLL_MAX_MS)
-      expect(itemsCalls()).toHaveLength(start + 3)
-      // A new item resets the interval to 1.5s.
-      itemsResponse = () => itemsList(TWO.items)
-      await advance(ITEMS_POLL_MAX_MS)
-      expect(itemsCalls()).toHaveLength(start + 4)
-      await advance(ITEMS_POLL_MS)
-      expect(itemsCalls()).toHaveLength(start + 5)
-      await act(async () => {
-        live.push(TWO.frames.slice(-1)) // agent.session.idle
-        await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
-      })
-      const idle = itemsCalls().length
-      await advance(ITEMS_POLL_MS * 4)
-      expect(itemsCalls()).toHaveLength(idle)
-      unmount()
-    })
-
-    it('does not poll items while the tab is hidden, and refreshes when it is shown again', async () => {
-      session = sessionResource('in_progress')
-      itemsResponse = () => itemsList(TURN1_ITEMS)
-      streams.push(pushableStream(TWO.frames.slice(0, TWO.historyThrough + 3)).response)
-      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
-      const { unmount } = renderHook(() => useConversation(SID))
-      await flush()
-      await advance(ITEMS_REFRESH_DELAY_MS)
-      const hidden = itemsCalls().length
-      await advance(ITEMS_POLL_MS * 4)
-      expect(itemsCalls()).toHaveLength(hidden)
-      visibility.mockReturnValue('visible')
-      await act(async () => {
-        document.dispatchEvent(new Event('visibilitychange'))
-        await vi.advanceTimersByTimeAsync(ITEMS_REFRESH_DELAY_MS)
-      })
-      expect(itemsCalls().length).toBeGreaterThan(hidden)
-      visibility.mockRestore()
-      unmount()
-    })
-
-    it('shows subagents with the history and polls while one works after its turn ended', async () => {
+    it('shows subagents with the history and follows their live events', async () => {
       const child = (delegation as unknown as { items: unknown[]; subagents: Array<{ subagent: OAISubagent; turns: OAITurn[] }> })
       const { subagent, turns } = child.subagents[0]
       itemsResponse = () => itemsList(child.items)
-      let done = false
-      subagentsResponse = () => itemsList([done ? subagent : { ...subagent, status: 'active', closed_at: undefined }])
-      subagentTurnsResponse = () => itemsList(done ? turns : [{ ...turns[0], status: 'in_progress', completed_at: null }])
-      streams.push(() => streamResponse('', true)) // the parent is idle
+      const running = { ...subagent, status: 'active' as const, closed_at: undefined }
+      subagentsResponse = () => itemsList([running])
+      subagentTurnsResponse = () => itemsList([{ ...turns[0], status: 'in_progress', completed_at: null }])
+      const live = pushableStream([])
+      streams.push(live.response)
       const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
       const card = () => result.current.state.items.find((v) => v.kind === 'subagent')
       expect(card()).toMatchObject({ subagentId: subagent.id, name: 'List workspace files and count', status: 'in_progress' })
-      done = true
-      await advance(ITEMS_POLL_MS + ITEMS_REFRESH_DELAY_MS)
-      expect(card()).toMatchObject({ status: 'completed', endedAt: turns[0].completed_at })
-      // Finished and closed: no more polling.
       const calls = fetchMock.mock.calls.length
-      await advance(ITEMS_POLL_MS * 4)
+      await act(async () => {
+        live.push([
+          { event: { type: 'agent.session.subagent.updated', event_id: 'u', session_id: SID, subagent: running, turn: turns[0] } as OAISessionEvent },
+          { event: { type: 'agent.session.subagent.closed', event_id: 'c', session_id: SID, subagent } as OAISessionEvent },
+        ])
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(card()).toMatchObject({ status: 'completed', endedAt: turns[0].completed_at })
+      // Live events, no polling.
+      await advance(30_000)
       expect(fetchMock.mock.calls.length).toBe(calls)
       unmount()
     })
 
-    it('reads subagents one at a time, even when a refresh comes during the first read', async () => {
-      const child = (delegation as unknown as { items: unknown[]; frames: Array<{ id?: string; data: OAISessionEvent }>; subagents: Array<{ subagent: OAISubagent; turns: OAITurn[] }> })
+    it('reads subagents one at a time, even when a reconnect asks again during the first read', async () => {
+      const child = (delegation as unknown as { items: unknown[]; subagents: Array<{ subagent: OAISubagent; turns: OAITurn[] }> })
       const { subagent, turns } = child.subagents[0]
       itemsResponse = () => itemsList(child.items)
       subagentTurnsResponse = () => itemsList(turns)
@@ -612,19 +565,18 @@ describe('useConversation', () => {
         inFlight -= 1
         return itemsList([subagent])
       })
-      // The replayed turn end (its turn record was not loaded) asks for a refresh while the first read is slow.
-      streams.push(() => streamResponse(sse(child.frames.map((f) => ({ ...(f.id !== undefined && { id: f.id }), event: f.data }))), true))
+      // The stream ends at once, so the reconnect after 1s asks for subagents while the first read is slow.
+      streams.push(() => streamResponse(''))
       const { unmount } = renderHook(() => useConversation(SID))
       await flush()
-      await advance(ITEMS_REFRESH_DELAY_MS)
-      await advance(5_000)
+      await advance(6_000)
       const reads = fetchMock.mock.calls.filter(([url]) => String(url) === `/api/agentry/agents/sessions/${SID}/subagents`)
       expect(reads.length).toBeGreaterThanOrEqual(2)
       expect(most).toBe(1)
       unmount()
     })
 
-    it('opening a chat reads the items once: the replay of loaded items and ended turns refreshes nothing', async () => {
+    it('opening a chat reads the items once', async () => {
       const turnRecords = TWO.frames.flatMap((f) => (f.event.type === 'agent.session.turn.completed' ? [f.event.turn] : []))
       const base = fetchMock.getMockImplementation()!
       fetchMock.mockImplementation(async (input, init) =>
@@ -636,7 +588,7 @@ describe('useConversation', () => {
       expect(result.current.loaded).toBe(false)
       await flush()
       expect(result.current.loaded).toBe(true)
-      await advance(ITEMS_REFRESH_DELAY_MS * 4)
+      await advance(5_000)
       expect(itemsCalls()).toHaveLength(1)
       unmount()
     })

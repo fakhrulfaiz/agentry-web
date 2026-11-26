@@ -5,7 +5,7 @@ import {
   applyItems,
   appendLocalUserMessage,
   initialState,
-  stripReasoning,
+  isAtOrBefore,
   type ConversationState,
   type MessageView,
 } from '@/chat/reducer'
@@ -55,7 +55,7 @@ describe('conversation reducer', () => {
     const done = fold(frames)
     expect(done.items).toEqual([{ kind: 'assistant', id: 'item_msg_4', text: 'Hello, world!', streaming: false }])
     expect(done.status).toBe('idle')
-    // The items refresh adds what the stream does not carry, and cuts the repeated reasoning.
+    // The items add what this (older) stream did not carry.
     const refreshed = applyItems(done, TURN1_ITEMS)
     expect(refreshed.items).toEqual([
       { kind: 'user', id: 'item_msg_3', text: 'Say hello' },
@@ -306,28 +306,93 @@ describe('conversation reducer', () => {
   })
 })
 
-describe('stripReasoning (the backend repeats a step\'s thinking in front of its message)', () => {
-  it('cuts an exact leading match that ends at a boundary', () => {
-    expect(stripReasoning('Let me check.It is v26.', 'Let me check.')).toBe('It is v26.')
-    expect(stripReasoning('Thinking it over\nThe answer', 'Thinking it over')).toBe('\nThe answer')
-    expect(stripReasoning('Same text', 'Same text')).toBe('')
-  })
-
-  it('never removes real answer text', () => {
-    // The thought is not followed by a boundary: it is the start of a word of the answer.
-    expect(stripReasoning('Okay, the answer is 4.', 'Ok')).toBe('Okay, the answer is 4.')
-    // Not a leading match.
-    expect(stripReasoning('The answer. Let me check.', 'Let me check.')).toBe('The answer. Let me check.')
-    expect(stripReasoning('Answer', '')).toBe('Answer')
-  })
-
-  it('applies to the chat: a message whose start only looks like its thought keeps its text', () => {
+describe('message text', () => {
+  it('is kept as saved, even when it starts like its step\'s reasoning (the backend no longer repeats it)', () => {
     const items = [
       { id: 'item_reason_5', type: 'reasoning', summary: [{ type: 'summary_text', text: 'Ok' }], status: 'completed', turn_id: 'turn_1' },
       { id: 'item_msg_5', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Okay, the answer is 4.' }], status: 'completed', turn_id: 'turn_1' },
     ] as StoredSessionItem[]
     const s = applyItems(initialState(SID), items)
     expect(s.items.find((v) => v.id === 'item_msg_5')).toMatchObject({ kind: 'assistant', text: 'Okay, the answer is 4.' })
+  })
+})
+
+describe('event ids', () => {
+  it('compares <n> and <n>.<sub> ids as pairs, not decimals', () => {
+    expect(isAtOrBefore('12.1', '12')).toBe(false)
+    expect(isAtOrBefore('12', '12.1')).toBe(true)
+    expect(isAtOrBefore('12.9', '12.10')).toBe(true)
+    expect(isAtOrBefore('12.10', '12.9')).toBe(false)
+    expect(isAtOrBefore('13', '12.10')).toBe(false)
+    expect(isAtOrBefore('4', null)).toBe(false)
+  })
+
+  it('ignores a replayed item frame at or before the last id', () => {
+    const user = { id: 'item_msg_3', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }], status: 'completed', turn_id: 'turn_2' } as StoredSessionItem
+    const frame = { type: 'agent.session.turn.item.done', event_id: 'e', session_id: SID, turn_id: 'turn_2', item: user } as OAISessionEvent
+    let s = applyEvent(initialState(SID), { id: '4.1', event: frame })
+    s = applyEvent(s, { id: '5', event: { ...frame, item: { ...user, id: 'item_msg_5' } } as OAISessionEvent })
+    const again = applyEvent(s, { id: '4.2', event: { ...frame, item: { ...user, id: 'item_msg_9' } } as OAISessionEvent })
+    expect(again).toBe(s)
+  })
+})
+
+describe('streamed items (the full item log on the stream)', () => {
+  const user = { id: 'item_msg_3', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Search' }], status: 'completed', turn_id: 'turn_2' } as StoredSessionItem
+  const reasoning = { id: 'item_reason_4', type: 'reasoning', summary: [{ type: 'summary_text', text: 'Look it up.' }], status: 'completed', turn_id: 'turn_2' } as StoredSessionItem
+  const call = { id: 'item_fn_5', type: 'function_call', call_id: 'c1', name: 'search', arguments: '{"q":"x"}', status: 'in_progress', turn_id: 'turn_2' } as StoredSessionItem
+  const output = { id: 'item_out_6', type: 'function_call_output', call_id: 'c1', output: '3 results', status: 'completed', turn_id: 'turn_2' } as StoredSessionItem
+  const ev = (type: 'agent.session.turn.item.added' | 'agent.session.turn.item.done', item: StoredSessionItem) =>
+    ({ type, event_id: `e_${item.id}`, session_id: SID, turn_id: 'turn_2', item }) as OAISessionEvent
+
+  it('shows user messages, reasoning, tool calls and outputs live, and keeps the log for the trajectory', () => {
+    const s = fold([
+      { id: '2.1', event: ev('agent.session.turn.item.done', user) },
+      { id: '2.2', event: ev('agent.session.turn.item.done', reasoning) },
+      { id: '2.3', event: ev('agent.session.turn.item.added', call) },
+      { id: '2.4', event: ev('agent.session.turn.item.done', output) },
+    ])
+    expect(s.items).toEqual([
+      { kind: 'user', id: 'item_msg_3', text: 'Search' },
+      { kind: 'reasoning', id: 'item_reason_4', text: 'Look it up.', streaming: false },
+      { kind: 'tool', id: 'item_fn_5', callId: 'c1', name: 'search', args: { q: 'x' }, status: 'done', output: '3 results' },
+    ])
+    expect(s.log.map((i) => i.id)).toEqual(['item_msg_3', 'item_reason_4', 'item_fn_5', 'item_out_6'])
+    expect(s.lastEventId).toBe('2.4')
+  })
+
+  it('upserts a streamed item the loaded log already has, in place', () => {
+    const loaded = applyItems(initialState(SID), [user, call])
+    const s = applyEvent(loaded, { id: '2.3', event: ev('agent.session.turn.item.added', call) })
+    expect(s.log).toEqual([user, call])
+  })
+})
+
+describe('live subagent events', () => {
+  const subagent = { id: 'child_1', object: 'agent.session.subagent', session_id: 'child_1', parent_session_id: SID, status: 'active', created_at: 10 } as const
+  const childTurn = (status: OAITurn['status']) => ({ id: 'turn_c1', object: 'agent.session.turn', session_id: 'child_1', agent_id: 'a', status, created_at: 11, error: null, ...(status === 'completed' ? { completed_at: 20 } : {}) }) as OAITurn
+  const childItem = { id: 'item_msg_7', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }], status: 'completed', turn_id: 'turn_c1' } as StoredSessionItem
+
+  it('makes a card, tracks its turn and items, and keeps child items out of the chat', () => {
+    let s = applyEvent(initialState(SID), { event: { type: 'agent.session.subagent.created', event_id: 'x1', session_id: SID, subagent } })
+    expect(s.items.find((v) => v.kind === 'subagent')).toMatchObject({ subagentId: 'child_1', status: 'queued' })
+    s = applyEvent(s, { event: { type: 'agent.session.subagent.updated', event_id: 'x2', session_id: SID, subagent, turn: childTurn('in_progress') } })
+    expect(s.items.find((v) => v.kind === 'subagent')).toMatchObject({ status: 'in_progress' })
+    s = applyEvent(s, { event: { type: 'agent.session.subagent.item.done', event_id: 'x3', session_id: SID, subagent_id: 'child_1', turn_id: 'turn_c1', item: childItem } })
+    s = applyEvent(s, { event: { type: 'agent.session.subagent.updated', event_id: 'x4', session_id: SID, subagent, turn: childTurn('completed') } })
+    s = applyEvent(s, { event: { type: 'agent.session.subagent.closed', event_id: 'x5', session_id: SID, subagent: { ...subagent, status: 'closed', closed_at: 21 } } })
+    expect(s.items.filter((v) => v.kind === 'subagent')).toEqual([expect.objectContaining({ status: 'completed', endedAt: 20 })])
+    expect(s.items.some((v) => v.id === 'item_msg_7')).toBe(false)
+    expect(s.subagents).toEqual([{ subagent: { ...subagent, status: 'closed', closed_at: 21 }, turns: [childTurn('completed')], items: [{ ...childItem, subagent_id: 'child_1' }] }])
+    expect(s.log).toEqual([])
+    // Ephemeral: no id moves.
+    expect(s.lastEventId).toBeNull()
+  })
+
+  it('drops an item for a child it does not know yet (the next /subagents read has it)', () => {
+    const s0 = initialState(SID)
+    const s = applyEvent(s0, { event: { type: 'agent.session.subagent.item.done', event_id: 'x', session_id: SID, subagent_id: 'nope', turn_id: 't', item: childItem } })
+    expect(s.subagents).toEqual([])
   })
 })
 

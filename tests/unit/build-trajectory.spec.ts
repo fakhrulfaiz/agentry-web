@@ -87,7 +87,7 @@ describe('buildTrajectory on the recorded web-search turn', () => {
     expect(timelineSpans(cancelled)[0].status).toBe('cancelled')
   })
 
-  it('the thinking is cut from the answer only on an exact leading match at a boundary', () => {
+  it('an assistant step\'s output is its message text as saved (the backend no longer repeats the thinking)', () => {
     const step = (reasoning: string, message: string) => {
       const items = [
         { id: 'item_reason_5', type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }], status: 'completed', turn_id: 'turn_4' },
@@ -95,8 +95,7 @@ describe('buildTrajectory on the recorded web-search turn', () => {
       ] as StoredSessionItem[]
       return buildTrajectory(TURNS, items).turns[0].records[0].output
     }
-    expect(step('Let me check.', 'Let me check.It is v26.')).toBe('It is v26.')
-    // A backend that does not repeat the thinking: a short thought never eats the answer.
+    expect(step('Let me check.', 'It is v26.')).toBe('It is v26.')
     expect(step('Ok', 'Okay, the answer is 4.')).toBe('Okay, the answer is 4.')
   })
 

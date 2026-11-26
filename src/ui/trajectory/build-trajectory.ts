@@ -12,7 +12,7 @@
  * invented: missing timing stays undefined.
  *
  * Assistant steps: the backend saves a step as `item_reason_N` (thinking) and
- * `item_msg_N` (text, which repeats the thinking first). They form one
+ * `item_msg_N` (its text, without the thinking). They form one
  * Assistant record "Step k" (k counts steps in the turn). Tool calls belong to
  * the step before them (`stepId`), which is what the Calls fold groups.
  *
@@ -23,7 +23,6 @@
  * cancelled turn takes that status.
  */
 import type { OAIItemTiming, OAISubagent, OAITokenUsage, OAITurn, StoredSessionItem, TurnStatus } from '@/api/types'
-import { stripReasoning } from '@/chat/reducer'
 
 export type RecordKind = 'user' | 'assistant' | 'tool' | 'subtool'
 export type RecordStatus = 'pending' | 'completed' | 'failed' | 'cancelled'
@@ -180,7 +179,6 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
   const steps = new Map<string, TrajectoryRecord>()
   const stepCount = new Map<string, number>()
   const lastStep = new Map<string, TrajectoryRecord>()
-  const reasoningText = new Map<string, string>()
   const calls = new Map<string, TrajectoryRecord>()
   const sub = scope.chatItemId !== undefined
 
@@ -227,20 +225,15 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
         const step = stepFor(item.id, turnId)
         applyTiming(step, item.timing)
         if (item.usage) step.usage = item.usage
-        const n = stepNumberOf(item.id)
-        const prefix = n ? (reasoningText.get(`${turnId}:${n}`) ?? '') : ''
-        const own = stripReasoning(text, prefix)
-        step.output = own
-        if (own.trim()) {
-          step.title = firstLine(plain(own))
+        step.output = text
+        if (text.trim()) {
+          step.title = firstLine(plain(text))
           if (!sub) step.chatItemId = item.id
         }
         break
       }
       case 'reasoning': {
         const text = (item.summary ?? []).map((p) => p.text).join('')
-        const n = stepNumberOf(item.id)
-        if (n) reasoningText.set(`${turnId}:${n}`, text)
         const step = stepFor(item.id, turnId)
         applyTiming(step, item.timing)
         step.thinking = (step.thinking ? `${step.thinking}\n\n` : '') + text
