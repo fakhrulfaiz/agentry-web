@@ -30,19 +30,25 @@ afterEach(() => {
 })
 
 describe('RunsOnPicker places', () => {
-  it('lists each place with its GPU count', () => {
-    render(<RunsOnPicker providers={[sandbox()]} value="sandbox" place="here" onChange={() => {}} onPlaceChange={() => {}} />)
-    expect(screen.getByText(/Docker on this server/)).toBeInTheDocument()
-    expect(screen.getByText(/Docker over SSH.*2 GPUs/)).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: /This server/ })).toBeChecked()
+  it('offers the kinds as cards and the places as a dropdown under the chosen sandbox', async () => {
+    const user = userEvent.setup()
+    const onPlace = vi.fn()
+    render(<RunsOnPicker providers={[sandbox()]} value="sandbox" place="here" onChange={() => {}} onPlaceChange={onPlace} />)
+    expect(screen.getByRole('checkbox', { name: /Isolated sandbox/ })).toBeChecked()
+    expect(screen.queryByRole('checkbox', { name: /GPU box/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: /Where it runs/ }))
+    expect(screen.getByRole('option', { name: /GPU box.*Docker over SSH.*2 GPUs/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /GPU box/ }))
+    expect(onPlace).toHaveBeenCalledWith('sandbox', 'gpu-box')
   })
 
-  it('disables an unavailable place and shows why', () => {
+  it('disables an unavailable place and says why', async () => {
+    const user = userEvent.setup()
     const p = sandbox()
     p.places![1] = { ...p.places![1]!, available: false, reason: 'SSH host unreachable' }
     render(<RunsOnPicker providers={[p]} value="sandbox" place="here" onChange={() => {}} onPlaceChange={() => {}} />)
-    expect(screen.getByRole('checkbox', { name: /GPU box/ })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByText(/SSH host unreachable/)).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: /Where it runs/ }))
+    expect(screen.getByRole('option', { name: /GPU box.*SSH host unreachable/ })).toHaveAttribute('aria-disabled', 'true')
   })
 })
 
@@ -62,7 +68,8 @@ describe('template editor', () => {
     open()
     await user.click(await screen.findByRole('tab', { name: /Internet and limits/ }))
     expect(screen.queryByRole('combobox', { name: /GPUs/ })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('checkbox', { name: /GPU box/ }))
+    await user.click(screen.getByRole('combobox', { name: /Where it runs/ }))
+    await user.click(screen.getByRole('option', { name: /GPU box/ }))
     await user.click(await screen.findByRole('tab', { name: /Internet and limits/ }))
     await user.click(screen.getByRole('combobox', { name: /GPUs/ }))
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['0', '1', '2', 'All'])
@@ -73,7 +80,8 @@ describe('template editor', () => {
     apiMock.createSandboxTemplate.mockResolvedValue({})
     open()
     await user.type(await screen.findByRole('textbox', { name: /^Name/ }), 'Train')
-    await user.click(screen.getByRole('checkbox', { name: /GPU box/ }))
+    await user.click(screen.getByRole('combobox', { name: /Where it runs/ }))
+    await user.click(screen.getByRole('option', { name: /GPU box/ }))
     await user.click(await screen.findByRole('tab', { name: /Internet and limits/ }))
     await user.click(screen.getByRole('combobox', { name: /GPUs/ }))
     await user.click(screen.getByRole('option', { name: '2' }))

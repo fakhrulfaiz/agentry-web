@@ -17,6 +17,12 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useMemo, useState } from 'react'
 import type { HostToolInfo } from '@/api/types'
 
+/** A tool's name in words: `load_workspace_dependencies` → "Load workspace dependencies"; MCP-style names keep their server prefix readable. */
+export function toolTitle(name: string): string {
+  const words = name.replace(/^mcp__/, '').replace(/__/g, ': ').replace(/[_-]+/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 export function ToolsPicker({ tools, allTools, value, onChange }: {
   tools: HostToolInfo[]
   allTools: boolean
@@ -43,7 +49,7 @@ export function ToolsPicker({ tools, allTools, value, onChange }: {
         <VStack gap={3}>
           <TextInput label="Search tools" isLabelHidden type="search" size="sm" placeholder="Search tools" startIcon={MagnifyingGlassIcon} value={query} onChange={setQuery} />
           <List hasDividers density="compact" header={<Text type="supporting" color="secondary">Included ({tools.length})</Text>}>
-            {shown.map((t) => <ListItem key={t.name} label={t.name} description={t.description} />)}
+            {shown.map((t) => <ListItem key={t.name} label={toolTitle(t.name)} description={t.description} />)}
           </List>
         </VStack>
       )}
@@ -67,7 +73,7 @@ export function ToolsPicker({ tools, allTools, value, onChange }: {
             ) : (
               <CheckboxList label="Allowed tools" isLabelHidden density="compact" value={value} onChange={(next) => onChange({ allTools: false, tools: next })}>
                 {shown.map((t) => (
-                  <CheckboxListItem key={t.name} value={t.name} label={t.name} description={t.description} />
+                  <CheckboxListItem key={t.name} value={t.name} label={toolTitle(t.name)} description={t.description} />
                 ))}
               </CheckboxList>
             )}

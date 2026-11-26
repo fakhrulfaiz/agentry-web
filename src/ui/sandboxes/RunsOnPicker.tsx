@@ -7,6 +7,7 @@
  */
 import { HStack } from '@astryxdesign/core/HStack'
 import { SelectableCard } from '@astryxdesign/core/SelectableCard'
+import { Selector } from '@astryxdesign/core/Selector'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
 import { CubeTransparentIcon, ServerIcon } from '@heroicons/react/24/outline'
@@ -37,17 +38,19 @@ export function RunsOnPicker({ providers, value, onChange, place = '', onPlaceCh
   place?: string
   onPlaceChange?(provider: string, place: string): void
 }) {
+  // The kinds (This server, Isolated sandbox) are the choice; a sandbox's places are a detail of it, so they sit in a dropdown under the chosen card.
+  const chosen = providers.find((p) => p.name === value)
+  const places = chosen && chosen.available !== false && onPlaceChange ? (chosen.places ?? []) : []
   return (
     <VStack gap={2} role="radiogroup" aria-label="Runs on">
       <Text weight="medium">Runs on</Text>
       {providers.map((p) => {
         const down = p.available === false
-        const places = !down && onPlaceChange ? (p.places ?? []) : []
         return (
-          <VStack key={p.name} gap={2}>
           <SelectableCard
+            key={p.name}
             label={providerTitle(p.name)}
-            isSelected={value === p.name && places.length === 0}
+            isSelected={value === p.name}
             onChange={(on) => on && onChange(p.name)}
             isDisabled={down}
             padding={3}
@@ -60,30 +63,22 @@ export function RunsOnPicker({ providers, value, onChange, place = '', onPlaceCh
               </VStack>
             </HStack>
           </SelectableCard>
-          {places.map((pl) => {
-            const gpus = gpuLabel(pl.gpus?.count)
-            return (
-              <VStack key={pl.id} gap={0} role="group" aria-label="Place">
-                <SelectableCard
-                  label={pl.name}
-                  isSelected={value === p.name && place === pl.id}
-                  onChange={(on) => on && onPlaceChange?.(p.name, pl.id)}
-                  isDisabled={!pl.available}
-                  padding={3}
-                >
-                  <VStack gap={0.5}>
-                    <Text weight="medium">{pl.name}</Text>
-                    <Text type="supporting" color="secondary">
-                      {[placeKindTitle(pl.kind), pl.available ? 'Available' : (pl.reason ?? 'Not available right now.'), gpus].filter(Boolean).join(' · ')}
-                    </Text>
-                  </VStack>
-                </SelectableCard>
-              </VStack>
-            )
-          })}
-          </VStack>
         )
       })}
+      {places.length > 1 && (
+        <Selector
+          label="Where it runs"
+          options={places.map((pl) => ({
+            value: pl.id,
+            label: pl.name,
+            description: [placeKindTitle(pl.kind), pl.available ? gpuLabel(pl.gpus?.count) : (pl.reason ?? 'Not available right now.')].filter(Boolean).join(', '),
+            disabled: !pl.available,
+          }))}
+          value={place || undefined}
+          onChange={(v) => { if (v) onPlaceChange?.(value, v) }}
+          width="100%"
+        />
+      )}
     </VStack>
   )
 }
