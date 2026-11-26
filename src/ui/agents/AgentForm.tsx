@@ -19,6 +19,7 @@ import { StackItem } from '@astryxdesign/core/Layout'
 import { Popover } from '@astryxdesign/core/Popover'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Text } from '@astryxdesign/core/Text'
@@ -361,12 +362,15 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
               <Text type="supporting" color="secondary">{INTROS[section]}</Text>
               {section === 'tools' && (
                 <VStack gap={4}>
-                  <Switch
-                    label="Web browser"
-                    description="Open web pages in a headless Chromium, read them, click, type and take screenshots. Runs in sandbox chats only, inside the sandbox; chats on the server get no browser."
-                    value={form.browser}
-                    onChange={(browser) => set({ browser })}
-                  />
+                  <VStack gap={2}>
+                    <Text type="label">Web browser</Text>
+                    <Text type="supporting" color="secondary">Open web pages in a headless Chromium, read them, click, type and take screenshots. Runs in sandbox chats only, inside the sandbox; chats on the server get no browser. Auto turns it on when the chat's sandbox has one (the Web and browser template does).</Text>
+                    <SegmentedControl label="Web browser" value={form.browser} onChange={(browser) => set({ browser: browser as 'auto' | 'on' | 'off' })}>
+                      <SegmentedControlItem value="auto" label="Auto (when the sandbox has a browser)" />
+                      <SegmentedControlItem value="on" label="On" />
+                      <SegmentedControlItem value="off" label="Off" />
+                    </SegmentedControl>
+                  </VStack>
                   <ToolsPicker tools={tools} allTools={form.allTools} value={form.tools} onChange={(next) => set(next)} />
                 </VStack>
               )}

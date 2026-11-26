@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-27: The agent form's Web browser setting is now three-way: Auto (when the sandbox has a browser, the default; saved as null), On (true) and Off (false), so a chat on the Web and browser template can browse without turning anything on.
 - 2026-11-27: Fixed: a new chat sometimes failed with "The session could not be created" whenever Composio was slow or erroring at that moment, because the connected-apps MCP tool the BFF adds was required to connect before the chat could start. It is now optional (`required: false`): the chat starts, the MCP client keeps reconnecting, and the connected-app tools appear once Composio answers.
 - 2026-11-27: Creating an environment no longer holds the dialog open while the sandbox sets up (image, packages and setup commands can take minutes): the dialog closes at once and a "Setting up…" card appears in the grid, becoming the real card when ready, or showing the reason with Dismiss when it is refused or fails.
 - 2026-11-27: Connectors: Featured lists only apps you have not connected yet (connected ones were shown twice), and category names keep their acronyms ("CRM", not "Crm").

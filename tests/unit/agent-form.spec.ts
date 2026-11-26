@@ -82,13 +82,15 @@ describe('review fixes: tool masks', () => {
 })
 
 describe('browser field', () => {
-  it('is off unless the saved agent turned it on, and is sent on save', () => {
-    expect(agentToForm(agent({ metadata: {} })).browser).toBe(false)
-    expect(agentToForm(agent({ metadata: {}, browser: null })).browser).toBe(false)
-    const form = agentToForm(agent({ metadata: {}, browser: true }))
-    expect(form.browser).toBe(true)
-    expect(formToParams(form).browser).toBe(true)
-    expect(formToParams({ ...form, browser: false }).browser).toBe(false)
-    expect(emptyForm().browser).toBe(false)
+  it('maps null/true/false to auto/on/off and back', () => {
+    expect(agentToForm(agent({ metadata: {} })).browser).toBe('auto')
+    expect(agentToForm(agent({ metadata: {}, browser: null })).browser).toBe('auto')
+    const on = agentToForm(agent({ metadata: {}, browser: true }))
+    expect(on.browser).toBe('on')
+    expect(formToParams(on).browser).toBe(true)
+    expect(formToParams({ ...on, browser: 'off' }).browser).toBe(false)
+    expect(formToParams({ ...on, browser: 'auto' }).browser).toBeNull()
+    expect(agentToForm(agent({ metadata: {}, browser: false })).browser).toBe('off')
+    expect(emptyForm().browser).toBe('auto')
   })
 })

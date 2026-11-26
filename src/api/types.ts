@@ -154,7 +154,7 @@ export interface OAIAgent {
   skills?: AgentSkillSelection | null
   apps?: AgentAppGrants | null
   send_policy?: 'ask' | 'auto' | null
-  /** The web browser (sandbox chats only); absent or `null` uses the server default (off). */
+  /** The web browser (sandbox chats only); `true` always, `false` never, absent or `null` auto (when the chat's sandbox has the browser). */
   browser?: boolean | null
 }
 
