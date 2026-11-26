@@ -62,33 +62,9 @@ import {
   ScheduleFormError,
 } from '@/schedule/form'
 import { DeleteScheduleDialog } from '@/ui/scheduled/ScheduleDialogs'
+import { ScheduleFields } from '@/ui/scheduled/ScheduleFields'
 
 const PAGE_LIMIT = 20
-const WEEKDAYS: { value: number; label: string; name: string }[] = [
-  { value: 1, label: 'Mon', name: 'Monday' },
-  { value: 2, label: 'Tue', name: 'Tuesday' },
-  { value: 3, label: 'Wed', name: 'Wednesday' },
-  { value: 4, label: 'Thu', name: 'Thursday' },
-  { value: 5, label: 'Fri', name: 'Friday' },
-  { value: 6, label: 'Sat', name: 'Saturday' },
-  { value: 7, label: 'Sun', name: 'Sunday' },
-]
-const ZONE_FIELDS: Frequency[] = ['daily', 'weekly', 'weekdays', 'custom', 'once']
-const TIMED_FIELDS: Frequency[] = ['daily', 'weekly', 'weekdays', 'once']
-/** Kinds that show the DeepSeek-style Interval step row (`every_seconds` rules). */
-const INTERVAL_FIELDS: Frequency[] = ['minutes', 'hourly']
-
-/** Every IANA zone, best effort; the browser's zone is offered first. */
-function timeZoneChoices(): string[] {
-  const system = browserTimeZone()
-  let zones: string[] = []
-  try {
-    zones = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') ?? []
-  } catch {
-    zones = []
-  }
-  return [system, 'UTC', ...zones.filter((zone) => zone !== system && zone !== 'UTC')]
-}
 
 /** The draft's fields that matter for dirtiness; weekdays compared as a sorted list. */
 const dirtyKeys: (keyof ScheduleFormValues)[] = ['title', 'prompt', 'frequency', 'date', 'time', 'interval', 'cron', 'timeZone']
@@ -341,14 +317,10 @@ export function ScheduleDetail({ id, initialEdit = false }: { id: string; initia
               {saveError !== null && (
                 <Banner status="error" title={saveError} isDismissable onDismiss={() => setSaveError(null)} />
               )}
-              <VStack gap={3}>
-                <TextInput label="Task name" value={draft.title} onChange={(title) => patch({ title })} />
-                <TextArea
-                  label="Task instruction"
-                  value={draft.prompt}
-                  onChange={(prompt) => patch({ prompt })}
-                />
-              </VStack>
+              <ScheduleFields
+                values={draft}
+                onChange={patch}
+                afterPrompt={
               <Card padding={0}>
                 <HStack gap={3} vAlign="center" justify="between" padding={3}>
                   <Text weight="medium">Run in</Text>
@@ -358,138 +330,8 @@ export function ScheduleDetail({ id, initialEdit = false }: { id: string; initia
                   />
                 </HStack>
               </Card>
-              <Card padding={0}>
-                <VStack gap={0}>
-                  <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                    <Text weight="medium">Repeat</Text>
-                    <DropdownMenu
-                      button={{ label: frequencyLabel, size: 'sm' }}
-                      items={FREQUENCIES.map((f) => ({
-                        label: f.label,
-                        isDisabled: f.value === draft.frequency,
-                        onClick: () => patch({ frequency: f.value }),
-                      }))}
-                    />
-                  </HStack>
-                  {INTERVAL_FIELDS.includes(draft.frequency) && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Interval</Text>
-                        <NumberInput
-                          label="Interval"
-                          isLabelHidden
-                          width="auto"
-                          value={draft.interval}
-                          min={1}
-                          step={1}
-                          onChange={(next) => patch({ interval: Number.isFinite(next) && next >= 1 ? Math.floor(next) : 1 })}
-                        />
-                      </HStack>
-                    </>
-                  )}
-                  {draft.frequency === 'weekly' && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Weekday</Text>
-                        <HStack gap={1} wrap="wrap">
-                          {WEEKDAYS.map((day) => (
-                            <ToggleButton
-                              key={day.value}
-                              label={day.label}
-                              size="sm"
-                              isPressed={draft.weekdays.includes(day.value)}
-                              onPressedChange={() =>
-                                patch({
-                                  weekdays:
-                                    draft.weekdays.includes(day.value) && draft.weekdays.length > 1
-                                      ? draft.weekdays.filter((one) => one !== day.value)
-                                      : [...draft.weekdays, day.value].sort((a, b) => a - b),
-                                })
-                              }
-                            />
-                          ))}
-                        </HStack>
-                      </HStack>
-                    </>
-                  )}
-                  {draft.frequency === 'weekdays' && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Weekday</Text>
-                        <HStack gap={1}>
-                          {WEEKDAYS.slice(0, 5).map((day) => (
-                            <ToggleButton key={day.value} label={day.label} size="sm" isPressed isDisabled />
-                          ))}
-                        </HStack>
-                      </HStack>
-                    </>
-                  )}
-                  {draft.frequency === 'once' && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Date</Text>
-                        <DateInput
-                          label="Date"
-                          isLabelHidden
-                          value={draft.date ? (draft.date as ISODateString) : undefined}
-                          onChange={(date) => date && patch({ date })}
-                        />
-                      </HStack>
-                    </>
-                  )}
-                  {TIMED_FIELDS.includes(draft.frequency) && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Time</Text>
-                        <TimeInput
-                          label="Time"
-                          isLabelHidden
-                          width="auto"
-                          value={draft.time as ISOTimeString}
-                          onChange={(time) => time && patch({ time })}
-                        />
-                      </HStack>
-                    </>
-                  )}
-                  {draft.frequency === 'custom' && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Cron expression</Text>
-                        <TextInput
-                          label="Cron expression"
-                          isLabelHidden
-                          width="auto"
-                          value={draft.cron}
-                          onChange={(cron) => patch({ cron })}
-                        />
-                      </HStack>
-                    </>
-                  )}
-                  {ZONE_FIELDS.includes(draft.frequency) && (
-                    <>
-                      <Divider />
-                      <HStack gap={3} vAlign="center" justify="between" padding={3}>
-                        <Text weight="medium">Time zone</Text>
-                        <DropdownMenu
-                          button={{ label: zoneLabel(draft.timeZone), size: 'sm' }}
-                          alignment="end"
-                          items={timeZoneChoices().map((zone) => ({
-                            label: zoneLabel(zone),
-                            isDisabled: zone === draft.timeZone,
-                            onClick: () => patch({ timeZone: zone }),
-                          }))}
-                        />
-                      </HStack>
-                    </>
-                  )}
-                </VStack>
-              </Card>
+                }
+              />
               <HStack gap={3} vAlign="center" justify="between">
                 <Text weight="medium">Linked session</Text>
                 <Button
