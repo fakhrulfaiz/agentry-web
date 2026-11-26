@@ -50,7 +50,8 @@ const ITEMS_PAGE = 100
 /** Model and reasoning effort changed for the next message; absent fields keep the session's. */
 export interface SettingsChange {
   model?: string
-  effort?: ReasoningEffort
+  /** `null` clears the stored effort back to the agent's default (Auto). */
+  effort?: ReasoningEffort | null
 }
 
 /** Agentry's answer when a model or effort change cannot reach the running agent. */
@@ -203,10 +204,11 @@ async function listAll<T extends { id: string }>(url: string, from?: string): Pr
 }
 
 export const api = {
-  listSessions(q: { after?: string; limit?: number } = {}): Promise<OAIListResponse<OAIAgentSession>> {
+  listSessions(q: { after?: string; limit?: number; metadata?: Record<string, string> } = {}): Promise<OAIListResponse<OAIAgentSession>> {
     const params = new URLSearchParams()
     if (q.after) params.set('after', q.after)
     if (q.limit !== undefined) params.set('limit', String(q.limit))
+    for (const [key, value] of Object.entries(q.metadata ?? {})) params.set(`metadata[${key}]`, value)
     const query = params.size > 0 ? `?${params}` : ''
     return request('GET', `${AGENTRY}/agents/sessions${query}`)
   },
@@ -239,7 +241,7 @@ export const api = {
         type: 'agent.session.input.message',
         input: [{ role: 'user', content: contentParts(text, files) }],
         ...(change.model ? { model: change.model } : {}),
-        ...(change.effort ? { reasoning: { effort: change.effort } } : {}),
+        ...(change.effort !== undefined ? { reasoning: { effort: change.effort } } : {}),
       },
     ])
   },
@@ -332,14 +334,12 @@ export const api = {
 
   /**
    * Changes some session metadata keys (a string sets one, `null` removes it)
-   * and returns the map saved. Agentry replaces the whole map on update, so
-   * the current one is read first and the other keys are kept.
+   * with `metadata_merge`, which Agentry applies atomically, so concurrent
+   * writers of other keys are not lost. Returns the map saved.
    */
   async updateMetadata(id: string, patch: Record<string, string | null>): Promise<Record<string, string>> {
-    const current = await api.getSession(id)
-    const metadata = mergeMetadata(current.metadata, patch)
-    await request('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { metadata })
-    return metadata
+    const saved = await request<OAIAgentSession>('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { metadata_merge: patch })
+    return { ...saved.metadata }
   },
 
   /** Sets the chat's title; returns the whole metadata map saved. */

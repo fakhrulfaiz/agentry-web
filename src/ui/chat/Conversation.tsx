@@ -352,13 +352,13 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       },
       effort: (arg, { openMenu }) => {
         if (!arg) return openMenu('effort') ? undefined : `Reasoning effort: ${settings.effort}`
-        const effort = chooseEffort(arg, settings.efforts)
+        const effort = chooseEffort(arg, undefined)
         setEffort(effort)
         return `Reasoning effort set to ${effort}. It applies from your next message.`
       },
       rename: () => setRenaming({ id: sessionId, metadata: session?.metadata }),
     }
-  }, [router, settings.model, settings.effort, settings.efforts, setModel, setEffort, modelOptions, sessionId, session?.metadata])
+  }, [router, settings.model, settings.effort, setModel, setEffort, modelOptions, sessionId, session?.metadata])
   const onStop = useCallback(() => void run(stop).catch(() => {}), [run, stop])
   const onAnswer = useCallback((id: string, a: ActionAnswer) => answer(id, a), [answer])
 
@@ -420,7 +420,6 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   model: settings.model,
                   onModelChange: settings.setModel,
                   effort: settings.effort,
-                  efforts: settings.efforts,
                   onEffortChange: settings.setEffort,
                 }}
                 status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}

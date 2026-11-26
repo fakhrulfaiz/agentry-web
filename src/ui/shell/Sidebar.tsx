@@ -19,7 +19,7 @@ import { ChatBubbleLeftIcon, Cog6ToothIcon, MagnifyingGlassIcon, PencilSquareIco
 import { ClockIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/16/solid'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, isSignedOut } from '@/api/client'
+import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
 import { AgentryMark } from '@/ui/brand/Wordmark'
 import { groupSessions, sessionTitle } from './group'
@@ -28,6 +28,8 @@ import { UserMenu, type ShellIdentity } from './UserMenu'
 
 export const SIDEBAR_COLLAPSED_KEY = 'agentry.sidebar.collapsed'
 export const PAGE_SIZE = 30
+/** Most starred chats the Starred section loads. */
+const STARRED_LIMIT = 100
 
 export { SESSIONS_CHANGED }
 
@@ -64,6 +66,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const currentId = sessionIdFrom(pathname)
 
   const [sessions, setSessions] = useState<Session[]>([])
+  // Starred chats come from their own filtered query, so ones beyond the loaded pages still show.
+  const [starredSessions, setStarredSessions] = useState<Session[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -73,6 +77,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [deleting, setDeleting] = useState<Session | null>(null)
   const loadingRef = useRef(false)
+  const sessionsRef = useRef<Session[]>([])
+  sessionsRef.current = sessions
 
   const load = useCallback(async (after: string | null) => {
     if (loadingRef.current) return
@@ -100,20 +106,41 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     }
   }, [])
 
+  const loadStarred = useCallback(async () => {
+    try {
+      const page = await api.listSessions({ limit: STARRED_LIMIT, metadata: { [STARRED_KEY]: 'true' } })
+      setStarredSessions(page.data.filter(isStarred))
+    } catch (error) {
+      if (isSignedOut(error)) window.location.assign('/login')
+      // Otherwise the Starred section shows what the loaded pages hold.
+    }
+  }, [])
+
   // First page on mount.
   useEffect(() => {
     void load(null)
-  }, [load])
+    void loadStarred()
+  }, [load, loadStarred])
 
   // A renamed, starred or deleted chat updates in place; any other change (a new chat) reloads the first page.
   useSessionChanges((change) => {
     if (change === null) {
       loadingRef.current = false
       void load(null)
+      void loadStarred()
     } else if ('deleted' in change) {
       setSessions((prev) => prev.filter((s) => s.id !== change.id))
+      setStarredSessions((prev) => prev.filter((s) => s.id !== change.id))
     } else {
-      setSessions((prev) => prev.map((s) => (s.id === change.id ? { ...s, metadata: change.metadata } : s)))
+      const updated = (s: Session): Session => ({ ...s, metadata: change.metadata })
+      setSessions((prev) => prev.map((s) => (s.id === change.id ? updated(s) : s)))
+      setStarredSessions((prev) => {
+        const known = prev.find((s) => s.id === change.id)
+        if (!isStarred(change)) return prev.filter((s) => s.id !== change.id)
+        if (known) return prev.map((s) => (s.id === change.id ? updated(s) : s))
+        const from = sessionsRef.current.find((s) => s.id === change.id)
+        return from ? [updated(from), ...prev] : prev
+      })
     }
   })
   const toggleStar = useStarToggle()
@@ -150,7 +177,11 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     const q = query.trim().toLowerCase()
     return q ? sessions.filter((s) => sessionTitle(s).toLowerCase().includes(q)) : sessions
   }, [query, sessions])
-  const starred = visible.filter(isStarred)
+  const matches = (s: Session) => !query.trim() || sessionTitle(s).toLowerCase().includes(query.trim().toLowerCase())
+  // The filtered list first, plus any starred row the loaded pages have that it does not (a star made a moment ago).
+  const starred = [...starredSessions, ...sessions.filter((s) => isStarred(s) && !starredSessions.some((x) => x.id === s.id))].filter(
+    (s) => isStarred(s) && matches(s),
+  )
   const groups = groupSessions(
     visible.filter((s) => !isStarred(s)),
     new Date(),
@@ -243,7 +274,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         {groups.today.length > 0 && <SideNavSection title="Today">{rows(groups.today)}</SideNavSection>}
         {groups.yesterday.length > 0 && <SideNavSection title="Yesterday">{rows(groups.yesterday)}</SideNavSection>}
         {groups.earlier.length > 0 && <SideNavSection title="Earlier">{rows(groups.earlier)}</SideNavSection>}
-        {!loading && !loadError && visible.length === 0 && (
+        {!loading && !loadError && visible.length === 0 && starred.length === 0 && (
           <VStack padding={3} gap={1}>
             <Icon icon={ChatBubbleLeftIcon} color="secondary" />
             <Text type="supporting">{query.trim() ? 'No chats match.' : 'No chats yet.'}</Text>

@@ -110,11 +110,10 @@ describe('api client', () => {
     })
   })
 
-  it('rename keeps the other metadata keys', async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Old', pinned: '1' } }))
-    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))
-    await api.renameSession('s1', 'New')
-    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'POST', body: { metadata: { title: 'New', pinned: '1' } } })
+  it('rename merges only the title and returns the saved map', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'New', pinned: '1' } }))
+    expect(await api.renameSession('s1', 'New')).toEqual({ title: 'New', pinned: '1' })
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'POST', body: { metadata_merge: { title: 'New' } } })
   })
 
   it('mergeMetadata sets string keys, removes null ones, and keeps the rest', () => {
@@ -126,17 +125,22 @@ describe('api client', () => {
     expect(current).toEqual({ title: 'T' })
   })
 
-  it('star and unstar merge into the current metadata (Agentry replaces the whole map)', async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Plan', pinned: '1' } }))
-    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))
+  it('star and unstar send metadata_merge (atomic on the server) and return the saved map', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Plan', pinned: '1', starred: 'true' } }))
     expect(await api.setStarred('s1', true)).toEqual({ title: 'Plan', pinned: '1', starred: 'true' })
-    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'POST', body: { metadata: { title: 'Plan', pinned: '1', starred: 'true' } } })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(lastCall()).toMatchObject({ url: '/api/agentry/agents/sessions/s1', method: 'POST', body: { metadata_merge: { starred: 'true' } } })
     expect(lastCall().headers.get('x-agentry-csrf')).toBe(CSRF)
 
-    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Plan', starred: 'true' } }))
-    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1' }))
-    await api.setStarred('s1', false)
-    expect(lastCall().body).toEqual({ metadata: { title: 'Plan' } })
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 's1', metadata: { title: 'Plan' } }))
+    expect(await api.setStarred('s1', false)).toEqual({ title: 'Plan' })
+    expect(lastCall().body).toEqual({ metadata_merge: { starred: null } })
+  })
+
+  it('listSessions sends a metadata filter as metadata[key]=value', async () => {
+    fetchMock.mockResolvedValue(Response.json({ object: 'list', data: [], first_id: null, last_id: null, has_more: false }))
+    await api.listSessions({ limit: 100, metadata: { starred: 'true' } })
+    expect(decodeURIComponent(lastCall().url)).toBe('/api/agentry/agents/sessions?limit=100&metadata[starred]=true')
   })
 
   it('items follows has_more pages', async () => {
@@ -159,6 +163,9 @@ describe('api client', () => {
 
     await api.sendMessage('s1', 'go on', { model: 'm2' })
     expect(lastCall().body).toEqual({ events: [{ ...message, model: 'm2' }] })
+
+    await api.sendMessage('s1', 'go on', { effort: null })
+    expect(lastCall().body).toEqual({ events: [{ ...message, reasoning: { effort: null } }] })
 
     await api.sendMessage('s1', 'go on', { model: 'm2', effort: 'low' })
     expect(lastCall().body).toEqual({ events: [{ ...message, model: 'm2', reasoning: { effort: 'low' } }] })
