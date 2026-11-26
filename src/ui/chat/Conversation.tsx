@@ -44,6 +44,9 @@ import { ChatTitleMenu } from '@/ui/shell/ChatTitleMenu'
 import { RenameDialog, SESSIONS_CHANGED, type SessionRef } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
 import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
+import { PanelConversationContext, type PanelConversation } from '@/chat/panel-data'
+import { deriveTasks } from '@/chat/tasks'
+import { deriveTodos } from '@/chat/todos'
 import { PreviewPanel } from '@/ui/preview/PreviewPanel'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
@@ -365,6 +368,18 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   // A subagent's approvals render in its card, not at the end of the chat.
   const split = useMemo(() => splitSubagentActions(state.items), [state.items])
 
+  const panelData = useMemo<PanelConversation>(
+    () => ({
+      tasks: deriveTasks(state.items, state.subagents, split.bySubagent),
+      subagentViews: state.items.flatMap((v) => (v.kind === 'subagent' ? [v] : [])),
+      todos: deriveTodos(state.items),
+      items: subagentItems,
+      actions: split.bySubagent,
+      answer: onAnswer,
+    }),
+    [state.items, state.subagents, split.bySubagent, subagentItems, onAnswer],
+  )
+
   if (missing) {
     return (
       <VStack xstyle={styles.page}>
@@ -389,6 +404,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
 
   return (
     <PreviewPanelProvider sessionId={session?.id ?? null}>
+    <PanelConversationContext.Provider value={panelData}>
     <SessionFilesContext.Provider value={session?.id ?? null}>
     <VStack xstyle={styles.page}>
       <TopBar
@@ -486,6 +502,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
     </VStack>
     </SessionFilesContext.Provider>
+    </PanelConversationContext.Provider>
     </PreviewPanelProvider>
   )
 }

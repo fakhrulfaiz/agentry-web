@@ -16,24 +16,26 @@
 import { Card } from '@astryxdesign/core/Card'
 import { Collapsible } from '@astryxdesign/core/Collapsible'
 import { HStack } from '@astryxdesign/core/HStack'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Icon } from '@astryxdesign/core/Icon'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
-import { UserGroupIcon } from '@heroicons/react/24/outline'
+import { ArrowTopRightOnSquareIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { api, ApiError } from '@/api/client'
 import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
 import { applyItems, initialState, type MessageView } from '@/chat/reducer'
 import type { ActionAnswer } from '@/chat/use-conversation'
+import { usePreviewPanel } from '@/preview/store'
 import { ApprovalCard } from './ApprovalCard'
 import { Message } from './Message'
 import { QuestionCard } from './QuestionCard'
 
-type SubagentView = Extract<MessageView, { kind: 'subagent' }>
+export type SubagentView = Extract<MessageView, { kind: 'subagent' }>
 
 export const MAX_SUBAGENT_DEPTH = 3
 
@@ -107,7 +109,7 @@ function Header({ view }: { view: SubagentView }) {
   )
 }
 
-function Activity({ view, depth }: { view: SubagentView; depth: number }) {
+export function Activity({ view, depth }: { view: SubagentView; depth: number }) {
   const provided = useContext(SubagentItems).get(view.subagentId)
   const [fetched, setFetched] = useState<StoredSessionItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -146,7 +148,7 @@ function Activity({ view, depth }: { view: SubagentView; depth: number }) {
 }
 
 /** What the subagent was asked, collapsed until opened. */
-function Prompt({ text }: { text: string }) {
+export function Prompt({ text }: { text: string }) {
   return (
     <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Prompt</Text>} data-testid="subagent-prompt">
       <Text type="supporting">{text}</Text>
@@ -155,7 +157,7 @@ function Prompt({ text }: { text: string }) {
 }
 
 /** Approvals and questions the child is waiting on, answered through the parent session. */
-function Waiting({ actions, answer }: { actions: OAIApprovalAction[]; answer(actionId: string, a: ActionAnswer): Promise<void> }) {
+export function Waiting({ actions, answer }: { actions: OAIApprovalAction[]; answer(actionId: string, a: ActionAnswer): Promise<void> }) {
   return (
     <VStack gap={2} data-testid="subagent-actions">
       {actions.map((action) =>
@@ -165,6 +167,16 @@ function Waiting({ actions, answer }: { actions: OAIApprovalAction[]; answer(act
           <ApprovalCard key={action.id} action={action} answer={answer} />
         ),
       )}
+    </VStack>
+  )
+}
+
+/** What a subagent was asked and what it did so far: the card's expanded body, also the panel's subagent tab. */
+export function SubagentTranscript({ view, depth = 1 }: { view: SubagentView; depth?: number }) {
+  return (
+    <VStack gap={2}>
+      {view.prompt && <Prompt text={view.prompt} />}
+      <Activity view={view} depth={depth} />
     </VStack>
   )
 }
@@ -180,6 +192,7 @@ export function SubagentCard({
   answer?(actionId: string, a: ActionAnswer): Promise<void>
 }) {
   const [open, setOpen] = useState(false)
+  const { actions: panel } = usePreviewPanel()
   const actions = useContext(SubagentActions).get(view.subagentId) ?? []
   const waiting = actions.length > 0 && <Waiting actions={actions} answer={answer} />
   if (depth >= MAX_SUBAGENT_DEPTH) {
@@ -195,14 +208,16 @@ export function SubagentCard({
   return (
     <Card padding={3} width="100%" data-testid="subagent-card">
       <VStack gap={2}>
-        <Collapsible isOpen={open} onOpenChange={setOpen} chevronPosition="start" trigger={<Header view={view} />}>
-          {open && (
-            <VStack gap={2}>
-              {view.prompt && <Prompt text={view.prompt} />}
-              <Activity view={view} depth={depth} />
-            </VStack>
-          )}
-        </Collapsible>
+        <HStack gap={1} vAlign="start">
+          <StackItem size="fill" xstyle={styles.name}>
+            <Collapsible isOpen={open} onOpenChange={setOpen} chevronPosition="start" trigger={<Header view={view} />}>
+              {open && <SubagentTranscript view={view} depth={depth} />}
+            </Collapsible>
+          </StackItem>
+          <StackItem xstyle={styles.fixed}>
+            <IconButton label="Open in panel" tooltip="Open in panel" variant="ghost" size="sm" icon={<Icon icon={ArrowTopRightOnSquareIcon} size="sm" />} onClick={() => panel.openView(`sub:${view.subagentId}`, view.name)} />
+          </StackItem>
+        </HStack>
         {waiting}
       </VStack>
     </Card>

@@ -19,6 +19,8 @@ import {
   DocumentIcon,
   DocumentTextIcon,
   FolderIcon,
+  ListBulletIcon,
+  UserGroupIcon,
   PhotoIcon,
   PlusIcon,
   CommandLineIcon,
@@ -34,6 +36,9 @@ import { MAX_WIDTH, MIN_WIDTH, usePreviewPanel } from '@/preview/store'
 import { buildTree, type TreeNode } from '@/preview/tree'
 import { fileUrl } from '@/preview/use-file-bytes'
 import { Terminal } from '@/ui/terminal/Terminal'
+import { usePanelConversation } from '@/chat/panel-data'
+import { todoCount } from '@/chat/todos'
+import { PlanTab, SubagentTab, TasksTab } from './PanelTabs'
 import { FileTree } from './FileTree'
 import { RendererBody } from './renderers'
 
@@ -235,6 +240,7 @@ function FileView({
 
 function StartPage({ canTerminal }: { canTerminal: boolean }) {
   const { actions } = usePreviewPanel()
+  const count = todoCount(usePanelConversation().todos)
   return (
     <div {...stylex.props(styles.startPage)} data-testid="preview-start">
       <button type="button" onClick={actions.showFiles} {...stylex.props(styles.startCard)}>
@@ -249,6 +255,20 @@ function StartPage({ canTerminal }: { canTerminal: boolean }) {
         <span {...stylex.props(styles.titles)}>
           <Text weight="medium">New terminal</Text>
           <Text type="supporting" color="secondary">{canTerminal ? 'Run commands in this chat’s sandbox' : 'Only chats that run in a sandbox have a terminal'}</Text>
+        </span>
+      </button>
+      <button type="button" onClick={() => actions.openView('tasks', 'Tasks')} {...stylex.props(styles.startCard)}>
+        <Icon icon={UserGroupIcon} size="md" />
+        <span {...stylex.props(styles.titles)}>
+          <Text weight="medium">Tasks</Text>
+          <Text type="supporting" color="secondary">Subagents this chat started</Text>
+        </span>
+      </button>
+      <button type="button" onClick={() => actions.openView('plan', 'Plan')} {...stylex.props(styles.startCard)}>
+        <Icon icon={ListBulletIcon} size="md" />
+        <span {...stylex.props(styles.titles)}>
+          <Text weight="medium">Plan{count ? ` (${count})` : ''}</Text>
+          <Text type="supporting" color="secondary">The agent’s to-do list</Text>
         </span>
       </button>
     </div>
@@ -307,6 +327,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
   }
   const showingFiles = state.active === 'files'
   const onTerminal = state.active.startsWith('term:')
+  const activeView = state.views.find((v) => `view:${v.key}` === state.active)
   return (
     <div
       data-testid="preview-slot"
@@ -328,7 +349,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
         {...stylex.props(styles.grip)}
       />
       <div {...stylex.props(styles.card)}>
-        {state.tabs.length + state.terminals.length > 1 && (
+        {state.tabs.length + state.terminals.length + state.views.length > 1 && (
           <div role="tablist" aria-label="Open tabs" {...stylex.props(styles.tabs)} style={{ paddingTop: 8 }}>
             {state.tabs.map((t) => (
               <div key={t.path} {...stylex.props(styles.chip, state.active === t.path && styles.chipActive)}>
@@ -346,6 +367,14 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
                 <IconButton label={`Close ${t.title}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeTerminal(t.key)} />
               </div>
             ))}
+            {state.views.map((v) => (
+              <div key={v.key} {...stylex.props(styles.chip, state.active === `view:${v.key}` && styles.chipActive)}>
+                <button type="button" role="tab" aria-selected={state.active === `view:${v.key}`} onClick={() => actions.openView(v.key, v.title)} {...stylex.props(styles.chipLabel)}>
+                  <Text maxLines={1}>{v.title}</Text>
+                </button>
+                <IconButton label={`Close ${v.title}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeView(v.key)} />
+              </div>
+            ))}
             <IconButton label="New tab" tooltip="New tab" variant="ghost" size="sm" icon={<Icon icon={PlusIcon} size="sm" />} onClick={actions.showStart} />
           </div>
         )}
@@ -361,6 +390,21 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
             </div>
             <div {...stylex.props(styles.divider)} />
             <StartPage canTerminal={environmentId !== undefined} />
+          </>
+        ) : activeView ? (
+          <>
+            <div {...stylex.props(styles.header)}>
+              <div {...stylex.props(styles.identity)}>
+                <Text weight="medium">{activeView.title}</Text>
+              </div>
+              <div {...stylex.props(styles.actions)}>
+                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
+              </div>
+            </div>
+            <div {...stylex.props(styles.divider)} />
+            <div {...stylex.props(styles.filesPage)}>
+              {activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+            </div>
           </>
         ) : onTerminal ? null : showingFiles ? (
           <>

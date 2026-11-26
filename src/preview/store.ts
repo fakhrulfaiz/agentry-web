@@ -9,6 +9,8 @@ export interface PanelState {
   /** Terminal tabs (sandbox chats); each `key` is local to this panel. */
   terminals: { key: string; title: string }[]
   termCount: number
+  /** Tabs that are not files or terminals (Tasks, Plan, a subagent): `key` is `tasks`, `plan` or `sub:<id>`; active is `view:<key>`. */
+  views: { key: string; title: string }[]
   /** `'start'` (the chooser), `'files'` (the tree), `term:<key>`, or an open file's path. */
   active: string
   treeVisible: boolean
@@ -20,7 +22,7 @@ export const MAX_WIDTH = 900
 const DEFAULT_WIDTH = 560
 const WIDTH_KEY = 'agentry-preview-width'
 
-export const initialState = (): PanelState => ({ open: false, tabs: [], terminals: [], termCount: 0, active: 'start', treeVisible: false, width: DEFAULT_WIDTH })
+export const initialState = (): PanelState => ({ open: false, tabs: [], terminals: [], termCount: 0, views: [], active: 'start', treeVisible: false, width: DEFAULT_WIDTH })
 
 export function openFile(s: PanelState, path: string): PanelState {
   const existing = s.tabs.find((t) => t.path === path)
@@ -57,6 +59,15 @@ export function closeTerminal(s: PanelState, key: string): PanelState {
   return { ...s, terminals, active: s.active === `term:${key}` ? 'start' : s.active }
 }
 
+export function openView(s: PanelState, key: string, title: string): PanelState {
+  const views = s.views.some((v) => v.key === key) ? s.views.map((v) => (v.key === key ? { key, title } : v)) : [...s.views, { key, title }]
+  return { ...s, open: true, views, active: `view:${key}` }
+}
+
+export function closeView(s: PanelState, key: string): PanelState {
+  return { ...s, views: s.views.filter((v) => v.key !== key), active: s.active === `view:${key}` ? 'start' : s.active }
+}
+
 export const togglePanel = (s: PanelState): PanelState => ({ ...s, open: !s.open })
 export const showFiles = (s: PanelState): PanelState => ({ ...s, open: true, active: 'files' })
 export const toggleTree = (s: PanelState): PanelState => ({ ...s, treeVisible: !s.treeVisible })
@@ -82,6 +93,8 @@ export interface PanelActions {
   openTerminal(): void
   closeTerminal(key: string): void
   selectTerminal(key: string): void
+  openView(key: string, title: string): void
+  closeView(key: string): void
   toggleTree(): void
   close(): void
   setWidth(px: number): void
@@ -106,6 +119,8 @@ export function PreviewPanelProvider({ sessionId, children }: { sessionId: strin
       openTerminal: () => setState(openTerminal),
       closeTerminal: (key) => setState((s) => closeTerminal(s, key)),
       selectTerminal: (key) => setState((s) => selectTerminal(s, key)),
+      openView: (key, title) => setState((s) => openView(s, key, title)),
+      closeView: (key) => setState((s) => closeView(s, key)),
       toggleTree: () => setState(toggleTree),
       close: () => setState(closePanel),
       setWidth: (px) =>
@@ -130,7 +145,7 @@ export function usePreviewPanel(): { state: PanelState; actions: PanelActions } 
   return (
     ctx ?? {
       state: initialState(),
-      actions: { openFile: noop, pinTab: noop, closeTab: noop, showFiles: noop, showStart: noop, toggle: noop, openTerminal: noop, closeTerminal: noop, selectTerminal: noop, toggleTree: noop, close: noop, setWidth: noop },
+      actions: { openFile: noop, pinTab: noop, closeTab: noop, showFiles: noop, showStart: noop, toggle: noop, openTerminal: noop, closeTerminal: noop, selectTerminal: noop, openView: noop, closeView: noop, toggleTree: noop, close: noop, setWidth: noop },
     }
   )
 }
