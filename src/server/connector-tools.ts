@@ -15,6 +15,10 @@ export function withConnectorTool(body: unknown, key: string, serverUrl: string 
   const tool = {
     type: 'mcp',
     server_label: 'composio',
+    // Not required: if Composio is slow or failing when the chat starts, the chat starts anyway
+    // (the MCP client keeps reconnecting and the tools appear once it answers) instead of failing
+    // with "The session could not be created".
+    required: false,
     transport: { type: 'http', server_url: serverUrl, headers: { 'x-consumer-api-key': key } },
   }
   return { ...body, agent: { ...agent, tools: [...list, tool] } }
