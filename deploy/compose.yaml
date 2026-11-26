@@ -7,7 +7,10 @@
 #   (empty)   web only: Agentry Web against an Agentry API you run yourself (AGENTRY_API_URL)
 #   full      also the Agentry API (ghcr.io/fakhrulfaiz/agentry-api) and its Postgres; the web
 #             app talks to it at http://api:3080 unless AGENTRY_API_URL says otherwise
-# Agentry Sandbox is not part of this file: run it yourself and set AGENTRY_SANDBOX_URL / _KEY.
+#   sandbox   (add to either, e.g. full,sandbox) also Agentry Sandbox (ghcr.io/fakhrulfaiz/agentry-sandbox-service)
+#             and its own Postgres; Linux Docker host. Set AGENTRY_SANDBOX_KEY and _SECRET, and
+#             AGENTRY_SANDBOX_URL=http://host.docker.internal:3090 for the API. Without this profile, run the
+#             service yourself and set AGENTRY_SANDBOX_URL / _KEY.
 #
 # Update: change the tags in .env (or the defaults below), then `docker compose pull && docker compose up -d`.
 # Logs: `docker compose logs -f web` (or api, postgres). Each Agentry Web release attaches this
@@ -86,7 +89,53 @@ services:
       timeout: 5s
       retries: 20
 
+  # Agentry Sandbox: the service that runs agents' sandboxes (COMPOSE_PROFILES=sandbox, alongside
+  # `full` for the bundled API). Set AGENTRY_SANDBOX_KEY and AGENTRY_SANDBOX_SECRET in .env, and
+  # AGENTRY_SANDBOX_URL=http://host.docker.internal:3090 plus the same AGENTRY_SANDBOX_KEY for the API.
+  # It drives this machine's Docker through the mounted socket (the sandboxes never get it) and needs
+  # the host network, so Linux only: see https://github.com/fakhrulfaiz/agentry-sandbox/blob/main/docker/README.md
+  sandbox:
+    profiles: [sandbox]
+    image: ghcr.io/fakhrulfaiz/agentry-sandbox-service:${AGENTRY_SANDBOX_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      sandbox-postgres:
+        condition: service_healthy
+    network_mode: host
+    environment:
+      AGENTRY_SANDBOX_KEY: ${AGENTRY_SANDBOX_KEY:?set AGENTRY_SANDBOX_KEY in .env (the sandbox profile needs it)}
+      AGENTRY_SANDBOX_SECRET: ${AGENTRY_SANDBOX_SECRET:?set AGENTRY_SANDBOX_SECRET in .env (openssl rand -base64 48)}
+      AGENTRY_SANDBOX_ADMIN_KEY: ${AGENTRY_SANDBOX_ADMIN_KEY:-}
+      AGENTRY_SANDBOX_PORT: ${AGENTRY_SANDBOX_PORT:-3090}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: ${AGENTRY_SANDBOX_DB_PORT:-55433}
+      # Reachable from the API's container at http://host.docker.internal:3090; keys are required.
+      AGENTRY_SANDBOX_HOST: ${AGENTRY_SANDBOX_HOST:-0.0.0.0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  sandbox-postgres:
+    profiles: [sandbox]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentry
+      POSTGRES_DB: agentry_sandbox
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    # The service is on the host network, so it reaches this database on a loopback port.
+    ports:
+      - "127.0.0.1:${AGENTRY_SANDBOX_DB_PORT:-55433}:5432"
+    volumes:
+      - sandbox-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentry -d agentry_sandbox"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   web-data:
   api-data:
   postgres-data:
+  sandbox-postgres-data:
