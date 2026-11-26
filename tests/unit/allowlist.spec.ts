@@ -223,3 +223,13 @@ describe('sandbox routes', () => {
     expect(isAllowed('POST', '/agents/environments/env_1/destroy')).toBe(false)
   })
 })
+
+describe('browser take-over routes', () => {
+  it('allows POST control and input on a session, nothing else', () => {
+    expect(isAllowed('POST', `/agents/sessions/${ID}/browser/control`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/browser/input`)).toBe(true)
+    expect(isAllowed('GET', `/agents/sessions/${ID}/browser/control`)).toBe(false)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/browser/devtools`)).toBe(false)
+    expect(isAllowed('POST', '/agents/sessions/../browser/input')).toBe(false)
+  })
+})

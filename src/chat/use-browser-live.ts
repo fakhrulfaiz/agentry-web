@@ -2,11 +2,14 @@
 
 /**
  * The live view of the agent's browser (`GET /agents/sessions/{id}/browser/live` through the BFF): the
- * newest frame while the agent's browser is open, or why there is nothing to show. The stream is closed
- * while the page is hidden, and with reduced motion at most one frame a second is shown.
+ * newest frame while the agent's browser is open, or why there is nothing to show, and whether the user
+ * has control (`control` events). The stream is closed while the page is hidden, and with reduced motion
+ * at most one frame a second is shown. Each frame is decoded before it replaces the shown one, so frames
+ * swap without a blank flash.
  */
 import { useEffect, useState } from 'react'
 import { usePrefersReducedMotion } from '@/ui/chat/use-reduced-motion'
+import type { ControlEndReason } from '@/chat/browser-input'
 
 /** Why no frames come; see the API's `idle` event. */
 export type BrowserIdleReason = 'not_started' | 'no_browser' | 'browser_off' | 'not_sandbox'
@@ -16,6 +19,24 @@ export interface LiveFrame {
   src: string
   url: string
   title: string
+  /** The page's size in CSS pixels, when known. */
+  width?: number
+  height?: number
+}
+
+/** The newest `control` event: whether the user has control, and why it ended. */
+export interface LiveControl {
+  controlled: boolean
+  reason?: ControlEndReason
+}
+
+/** Decodes a frame image off-screen; `undefined` where decoding is not available (then it is shown at once). */
+function decoding(src: string): Promise<void> | undefined {
+  if (typeof Image === 'undefined') return undefined
+  const img = new Image()
+  if (typeof img.decode !== 'function') return undefined
+  img.src = src
+  return img.decode().catch(() => undefined)
 }
 
 export type BrowserLive =
@@ -44,8 +65,9 @@ function useDocumentVisible(): boolean {
 }
 
 /** The live view of `sessionId`'s browser; `null` turns it off. */
-export function useBrowserLive(sessionId: string | null): BrowserLive {
+export function useBrowserLive(sessionId: string | null): BrowserLive & { control?: LiveControl } {
   const [live, setLive] = useState<BrowserLive>({ status: 'connecting' })
+  const [control, setControl] = useState<LiveControl | undefined>(undefined)
   const visible = useDocumentVisible()
   const reduced = usePrefersReducedMotion()
   useEffect(() => {
@@ -54,15 +76,28 @@ export function useBrowserLive(sessionId: string | null): BrowserLive {
     let lastShown = 0
     let pending: LiveFrame | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
+    let seq = 0
+    let shownSeq = 0
+    let closed = false
     const show = (frame: LiveFrame) => {
       lastShown = Date.now()
-      setLive({ status: 'live', frame })
+      const n = ++seq
+      const apply = () => {
+        // A later frame that decoded first wins; an older one is dropped.
+        if (closed || n < shownSeq) return
+        shownSeq = n
+        setLive({ status: 'live', frame })
+      }
+      const pendingDecode = decoding(frame.src)
+      if (pendingDecode) void pendingDecode.then(apply)
+      else apply()
     }
     source.addEventListener('frame', (event) => {
-      let msg: { data?: unknown; url?: unknown; title?: unknown }
+      let msg: { data?: unknown; url?: unknown; title?: unknown; width?: unknown; height?: unknown }
       try { msg = JSON.parse((event as MessageEvent<string>).data) as typeof msg } catch { return }
       if (typeof msg.data !== 'string' || msg.data === '') return
-      const frame: LiveFrame = { src: `data:image/jpeg;base64,${msg.data}`, url: typeof msg.url === 'string' ? msg.url : '', title: typeof msg.title === 'string' ? msg.title : '' }
+      const size = typeof msg.width === 'number' && typeof msg.height === 'number' && msg.width > 0 && msg.height > 0 ? { width: msg.width, height: msg.height } : {}
+      const frame: LiveFrame = { src: `data:image/jpeg;base64,${msg.data}`, url: typeof msg.url === 'string' ? msg.url : '', title: typeof msg.title === 'string' ? msg.title : '', ...size }
       if (!reduced) { show(frame); return }
       // Reduced motion: at most one frame a second, always ending on the newest.
       const wait = lastShown + REDUCED_MOTION_FRAME_MS - Date.now()
@@ -80,6 +115,12 @@ export function useBrowserLive(sessionId: string | null): BrowserLive {
       pending = undefined
       setLive({ status: 'idle', reason: REASONS.has(reason as BrowserIdleReason) ? reason as BrowserIdleReason : 'not_started' })
     })
+    source.addEventListener('control', (event) => {
+      let msg: { controlled?: unknown; reason?: unknown }
+      try { msg = JSON.parse((event as MessageEvent<string>).data) as typeof msg } catch { return }
+      if (typeof msg.controlled !== 'boolean') return
+      setControl({ controlled: msg.controlled, ...(typeof msg.reason === 'string' ? { reason: msg.reason as ControlEndReason } : {}) })
+    })
     source.addEventListener('error', (event) => {
       // A server `error` event (it carries data) ends the view; a dropped connection reconnects by itself.
       if ((event as MessageEvent<string>).data === undefined) return
@@ -87,9 +128,10 @@ export function useBrowserLive(sessionId: string | null): BrowserLive {
       setLive({ status: 'unavailable' })
     })
     return () => {
+      closed = true
       source.close()
       if (timer !== undefined) clearTimeout(timer)
     }
   }, [sessionId, visible, reduced])
-  return live
+  return control ? { ...live, control } : live
 }

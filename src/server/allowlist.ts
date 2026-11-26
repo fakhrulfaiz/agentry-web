@@ -71,6 +71,9 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'commands', { id: 'command' }] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'items'] },
   // The live browser view (`sessions/{id}/browser/live`, SSE) has its own route, like the event stream.
+  // Browser take-over: take or hand back control, and the user's input while they have it.
+  { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'browser', 'control'] },
+  { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'browser', 'input'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'turns'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT] },

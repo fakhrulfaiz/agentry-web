@@ -44,6 +44,7 @@ import type {
   UpdateAgentParams,
   UpdateScheduleParams,
 } from './types'
+import type { BrowserControlGrant, BrowserInputEvent } from '@/chat/browser-input'
 
 export const CSRF_HEADER = 'x-agentry-csrf'
 const AGENTRY = '/api/agentry'
@@ -493,6 +494,24 @@ export const api = {
   },
   async closeTerminal(id: string, terminalId: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}`)
+  },
+  /** Takes control of a chat's browser from the agent (`force` takes it from another tab). */
+  takeBrowserControl(sessionId: string, force = false): Promise<BrowserControlGrant> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(sessionId)}/browser/control`, { action: 'take', ...(force ? { force: true } : {}) })
+  },
+  /** Hands the browser back to the agent; `keepalive` so it still goes out while the page unloads. */
+  async releaseBrowserControl(sessionId: string, controlId: string): Promise<void> {
+    await fetch(`${AGENTRY}/agents/sessions/${seg(sessionId)}/browser/control`, {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/json', [CSRF_HEADER]: csrfToken() },
+      body: JSON.stringify({ action: 'release', control_id: controlId }),
+      credentials: 'same-origin',
+      keepalive: true,
+    }).catch(() => undefined)
+  },
+  /** The user's input to the browser while they have control (page CSS pixels, at most 50 events). */
+  async browserInput(sessionId: string, controlId: string, events: BrowserInputEvent[]): Promise<void> {
+    await request('POST', `${AGENTRY}/agents/sessions/${seg(sessionId)}/browser/input`, { control_id: controlId, events })
   },
   /** One page of an environment's files, A to Z. */
   listEnvironmentFiles(id: string, page?: string): Promise<SandboxPage<EnvironmentFile>> {
