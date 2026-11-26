@@ -235,10 +235,10 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
                     {has('image') && (
                       <Selector
                         label="Image preset"
-                        description="Web browser adds Chromium and Playwright MCP for agents with the browser turned on."
+                        description="Web and browser adds Chromium and Playwright MCP for agents with the browser turned on."
                         options={[
                           { value: 'standard', label: 'Standard', description: 'No browser; the smaller default image' },
-                          { value: 'browser', label: 'Web browser', description: 'Chromium and Playwright MCP' },
+                          { value: 'browser', label: 'Web and browser', description: 'Chromium and Playwright MCP' },
                           { value: 'custom', label: 'Custom image', description: 'Type a reference below' },
                         ]}
                         value={imageChoice}

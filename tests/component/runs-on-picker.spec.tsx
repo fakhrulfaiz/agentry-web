@@ -59,7 +59,7 @@ describe('template editor', () => {
     const user = userEvent.setup()
     open()
     await user.click(screen.getByRole('combobox', { name: /Image preset/ }))
-    await user.click(screen.getByRole('option', { name: /Web browser/ }))
+    await user.click(screen.getByRole('option', { name: /Web and browser/ }))
     expect(screen.getByRole('textbox', { name: /^Image/ })).toHaveValue(BROWSER_SANDBOX_IMAGE)
   })
 

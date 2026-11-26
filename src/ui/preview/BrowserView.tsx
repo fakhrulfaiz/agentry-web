@@ -55,7 +55,7 @@ function Page({ url, title }: { url: string; title?: string }) {
 /** Why the chat cannot browse, for the reasons that need the user to change something. */
 export const CANNOT_BROWSE: Partial<Record<BrowserIdleReason, { title: string; description: string }>> = {
   not_sandbox: { title: 'Only chats on a sandbox can use a browser', description: 'This chat runs on the server. Start a chat on a sandbox environment to let the agent browse.' },
-  no_browser: { title: 'This sandbox has no browser', description: 'Create the environment from the Web and browser template, or reset it from one.' },
+  no_browser: { title: 'This sandbox has no browser', description: 'Its image has no browser. Start a new chat on an environment made from the Web and browser template.' },
   browser_off: { title: 'The web browser is off for this agent', description: 'Turn on Web browser in the agent\'s Tools.' },
 }
 
