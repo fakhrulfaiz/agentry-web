@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -19,6 +19,10 @@ const TEMPLATE = { id: 'template' } as const
 const ENVIRONMENT = { id: 'environment' } as const
 const SKILL = { id: 'skill' } as const
 const TERMINAL = { id: 'terminal' } as const
+const TURN = { id: 'turn' } as const
+/** A file's position in a turn's changes. */
+const INDEX = { id: 'index' } as const
+const INDEX_SEGMENT = /^[0-9]{1,5}$/
 /** Installed skill ids Agentry issues. */
 const SKILL_ID = /^skill_[a-f0-9]{32}$/
 
@@ -35,6 +39,10 @@ const RULES: readonly Rule[] = [
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'artifacts'] },
   // Files the agent delivered with `present`; the cards list only these.
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'deliverables'] },
+  // Files each turn changed, and one file's diff.
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'changes'] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'turns', TURN, 'changes'] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'turns', TURN, 'changes', INDEX] },
   // Attachments: the upload has its own streaming route; content and delete go through the proxy.
   { methods: ['POST'], segments: ['agents', 'files'] },
   { methods: ['GET'], segments: ['agents', 'files', FILE, 'content'] },
@@ -86,6 +94,7 @@ function matches(rule: Segment, part: string): boolean {
   if (typeof rule === 'string') return rule === part
   if (!ID_SEGMENT.test(part)) return false
   if (rule.id === 'skill') return SKILL_ID.test(part)
+  if (rule.id === 'index') return INDEX_SEGMENT.test(part)
   return rule.id !== 'agent' || !RESERVED_AGENT_IDS.has(part)
 }
 

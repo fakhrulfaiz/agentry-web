@@ -141,6 +141,21 @@ describe('isAllowed', () => {
     }
   })
 
+  it('allows GET on the turn-changes routes only, with numeric indexes', () => {
+    for (const path of [`/agents/sessions/${ID}/changes`, `/agents/sessions/${ID}/turns/turn_12/changes`, `/agents/sessions/${ID}/turns/turn_12/changes/3`]) {
+      expect(isAllowed('GET', path), path).toBe(true)
+      expect(isAllowed('POST', path), path).toBe(false)
+      expect(isAllowed('DELETE', path), path).toBe(false)
+    }
+    for (const path of [
+      `/agents/sessions/${ID}/turns/turn_12/changes/abc`,
+      `/agents/sessions/${ID}/turns/turn_12/changes/-1`,
+      `/agents/sessions/${ID}/turns/turn_12/changes/123456`,
+      `/agents/sessions/${ID}/turns/turn_12/changes/1/x`,
+      `/agents/sessions/${ID}/turns/..%2F/changes`,
+    ]) expect(isAllowed('GET', path), path).toBe(false)
+  })
+
   it('serves session artifacts only through the list rule (bytes have their own validated route)', () => {
     expect(isAllowed('GET', `/agents/sessions/${ID}/artifacts`)).toBe(true)
     expect(isAllowed('POST', `/agents/sessions/${ID}/artifacts`)).toBe(false)

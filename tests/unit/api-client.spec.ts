@@ -242,6 +242,17 @@ describe('api client', () => {
     expect(lastCall().method).toBe('GET')
   })
 
+  it('reads the turn-changes routes', async () => {
+    fetchMock.mockImplementation(async () => Response.json({ object: 'list', data: [] }))
+    await api.sessionChanges('sesn_1')
+    expect(lastCall().url).toBe('/api/agentry/agents/sessions/sesn_1/changes')
+    await api.turnChanges('sesn_1', 'turn_4')
+    expect(lastCall().url).toBe('/api/agentry/agents/sessions/sesn_1/turns/turn_4/changes')
+    await api.turnChangeDiff('sesn_1', 'turn_4', 2)
+    expect(lastCall().url).toBe('/api/agentry/agents/sessions/sesn_1/turns/turn_4/changes/2')
+    expect(lastCall().method).toBe('GET')
+  })
+
   it('a network failure is an ApiError with status 0', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(api.cancel('s1')).rejects.toMatchObject({ status: 0, code: 'network_error' })

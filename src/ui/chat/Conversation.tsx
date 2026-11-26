@@ -20,6 +20,7 @@
  * (409 `session_setting_not_live`) keeps the draft, shows Agentry's message and
  * puts the menus back.
  */
+import { ChangesCard, changesPlacement } from './ChangesCard'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -401,6 +402,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const waiting = !closedReason && !failure?.unavailable && (loading || ((sent || state.status === 'in_progress') && !liveActivity))
   const retries = retryTexts(state.items)
   const entries = groupTurns(split.items, state.turnOf, state.turns)
+  const changesAt = changesPlacement(entries, state.turnOf, state.turns)
   // A chat with nothing in it yet has no trajectory to switch to (unknown while its history loads).
   const blank = loaded && state.items.length === 0 && state.turns.length === 0
   const shown: View = blank ? 'chat' : view
@@ -453,7 +455,9 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             <SubagentItems.Provider value={subagentItems}>
               <SubagentActions.Provider value={split.bySubagent}>
               <ChatMessageList isStreaming={streaming}>
-                {entries.map((entry) => {
+                {entries.map((entry, entryIndex) => {
+                  const changes = changesAt.get(entryIndex)
+                  const card = changes && sessionId && ready ? <ChangesCard key={`changes-${changes.turnId}`} sessionId={sessionId} turnId={changes.turnId} completed={changes.completed} /> : null
                   const row = (view: MessageView) => {
                     const retryText = retries.get(view.id)
                     return (
@@ -467,8 +471,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                       />
                     )
                   }
-                  if (entry.type === 'view') return row(entry.view)
-                  return (
+                  if (entry.type === 'view') return card ? [row(entry.view), card] : row(entry.view)
+                  const group = (
                     <TurnGroup
                       key={`group-${entry.turnId}`}
                       group={entry}
@@ -485,6 +489,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                       {entry.views.map(row)}
                     </TurnGroup>
                   )
+                  return card ? [group, card] : group
                 })}
                 {waiting && <Thinking label={loading && state.items.length === 0 ? 'Loading conversation…' : 'Agentry is thinking…'} />}
                 {/* The files the agent created, as a card at the end of the chat (claude.ai's

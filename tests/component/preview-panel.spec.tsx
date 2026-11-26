@@ -7,7 +7,11 @@ import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
 import { PreviewPanel } from '@/ui/preview/PreviewPanel'
 
 vi.mock('@/api/client', () => ({
-  api: { listSessionArtifacts: vi.fn(async () => ({ object: 'list', data: [{ path: 'a.md' }, { path: 'b.py' }] })) },
+  api: {
+    listSessionArtifacts: vi.fn(async () => ({ object: 'list', data: [{ path: 'a.md' }, { path: 'b.py' }] })),
+    sessionChanges: vi.fn(async () => ({ object: 'list', data: [] })),
+  },
+  ApiError: class extends Error {},
 }))
 
 afterEach(() => {
@@ -84,5 +88,19 @@ describe('PreviewPanel start page and terminals', () => {
     expect(screen.getAllByTestId('fake-terminal')).toHaveLength(2)
     await userEvent.click(screen.getByRole('button', { name: 'Close Terminal 1' }))
     expect(screen.getAllByTestId('fake-terminal')).toHaveLength(1)
+  })
+
+  it('opens the Changes tab from the Start page, and says changes are kept until a restart', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('hello')))
+    render(
+      <PreviewPanelProvider sessionId="s1">
+        <Controls />
+        <PreviewPanel sessionId="s1" idle />
+      </PreviewPanelProvider>,
+    )
+    act(() => controls!.showStart())
+    await userEvent.click(await screen.findByRole('button', { name: /Changes/ }))
+    expect(await screen.findByText('No changes yet')).toBeInTheDocument()
+    expect(screen.getAllByText(/kept until the server restarts/).length).toBeGreaterThan(0)
   })
 })

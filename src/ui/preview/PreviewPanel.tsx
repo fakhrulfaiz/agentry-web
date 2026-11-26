@@ -41,6 +41,8 @@ import { usePanelConversation } from '@/chat/panel-data'
 import { todoCount } from '@/chat/todos'
 import { PlanTab, SubagentTab, TasksTab } from './PanelTabs'
 import { BROWSER_TITLE, BROWSER_VIEW, BrowserTab } from './BrowserView'
+import { ChangesStartCard, ChangesTab, DiffView, officeKind } from './ChangesPanel'
+import { parseDiffKey } from '@/preview/diff'
 import { FileTree } from './FileTree'
 import { RendererBody } from './renderers'
 
@@ -149,14 +151,15 @@ const extOf = (path: string) => path.slice(path.lastIndexOf('.') + 1).toUpperCas
 
 /** Preview-side renderers vs code-side ones, for the two-way header switch. */
 const SIDE: Record<RendererId, 'preview' | 'code'> = {
-  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', pdf: 'preview', docx: 'preview', download: 'preview',
-  code: 'code', source: 'code', text: 'code',
+  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', pdf: 'preview', officePdf: 'preview', download: 'preview',
+  code: 'code', source: 'code', text: 'code', docx: 'code',
 }
 const TEXT_LIKE = new Set<RendererId>(['markdown', 'html', 'table', 'json', 'code', 'source', 'text'])
 
 function kindOf(path: string, id: RendererId): { label: string; icon: IconType } {
   if (id === 'image') return { label: 'Image', icon: PhotoIcon }
   if (id === 'pdf') return { label: 'PDF', icon: DocumentIcon }
+  if (id === 'officePdf') return officeKind(path)
   if (id === 'table') return { label: 'Table', icon: TableCellsIcon }
   if (id === 'markdown' || id === 'docx') return { label: 'Document', icon: DocumentTextIcon }
   if (id === 'download') return { label: 'File', icon: DocumentIcon }
@@ -216,7 +219,7 @@ function FileView({
           {switchable && (
             <ToggleButtonGroup label="View" size="sm" value={SIDE[id]} onChange={(v) => typeof v === 'string' && setChosen(v === 'preview' ? previewId! : codeId!)}>
               <ToggleButton value="preview" label="Preview" />
-              <ToggleButton value="code" label="Code" />
+              <ToggleButton value="code" label={codeId === 'docx' ? 'Text' : 'Code'} />
             </ToggleButtonGroup>
           )}
           <IconButton label={copied ? 'Copied' : 'Copy'} tooltip={copied ? 'Copied' : 'Copy'} variant="ghost" size="sm" icon={<Icon icon={copied ? CheckIcon : ClipboardDocumentIcon} size="sm" />} onClick={() => void copy()} />
@@ -280,6 +283,7 @@ function StartPage({ canTerminal }: { canTerminal: boolean }) {
           <Text type="supporting" color="secondary">Pages the agent’s web browser visited</Text>
         </span>
       </button>
+      <ChangesStartCard />
     </div>
   )
 }
@@ -412,7 +416,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
             </div>
             <div {...stylex.props(styles.divider)} />
             <div {...stylex.props(styles.filesPage)}>
-              {activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+              {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
             </div>
           </>
         ) : onTerminal ? null : showingFiles ? (

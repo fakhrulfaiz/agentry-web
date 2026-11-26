@@ -610,6 +610,61 @@ export interface SessionDeliverableList {
   data: SessionDeliverableEntry[]
 }
 
+/** One file a turn changed (`GET /v1/agents/sessions/{id}/turns/{turn_id}/changes`). */
+export interface TurnChangedFile {
+  /** Index for the diff route. */
+  index: number
+  /** Workspace-relative. */
+  path: string
+  display: string
+  added: number
+  deleted: number
+  binary?: true
+  oversized?: true
+}
+
+/** The files a turn changed; `available: false` when nothing was recorded or the API restarted (kept in memory only). */
+export interface TurnChanges {
+  object: 'agent.session.turn.changes'
+  turn_id: string
+  available: boolean
+  total: number
+  added: number
+  deleted: number
+  /** Changed files outside the workspace: counted, never listed. */
+  outside: number
+  files: TurnChangedFile[]
+}
+
+export interface TurnChangesListEntry {
+  turn_id: string
+  total: number
+  added: number
+  deleted: number
+  outside: number
+}
+
+export interface TurnChangeHunk {
+  old_start: number
+  old_lines: number
+  new_start: number
+  new_lines: number
+  /** Each line keeps its `+`, `-` or space prefix. */
+  lines: string[]
+}
+
+/** One changed file before and after a turn. */
+export interface TurnChangeDiff {
+  object: 'agent.session.turn.change'
+  kind: 'text' | 'binary' | 'oversized'
+  path: string
+  display: string
+  before?: boolean
+  after?: boolean
+  hunks?: TurnChangeHunk[]
+  coarse?: boolean
+}
+
 export interface SessionArtifactList {
   object: 'list'
   data: SessionArtifactEntry[]
