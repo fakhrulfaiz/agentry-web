@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-27: Connectors: Featured lists only apps you have not connected yet (connected ones were shown twice), and category names keep their acronyms ("CRM", not "Crm").
 - 2026-11-27: Create dialogs: "Runs on" in New environment and New template offers just the two kinds (This server, Isolated sandbox); a sandbox's places (Local Docker, GPU box, ...) are a "Where it runs" dropdown under the chosen card instead of extra cards beside them, with each place's kind, GPUs or why it is unavailable. The agent form lists tools by readable names ("Load workspace dependencies" instead of `load_workspace_dependencies`).
 - 2026-11-27: Fixed: on a phone the side panel kept its desktop width and its right side (the close button, row statuses) was cut off; it now fills the screen.
 - 2026-11-27: Sidebar: chats are grouped Today, Yesterday, Previous 7 days, Previous 30 days and Older; a chat's options menu shows on the open chat and appears on the others under the pointer or keyboard focus, instead of on every row; the nav icons are one outline set; the footer is just the account menu (Settings lives in it).

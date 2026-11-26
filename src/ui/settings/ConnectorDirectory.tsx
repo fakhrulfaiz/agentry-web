@@ -158,6 +158,8 @@ export function ConnectorDirectory({
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   const connectedSet = useMemo(() => new Set(connected ?? []), [connected]);
+  // Featured suggests apps to add: the ones already connected are listed above it.
+  const featuredToConnect = useMemo(() => featured.filter((e) => !connectedSet.has(e.slug)), [featured, connectedSet]);
   const categories = useMemo(() => topCategories(entries), [entries]);
   const connectedEntries = useMemo(
     () => entries.filter((e) => connectedSet.has(e.slug)),
@@ -264,13 +266,13 @@ export function ConnectorDirectory({
         </VStack>
       )}
 
-      {!filtering && featured.length > 0 && (
+      {!filtering && featuredToConnect.length > 0 && (
         <VStack gap={3} as="section" aria-labelledby="connectors-featured">
           <Heading level={2} type="display-3" id="connectors-featured">
             Featured
           </Heading>
           <Grid
-            entries={featured}
+            entries={featuredToConnect}
             connected={connectedSet}
             label="Featured connectors"
           />
