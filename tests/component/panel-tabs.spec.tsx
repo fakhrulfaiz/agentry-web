@@ -85,7 +85,7 @@ describe('Plan tab', () => {
     mount(data({ todos: [{ content: 'Write tests', status: 'completed' }, { content: 'Ship it', status: 'in_progress' }] }))
     act(() => controls!.showStart())
     const entry = await screen.findByRole('button', { name: /^Plan/ })
-    expect(entry).toHaveTextContent('Plan (1/2)')
+    expect(entry).toHaveTextContent('1/2 done')
     await userEvent.click(entry)
     const list = await screen.findByTestId('plan-list')
     expect(within(list).getByText('Write tests')).toBeInTheDocument()

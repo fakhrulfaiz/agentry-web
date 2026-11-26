@@ -76,19 +76,6 @@ export function officeKind(path: string): { label: string; icon: IconType } {
 }
 
 /** Start-page card that opens the Changes tab. */
-export function ChangesStartCard() {
-  const { actions } = usePreviewPanel()
-  return (
-    <button type="button" onClick={() => actions.openView('changes', 'Changes')} {...stylex.props(styles.startCard)}>
-      <Icon icon={PencilSquareIcon} size="md" />
-      <span {...stylex.props(styles.titles)}>
-        <Text weight="medium">Changes</Text>
-        <Text type="supporting" color="secondary">Files each turn changed, with diffs</Text>
-      </span>
-    </button>
-  )
-}
-
 const MEMORY_NOTE = 'Changes are kept until the server restarts.'
 
 /** Every turn of the chat that changed files, newest first; each expands to its files. */

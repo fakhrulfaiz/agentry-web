@@ -6,6 +6,7 @@
  * and, on the right, a Preview | Code switch with icon actions. The sandbox tree
  * opens beside the file from the folder icon. Resizable; Escape closes it.
  */
+import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { Text } from '@astryxdesign/core/Text'
@@ -27,6 +28,10 @@ import {
   CommandLineIcon,
   TableCellsIcon,
   XMarkIcon,
+  HomeIcon,
+  PencilSquareIcon,
+  DocumentMagnifyingGlassIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePrefersReducedMotion } from '@/ui/chat/use-reduced-motion'
@@ -41,7 +46,7 @@ import { usePanelConversation } from '@/chat/panel-data'
 import { todoCount } from '@/chat/todos'
 import { PlanTab, SubagentTab, TasksTab } from './PanelTabs'
 import { BROWSER_TITLE, BROWSER_VIEW, BrowserTab } from './BrowserView'
-import { ChangesStartCard, ChangesTab, DiffView, officeKind } from './ChangesPanel'
+import { ChangesTab, DiffView, officeKind } from './ChangesPanel'
 import { parseDiffKey } from '@/preview/diff'
 import { FileTree } from './FileTree'
 import { RendererBody } from './renderers'
@@ -95,52 +100,81 @@ const styles = stylex.create({
   },
   titles: { minWidth: 0, display: 'flex', flexDirection: 'column' },
   actions: { display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 },
+  strip: {
+    display: 'flex',
+    alignItems: 'stretch',
+    flexShrink: 0,
+    height: 40,
+    borderBottomWidth: 1,
+    borderBottomStyle: 'solid',
+    borderBottomColor: colorVars['--color-border'],
+  },
   tabs: {
     display: 'flex',
-    gap: 4,
-    padding: '0 12px 8px',
+    alignItems: 'stretch',
+    flex: 1,
+    minWidth: 0,
     overflowX: 'auto',
-    flexShrink: 0,
+    scrollbarWidth: 'none',
   },
-  chip: {
+  stripEnd: { display: 'flex', alignItems: 'center', paddingInline: 6, flexShrink: 0 },
+  tab: {
     display: 'flex',
     alignItems: 'center',
-    maxWidth: 180,
-    borderRadius: radiusVars['--radius-element'],
-    paddingInlineStart: 10,
-    cursor: 'pointer',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: colorVars['--color-border'],
+    gap: 6,
+    flexShrink: 0,
+    maxWidth: 200,
+    paddingInlineStart: 12,
+    paddingInlineEnd: 4,
+    color: colorVars['--color-text-secondary'],
+    borderBottomWidth: 2,
+    borderBottomStyle: 'solid',
+    borderBottomColor: 'transparent',
+    backgroundColor: { default: 'transparent', ':hover': colorVars['--color-background-muted'] },
   },
-  chipActive: { backgroundColor: colorVars['--color-background-muted'] },
-  chipLabel: { all: 'unset', cursor: 'pointer', minWidth: 0, paddingBlock: 4 },
+  tabActive: { color: colorVars['--color-text-primary'], borderBottomColor: colorVars['--color-accent'] },
+  tabHome: { paddingInlineEnd: 12 },
+  tabLabel: {
+    all: 'unset',
+    cursor: 'pointer',
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    height: '100%',
+    outlineStyle: { default: 'none', ':focus-visible': 'solid' },
+    outlineWidth: 2,
+    outlineOffset: -2,
+    outlineColor: colorVars['--color-accent'],
+  },
   divider: { height: 1, flexShrink: 0, backgroundColor: colorVars['--color-border'] },
   body: { flex: 1, minHeight: 0, display: 'flex' },
   tree: { width: 232, flexShrink: 0, overflow: 'auto', borderInlineEnd: `1px solid ${colorVars['--color-border']}` },
   content: { flex: 1, minWidth: 0, position: 'relative', overflow: 'auto' },
   filesPage: { flex: 1, minWidth: 0, overflow: 'auto', padding: 8 },
-  startPage: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
-  startCard: {
+  startPage: { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 20, padding: '20px 12px' },
+  startSection: { display: 'flex', flexDirection: 'column', gap: 2 },
+  startHeading: { paddingInline: 8, paddingBottom: 4 },
+  startRow: {
     all: 'unset',
     boxSizing: 'border-box',
-    width: '100%',
-    maxWidth: 380,
+    textAlign: 'start',
     display: 'flex',
     alignItems: 'center',
     gap: 12,
-    padding: '12px 16px',
+    padding: '10px 8px',
     cursor: 'pointer',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: colorVars['--color-border'],
-    borderRadius: radiusVars['--radius-container'],
-    backgroundColor: { default: colorVars['--color-background-card'], ':hover': colorVars['--color-background-muted'] },
+    borderRadius: radiusVars['--radius-element'],
+    color: colorVars['--color-text-primary'],
+    backgroundColor: { default: 'transparent', ':hover': colorVars['--color-background-muted'] },
     outlineStyle: { default: 'none', ':focus-visible': 'solid' },
     outlineWidth: 2,
     outlineColor: colorVars['--color-accent'],
   },
-  startCardOff: { cursor: 'default', opacity: 0.55 },
+  startRowOff: { cursor: 'default', opacity: 0.55, backgroundColor: 'transparent' },
+  startIcon: { flexShrink: 0, color: colorVars['--color-text-secondary'], display: 'flex' },
+  startText: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'start' },
+  startStatus: { flexShrink: 0, maxWidth: 160, display: 'flex', alignItems: 'center', gap: 4, color: colorVars['--color-text-secondary'] },
   termPane: { flex: 1, minHeight: 0, flexDirection: 'column' },
 })
 
@@ -225,7 +259,6 @@ function FileView({
           <IconButton label={copied ? 'Copied' : 'Copy'} tooltip={copied ? 'Copied' : 'Copy'} variant="ghost" size="sm" icon={<Icon icon={copied ? CheckIcon : ClipboardDocumentIcon} size="sm" />} onClick={() => void copy()} />
           <IconButton label="Download" tooltip="Download" variant="ghost" size="sm" href={fileUrl(sessionId, path, true)} icon={<Icon icon={ArrowDownTrayIcon} size="sm" />} />
           <IconButton label="Files" tooltip="Files" variant="ghost" size="sm" icon={<Icon icon={FolderIcon} size="sm" />} onClick={actions.toggleTree} />
-          <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
         </div>
       </div>
       <div {...stylex.props(styles.divider)} />
@@ -243,47 +276,94 @@ function FileView({
   )
 }
 
-function StartPage({ canTerminal }: { canTerminal: boolean }) {
-  const { actions } = usePreviewPanel()
-  const count = todoCount(usePanelConversation().todos)
+function StartRow({
+  icon, title, description, status, onOpen, disabled,
+}: { icon: IconType; title: string; description: string; status?: string; onOpen(): void; disabled?: boolean }) {
+  return (
+    <button type="button" aria-disabled={disabled} onClick={disabled ? undefined : onOpen} {...stylex.props(styles.startRow, disabled && styles.startRowOff)}>
+      <span {...stylex.props(styles.startIcon)}><Icon icon={icon} size="md" /></span>
+      <span {...stylex.props(styles.startText)}>
+        <Text weight="medium">{title}</Text>
+        <Text type="supporting" color="secondary" maxLines={1}>{description}</Text>
+      </span>
+      {status && (
+        <span {...stylex.props(styles.startStatus)}>
+          <Text type="supporting" color="secondary" maxLines={1}>{status}</Text>
+        </span>
+      )}
+      {!disabled && <span {...stylex.props(styles.startIcon)}><Icon icon={ChevronRightIcon} size="sm" /></span>}
+    </button>
+  )
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${String(n)} ${n === 1 ? one : many}`
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host || url
+  } catch {
+    return url
+  }
+}
+
+/** The panel's home: what this chat's workspace holds, each row with its live status. */
+function StartPage({ canTerminal, fileCount }: { canTerminal: boolean; fileCount: number }) {
+  const { state, actions } = usePreviewPanel()
+  const { tasks, todos, browser } = usePanelConversation()
+  const running = tasks.filter((t) => t.status === 'running').length
+  const waiting = tasks.reduce((n, t) => n + t.waiting, 0)
+  const count = todoCount(todos)
+  const taskStatus = waiting > 0 ? `${plural(waiting, 'approval')} waiting` : running > 0 ? `${String(running)} running` : tasks.length > 0 ? `${String(tasks.length)} finished` : undefined
   return (
     <div {...stylex.props(styles.startPage)} data-testid="preview-start">
-      <button type="button" onClick={actions.showFiles} {...stylex.props(styles.startCard)}>
-        <Icon icon={FolderIcon} size="md" />
-        <span {...stylex.props(styles.titles)}>
-          <Text weight="medium">Workspace files</Text>
-          <Text type="supporting" color="secondary">Browse files in this chat’s workspace</Text>
-        </span>
+      <div {...stylex.props(styles.startSection)}>
+        <span {...stylex.props(styles.startHeading)}><Text type="supporting" weight="medium" color="secondary">Workspace</Text></span>
+        <StartRow icon={FolderIcon} title="Files" description="Everything in this chat’s workspace" status={fileCount > 0 ? plural(fileCount, 'file') : undefined} onOpen={actions.showFiles} />
+        <StartRow
+          icon={CommandLineIcon}
+          title="Terminal"
+          description={canTerminal ? 'A shell in this chat’s sandbox' : 'Only chats that run in a sandbox have a terminal'}
+          status={canTerminal && state.terminals.length > 0 ? `${String(state.terminals.length)} open` : undefined}
+          onOpen={actions.openTerminal}
+          disabled={!canTerminal}
+        />
+        <StartRow
+          icon={GlobeAltIcon}
+          title="Browser"
+          description="Pages the agent’s web browser visited"
+          status={browser.running ? 'Browsing…' : browser.current ? hostOf(browser.current.url) : undefined}
+          onOpen={() => actions.openView(BROWSER_VIEW, BROWSER_TITLE)}
+        />
+      </div>
+      <div {...stylex.props(styles.startSection)}>
+        <span {...stylex.props(styles.startHeading)}><Text type="supporting" weight="medium" color="secondary">This chat</Text></span>
+        <StartRow icon={UserGroupIcon} title="Tasks" description="Subagents this chat started" status={taskStatus} onOpen={() => actions.openView('tasks', 'Tasks')} />
+        <StartRow icon={ListBulletIcon} title="Plan" description="The agent’s to-do list" status={count ? `${count} done` : undefined} onOpen={() => actions.openView('plan', 'Plan')} />
+        <StartRow icon={PencilSquareIcon} title="Changes" description="Files each turn changed, with diffs" onOpen={() => actions.openView('changes', 'Changes')} />
+      </div>
+    </div>
+  )
+}
+
+/** The icon a tab shows, by what it holds. */
+function viewIcon(key: string): IconType {
+  if (key === 'tasks' || key.startsWith('sub:')) return UserGroupIcon
+  if (key === 'plan') return ListBulletIcon
+  if (key === 'changes') return PencilSquareIcon
+  if (key.startsWith('diff:')) return DocumentMagnifyingGlassIcon
+  if (key === BROWSER_VIEW) return GlobeAltIcon
+  return DocumentIcon
+}
+
+function Tab({
+  icon, label, active, onSelect, onClose, home, onDoubleClick,
+}: { icon: IconType; label: string; active: boolean; onSelect(): void; onClose?: () => void; home?: boolean; onDoubleClick?: () => void }) {
+  return (
+    <div {...stylex.props(styles.tab, active && styles.tabActive, home && styles.tabHome)}>
+      <button type="button" role="tab" aria-selected={active} aria-label={home ? label : undefined} title={label} onClick={onSelect} onDoubleClick={onDoubleClick} {...stylex.props(styles.tabLabel)}>
+        <Icon icon={icon} size="sm" />
+        {!home && <Text type="supporting" weight={active ? 'medium' : undefined} maxLines={1}>{label}</Text>}
       </button>
-      <button type="button" aria-disabled={!canTerminal} onClick={canTerminal ? actions.openTerminal : undefined} {...stylex.props(styles.startCard, !canTerminal && styles.startCardOff)}>
-        <Icon icon={CommandLineIcon} size="md" />
-        <span {...stylex.props(styles.titles)}>
-          <Text weight="medium">New terminal</Text>
-          <Text type="supporting" color="secondary">{canTerminal ? 'Run commands in this chat’s sandbox' : 'Only chats that run in a sandbox have a terminal'}</Text>
-        </span>
-      </button>
-      <button type="button" onClick={() => actions.openView('tasks', 'Tasks')} {...stylex.props(styles.startCard)}>
-        <Icon icon={UserGroupIcon} size="md" />
-        <span {...stylex.props(styles.titles)}>
-          <Text weight="medium">Tasks</Text>
-          <Text type="supporting" color="secondary">Subagents this chat started</Text>
-        </span>
-      </button>
-      <button type="button" onClick={() => actions.openView('plan', 'Plan')} {...stylex.props(styles.startCard)}>
-        <Icon icon={ListBulletIcon} size="md" />
-        <span {...stylex.props(styles.titles)}>
-          <Text weight="medium">Plan{count ? ` (${count})` : ''}</Text>
-          <Text type="supporting" color="secondary">The agent’s to-do list</Text>
-        </span>
-      </button>
-      <button type="button" onClick={() => actions.openView(BROWSER_VIEW, BROWSER_TITLE)} {...stylex.props(styles.startCard)}>
-        <Icon icon={GlobeAltIcon} size="md" />
-        <span {...stylex.props(styles.titles)}>
-          <Text weight="medium">Browser</Text>
-          <Text type="supporting" color="secondary">Pages the agent’s web browser visited</Text>
-        </span>
-      </button>
-      <ChangesStartCard />
+      {onClose && <IconButton label={`Close ${label}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />}
     </div>
   )
 }
@@ -362,104 +442,37 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
         {...stylex.props(styles.grip)}
       />
       <div {...stylex.props(styles.card)}>
-        {state.tabs.length + state.terminals.length + state.views.length > 1 && (
-          <div role="tablist" aria-label="Open tabs" {...stylex.props(styles.tabs)} style={{ paddingTop: 8 }}>
+        <div {...stylex.props(styles.strip)}>
+          <div role="tablist" aria-label="Open tabs" {...stylex.props(styles.tabs)}>
+            <Tab icon={HomeIcon} label="Start" home active={state.active === 'start'} onSelect={actions.showStart} />
+            {state.filesOpen && <Tab icon={FolderIcon} label="Files" active={showingFiles} onSelect={actions.showFiles} onClose={actions.closeFiles} />}
             {state.tabs.map((t) => (
-              <div key={t.path} {...stylex.props(styles.chip, state.active === t.path && styles.chipActive)}>
-                <button type="button" role="tab" aria-selected={state.active === t.path} onClick={() => actions.openFile(t.path)} onDoubleClick={() => actions.pinTab(t.path)} {...stylex.props(styles.chipLabel)}>
-                  <Text type="supporting" maxLines={1}>{basename(t.path)}</Text>
-                </button>
-                <IconButton label={`Close ${basename(t.path)}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeTab(t.path)} />
-              </div>
+              <Tab key={t.path} icon={kindOf(t.path, renderersFor(basename(t.path)).default).icon} label={basename(t.path)} active={state.active === t.path} onSelect={() => actions.openFile(t.path)} onDoubleClick={() => actions.pinTab(t.path)} onClose={() => actions.closeTab(t.path)} />
             ))}
             {state.terminals.map((t) => (
-              <div key={t.key} {...stylex.props(styles.chip, state.active === `term:${t.key}` && styles.chipActive)}>
-                <button type="button" role="tab" aria-selected={state.active === `term:${t.key}`} onClick={() => actions.selectTerminal(t.key)} {...stylex.props(styles.chipLabel)}>
-                  <Text type="supporting" maxLines={1}>{t.title}</Text>
-                </button>
-                <IconButton label={`Close ${t.title}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeTerminal(t.key)} />
-              </div>
+              <Tab key={t.key} icon={CommandLineIcon} label={t.title} active={state.active === `term:${t.key}`} onSelect={() => actions.selectTerminal(t.key)} onClose={() => actions.closeTerminal(t.key)} />
             ))}
             {state.views.map((v) => (
-              <div key={v.key} {...stylex.props(styles.chip, state.active === `view:${v.key}` && styles.chipActive)}>
-                <button type="button" role="tab" aria-selected={state.active === `view:${v.key}`} onClick={() => actions.openView(v.key, v.title)} {...stylex.props(styles.chipLabel)}>
-                  <Text maxLines={1}>{v.title}</Text>
-                </button>
-                <IconButton label={`Close ${v.title}`} variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={() => actions.closeView(v.key)} />
-              </div>
+              <Tab key={v.key} icon={viewIcon(v.key)} label={v.title} active={state.active === `view:${v.key}`} onSelect={() => actions.openView(v.key, v.title)} onClose={() => actions.closeView(v.key)} />
             ))}
-            <IconButton label="New tab" tooltip="New tab" variant="ghost" size="sm" icon={<Icon icon={PlusIcon} size="sm" />} onClick={actions.showStart} />
           </div>
-        )}
+          <div {...stylex.props(styles.stripEnd)}>
+            {onTerminal && <IconButton label="New terminal" tooltip="New terminal" variant="ghost" size="sm" icon={<Icon icon={PlusIcon} size="sm" />} onClick={actions.openTerminal} />}
+            <IconButton label="Close panel" tooltip="Close panel" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
+          </div>
+        </div>
         {state.active === 'start' ? (
-          <>
-            <div {...stylex.props(styles.header)}>
-              <div {...stylex.props(styles.identity)}>
-                <Text weight="medium">Start</Text>
-              </div>
-              <div {...stylex.props(styles.actions)}>
-                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
-              </div>
-            </div>
-            <div {...stylex.props(styles.divider)} />
-            <StartPage canTerminal={environmentId !== undefined} />
-          </>
+          <StartPage canTerminal={environmentId !== undefined} fileCount={entries.length} />
         ) : activeView ? (
-          <>
-            <div {...stylex.props(styles.header)}>
-              <div {...stylex.props(styles.identity)}>
-                <Text weight="medium">{activeView.title}</Text>
-              </div>
-              <div {...stylex.props(styles.actions)}>
-                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
-              </div>
-            </div>
-            <div {...stylex.props(styles.divider)} />
-            <div {...stylex.props(styles.filesPage)}>
-              {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
-            </div>
-          </>
+          <div {...stylex.props(styles.filesPage)}>
+            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+          </div>
         ) : onTerminal ? null : showingFiles ? (
-          <>
-            <div {...stylex.props(styles.header)}>
-              <div {...stylex.props(styles.identity)}>
-                <span {...stylex.props(styles.tile)}>
-                  <Icon icon={FolderIcon} size="md" />
-                </span>
-                <div {...stylex.props(styles.titles)}>
-                  <Text weight="medium">Files</Text>
-                  <Text type="supporting" color="secondary">In this chat’s sandbox</Text>
-                </div>
-              </div>
-              <div {...stylex.props(styles.actions)}>
-                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
-              </div>
-            </div>
-            <div {...stylex.props(styles.divider)} />
-            <div {...stylex.props(styles.filesPage)}>
-              <FileTree tree={tree} onOpen={actions.openFile} />
-            </div>
-          </>
+          <div {...stylex.props(styles.filesPage)}>
+            {tree.length === 0 ? <EmptyState title="No files yet" description="Files the agent writes in this chat’s workspace appear here." headingLevel={2} /> : <FileTree tree={tree} onOpen={actions.openFile} />}
+          </div>
         ) : (
           <FileView sessionId={sessionId} path={state.active} size={entries.find((e) => e.path === state.active)?.size} tree={tree} reloadKey={reloadKey} onMissing={load} />
-        )}
-        {onTerminal && (
-          <>
-            <div {...stylex.props(styles.header)}>
-              <div {...stylex.props(styles.identity)}>
-                <span {...stylex.props(styles.tile)}><Icon icon={CommandLineIcon} size="md" /></span>
-                <div {...stylex.props(styles.titles)}>
-                  <Text weight="medium">{state.terminals.find((t) => `term:${t.key}` === state.active)?.title ?? 'Terminal'}</Text>
-                  <Text type="supporting" color="secondary">A shell in this chat’s sandbox</Text>
-                </div>
-              </div>
-              <div {...stylex.props(styles.actions)}>
-                <IconButton label="New terminal" tooltip="New terminal" variant="ghost" size="sm" icon={<Icon icon={PlusIcon} size="sm" />} onClick={actions.openTerminal} />
-                <IconButton label="Close preview" tooltip="Close" variant="ghost" size="sm" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={actions.close} />
-              </div>
-            </div>
-            <div {...stylex.props(styles.divider)} />
-          </>
         )}
         {environmentId !== undefined && state.terminals.map((t) => (
           // Every terminal stays mounted so its shell survives switching tabs; closing the tab closes the shell.
