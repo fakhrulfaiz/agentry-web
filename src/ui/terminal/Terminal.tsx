@@ -87,7 +87,13 @@ export function Terminal({ environmentId, isDisabled = false, variant = 'inline'
       term.write('\r\n\x1b[2m[session ended]\x1b[0m\r\n')
       setPhase('ended')
     })
-    // A dropped stream is not a reconnect: the API replays the screen to a new reader, so reopen the view.
+    // EventSource reconnects by itself after a drop, and the API replays the retained output to every new
+    // reader, so a reconnect starts from a clean screen instead of writing the replay on top of it.
+    let opened = false
+    source.addEventListener('open', () => {
+      if (opened) term.reset()
+      opened = true
+    })
     source.onerror = () => {
       if (source.readyState === EventSource.CLOSED) setPhase((cur) => (cur === 'open' ? 'ended' : cur))
     }

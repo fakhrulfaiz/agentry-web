@@ -13,7 +13,7 @@ const apiMock = vi.hoisted(() => ({
 }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 
-const xterm = vi.hoisted(() => ({ onData: undefined as ((d: string) => void) | undefined, written: [] as unknown[], disposed: false }))
+const xterm = vi.hoisted(() => ({ onData: undefined as ((d: string) => void) | undefined, written: [] as unknown[], disposed: false, resets: 0 }))
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80
@@ -22,6 +22,7 @@ vi.mock('@xterm/xterm', () => ({
     open() {}
     focus() {}
     write(d: unknown) { xterm.written.push(d) }
+    reset() { xterm.resets += 1; xterm.written = [] }
     onData(fn: (d: string) => void) { xterm.onData = fn; return { dispose() {} } }
     onResize() { return { dispose() {} } }
     dispose() { xterm.disposed = true }
@@ -53,6 +54,7 @@ beforeEach(() => {
   apiMock.closeTerminal.mockResolvedValue(undefined)
   xterm.written = []
   xterm.disposed = false
+  xterm.resets = 0
 })
 afterEach(() => {
   cleanup()
@@ -74,6 +76,21 @@ describe('Terminal', () => {
     await user.click(screen.getByRole('button', { name: 'Close' }))
     expect(apiMock.closeTerminal).toHaveBeenCalledWith('env_1', 'term_1')
     expect(xterm.disposed).toBe(true)
+  })
+
+  it('clears the screen when the stream reconnects, since the API replays the retained output', async () => {
+    const user = userEvent.setup()
+    render(<Terminal environmentId="env_1" />)
+    await user.click(screen.getByRole('button', { name: 'Open terminal' }))
+    await waitFor(() => expect(FakeSource.last).toBeDefined())
+    FakeSource.last.emit('open', {})
+    FakeSource.last.emit('output', { data: btoa('hi') })
+    expect(xterm.resets).toBe(0)
+    // EventSource reconnected by itself after a drop: the replay must not be written on top of the old screen.
+    FakeSource.last.emit('open', {})
+    expect(xterm.resets).toBe(1)
+    FakeSource.last.emit('output', { data: btoa('hi') })
+    expect(xterm.written).toHaveLength(1)
   })
 
   it('says so when the shell ends, and offers a new one', async () => {
