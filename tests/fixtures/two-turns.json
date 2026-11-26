@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic, shaped like the real backend (see tests/fixtures/live/web-search.json): the stream carries status, turn and assistant-message frames only; user messages, reasoning, function calls and outputs exist only in `items` (GET /items, log order). A saved assistant message repeats its step's reasoning in front of its text.",
+  "note": "Synthetic, shaped like the backend before 2026-11-26 (see tests/fixtures/live/web-search.json): the stream carries status, turn and assistant-message frames only; user messages, reasoning, function calls and outputs exist only in `items` (GET /items, log order). Assistant message text no longer repeats its step's reasoning (cleaned 2026-11-26, as the backend now sends it).",
   "sessionId": "sess_fixture",
   "historyThrough": 12,
   "frames": [
@@ -499,7 +499,7 @@
       "content": [
         {
           "type": "output_text",
-          "text": "The user wants a greeting.Hello, world!"
+          "text": "Hello, world!"
         }
       ],
       "status": "completed",

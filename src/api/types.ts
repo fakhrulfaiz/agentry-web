@@ -551,6 +551,12 @@ export type OAISessionEvent =
   | { type: 'agent.session.turn.output_text.delta'; event_id: string; item_id: string; output_index: number; content_index: number; session_id: string; turn_id: string; delta: string }
   | { type: 'agent.session.turn.output_text.done'; event_id: string; item_id: string; output_index: number; content_index: number; session_id: string; turn_id: string; text: string }
   | { type: 'error'; event_id: string; session_id?: string; error: { message: string; type?: string; code?: string } }
+  // Subagent activity (live only: no SSE id, never replayed; re-read `/subagents` on open and reconnect).
+  | { type: 'agent.session.subagent.created'; event_id: string; session_id: string; subagent: OAISubagent }
+  | { type: 'agent.session.subagent.updated'; event_id: string; session_id: string; subagent: OAISubagent; turn: OAITurn }
+  | { type: 'agent.session.subagent.closed'; event_id: string; session_id: string; subagent: OAISubagent }
+  | { type: 'agent.session.subagent.item.added'; event_id: string; session_id: string; subagent_id: string; turn_id: string; item: StoredSessionItem }
+  | { type: 'agent.session.subagent.item.done'; event_id: string; session_id: string; subagent_id: string; turn_id: string; item: StoredSessionItem }
 
 /** Session-status events: each carries the full session resource. */
 export type OAISessionStatusEvent = Extract<OAISessionEvent, { session: OAIAgentSession }>
