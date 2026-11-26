@@ -4,10 +4,10 @@ import '../helpers/dom'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OAISubagent, OAITurn, StoredSessionItem } from '@/api/types'
+import type { OAIApprovalAction, OAISubagent, OAITurn, StoredSessionItem } from '@/api/types'
 import { applyItems, applySubagents, initialState, type MessageView } from '@/chat/reducer'
 import { Message } from '@/ui/chat/Message'
-import { formatDuration, MAX_SUBAGENT_DEPTH, SubagentItems } from '@/ui/chat/SubagentCard'
+import { formatDuration, MAX_SUBAGENT_DEPTH, SubagentActions, SubagentItems } from '@/ui/chat/SubagentCard'
 import delegation from '../fixtures/live/subagent.json'
 
 interface RecordedChild { subagent: OAISubagent; turns: OAITurn[]; items: StoredSessionItem[] }
@@ -19,8 +19,8 @@ const noAnswer = vi.fn(async () => {})
 const fetchMock = vi.fn<typeof fetch>()
 
 /** The card the reducer makes for the recorded child. */
-function card(turns: OAITurn[] = CHILD.turns): Extract<MessageView, { kind: 'subagent' }> {
-  const s = applySubagents(applyItems(initialState(SID), FIXTURE.items), [{ subagent: CHILD.subagent, turns }])
+function card(turns: OAITurn[] = CHILD.turns, subagent: OAISubagent = CHILD.subagent): Extract<MessageView, { kind: 'subagent' }> {
+  const s = applySubagents(applyItems(initialState(SID), FIXTURE.items), [{ subagent, turns }])
   return s.items.find((v): v is Extract<MessageView, { kind: 'subagent' }> => v.kind === 'subagent')!
 }
 
@@ -40,6 +40,36 @@ afterEach(() => {
 })
 
 describe('SubagentCard', () => {
+  it('shows the model it ran in the header, and the prompt collapsed until opened', async () => {
+    const user = userEvent.setup()
+    const view = card(CHILD.turns, { ...CHILD.subagent, model: 'deepseek-flash' })
+    expect(view.prompt).toMatch(/^Your task: list the files/)
+    render(<Message view={view} answer={noAnswer} />)
+    const header = screen.getByRole('button', { name: /List workspace files and count/ })
+    expect(within(header).getByTestId('subagent-model')).toHaveTextContent('deepseek-flash')
+    await user.click(header)
+    const prompt = screen.getByRole('button', { name: 'Prompt' })
+    expect(prompt).toHaveAttribute('aria-expanded', 'false')
+    await user.click(prompt)
+    expect(prompt).toHaveAttribute('aria-expanded', 'true')
+    expect(within(screen.getByTestId('subagent-prompt')).getByText(/Your task: list the files/)).toBeVisible()
+  })
+
+  it('shows an approval the subagent waits on inside its card, collapsed or not, and answers it through the conversation', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async () => {})
+    const action: OAIApprovalAction = { type: 'approval', id: 'appr-c', kind: 'tool_approval', prompt: 'Run ls -la', options: ['approve', 'deny'], tool_name: 'bash', subagent_id: CHILD.subagent.id }
+    render(
+      <SubagentActions.Provider value={new Map([[CHILD.subagent.id, [action]]])}>
+        <Message view={card()} answer={answer} />
+      </SubagentActions.Provider>,
+    )
+    const inCard = within(screen.getByTestId('subagent-card'))
+    expect(inCard.getByRole('group', { name: 'Approval needed' })).toHaveTextContent('Run ls -la')
+    await user.click(inCard.getByRole('button', { name: 'Allow' }))
+    expect(answer).toHaveBeenCalledWith('appr-c', { decision: 'approve' })
+  })
+
   it('collapsed: shows the name, status and duration without loading the child', () => {
     render(<Message view={card()} answer={noAnswer} />)
     const header = screen.getByRole('button', { name: /List workspace files and count/ })

@@ -43,7 +43,8 @@
  * item added/done, closed; never replayed) that update the same runs.
  * `applySubagents` makes one card per child, right after the `subagent` call
  * whose output names it ("started subagent <id>"), named by that call's
- * `description`.
+ * `description`, with its `prompt` and the model it ran (the resource's
+ * `model`, else the call's `model` argument).
  *
  * Turns, the log and subagent runs (for the trajectory): `turns` holds each top-level turn record,
  * from the stream's turn frames and `GET .../turns` (`applyTurns`); a finished
@@ -89,6 +90,10 @@ export type MessageView =
     sessionId: string
     subagentId: string
     name: string
+    /** What the subagent was asked: the delegating call's `prompt`. */
+    prompt?: string
+    /** The model it ran: the subagent resource's `model`, else the call's `model` argument. */
+    model?: string
     status: string
     /** Unix seconds. */
     startedAt?: number
@@ -194,6 +199,7 @@ export function applySubagents(s: ConversationState, children: SubagentActivity[
       status,
       startedAt: turns[0]?.started_at ?? turns[0]?.created_at ?? subagent.created_at,
       endedAt: endedAt ?? undefined,
+      model: subagent.model ?? undefined,
     })
   }
   return actionsLast(next)
@@ -461,19 +467,26 @@ const SUBAGENT_NAME = 'Subagent'
 function placeSubagentView(
   s: ConversationState,
   subagentId: string,
-  update: Pick<SubagentView, 'status' | 'startedAt' | 'endedAt'>,
+  update: Pick<SubagentView, 'status' | 'startedAt' | 'endedAt' | 'model'>,
 ): ConversationState {
   const id = `subagent:${subagentId}`
   const current = find(s.items, id)
+  const previous = current?.kind === 'subagent' ? current : undefined
   const spawn = s.items.find((v): v is ToolView => v.kind === 'tool' && typeof v.output === 'string' && v.output.includes(subagentId))
-  const description = spawn && spawn.args && typeof spawn.args === 'object' ? (spawn.args as { description?: unknown }).description : undefined
-  const name = typeof description === 'string' && description ? description : current?.kind === 'subagent' ? current.name : SUBAGENT_NAME
+  // The `subagent` tool's arguments: `description` (display name), `prompt`, and optional `provider`/`model`/`reasoning_effort`.
+  const args = spawn && spawn.args && typeof spawn.args === 'object' ? (spawn.args as Record<string, unknown>) : undefined
+  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+  const name = text(args?.description) ?? previous?.name ?? SUBAGENT_NAME
+  const prompt = text(args?.prompt) ?? previous?.prompt
+  const model = update.model ?? previous?.model ?? text(args?.model)
   const view: SubagentView = {
     kind: 'subagent',
     id,
     sessionId: s.sessionId,
     subagentId,
     name,
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(model === undefined ? {} : { model }),
     status: update.status,
     startedAt: update.startedAt ?? (current?.kind === 'subagent' ? current.startedAt : undefined),
     endedAt: update.endedAt,

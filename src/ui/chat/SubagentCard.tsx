@@ -2,7 +2,10 @@
 
 /**
  * A subagent the turn delegated to. Collapsed: its name (the delegating call's
- * description), status and duration. Expanded: the child's own items,
+ * description), the model it ran, status and duration. Approvals the child is
+ * waiting on show under the header, open or closed, and answer through the
+ * parent session like any approval. Expanded: what it was asked (the call's
+ * prompt, itself collapsed until opened), then the child's own items,
  * rendered with the same message, thinking and tool views. The items come
  * from the conversation's own subagent reads (`SubagentItems`, which the hook
  * keeps current while the child runs), so a card never polls by itself. A
@@ -23,9 +26,12 @@ import { UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { api, ApiError } from '@/api/client'
-import type { StoredSessionItem } from '@/api/types'
+import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
 import { applyItems, initialState, type MessageView } from '@/chat/reducer'
+import type { ActionAnswer } from '@/chat/use-conversation'
+import { ApprovalCard } from './ApprovalCard'
 import { Message } from './Message'
+import { QuestionCard } from './QuestionCard'
 
 type SubagentView = Extract<MessageView, { kind: 'subagent' }>
 
@@ -33,6 +39,9 @@ export const MAX_SUBAGENT_DEPTH = 3
 
 /** Subagent id → its saved items, as the conversation last read them. */
 export const SubagentItems = createContext<ReadonlyMap<string, StoredSessionItem[]>>(new Map())
+
+/** Subagent id → the approvals and questions it is waiting on (actions with `subagent_id`). */
+export const SubagentActions = createContext<ReadonlyMap<string, OAIApprovalAction[]>>(new Map())
 
 const LABEL: Record<string, string> = {
   queued: 'Queued',
@@ -48,6 +57,7 @@ const styles = stylex.create({
   header: { contain: 'inline-size', minInlineSize: 0 },
   fixed: { flexShrink: 0 },
   name: { minInlineSize: 0, overflow: 'hidden' },
+  model: { flexShrink: 1, minInlineSize: 0, overflow: 'hidden' },
 })
 
 /** `17s`, `2m 5s`. */
@@ -75,6 +85,13 @@ function Header({ view }: { view: SubagentView }) {
       <StackItem size="fill" xstyle={styles.name}>
         <Text maxLines={1}>{view.name}</Text>
       </StackItem>
+      {view.model && (
+        <StackItem xstyle={styles.model}>
+          <Text type="supporting" maxLines={1} data-testid="subagent-model">
+            {view.model}
+          </Text>
+        </StackItem>
+      )}
       {duration && (
         <StackItem xstyle={styles.fixed}>
           <Text type="supporting" hasTabularNumbers>
@@ -128,20 +145,66 @@ function Activity({ view, depth }: { view: SubagentView; depth: number }) {
   )
 }
 
-export function SubagentCard({ view, depth = 1 }: { view: SubagentView; depth?: number }) {
+/** What the subagent was asked, collapsed until opened. */
+function Prompt({ text }: { text: string }) {
+  return (
+    <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Prompt</Text>} data-testid="subagent-prompt">
+      <Text type="supporting">{text}</Text>
+    </Collapsible>
+  )
+}
+
+/** Approvals and questions the child is waiting on, answered through the parent session. */
+function Waiting({ actions, answer }: { actions: OAIApprovalAction[]; answer(actionId: string, a: ActionAnswer): Promise<void> }) {
+  return (
+    <VStack gap={2} data-testid="subagent-actions">
+      {actions.map((action) =>
+        action.kind === 'user_question' ? (
+          <QuestionCard key={action.id} action={action} answer={answer} />
+        ) : (
+          <ApprovalCard key={action.id} action={action} answer={answer} />
+        ),
+      )}
+    </VStack>
+  )
+}
+
+export function SubagentCard({
+  view,
+  depth = 1,
+  answer = noAnswer,
+}: {
+  view: SubagentView
+  depth?: number
+  /** Answers an approval or question the child is waiting on (the conversation's own answer path). */
+  answer?(actionId: string, a: ActionAnswer): Promise<void>
+}) {
   const [open, setOpen] = useState(false)
+  const actions = useContext(SubagentActions).get(view.subagentId) ?? []
+  const waiting = actions.length > 0 && <Waiting actions={actions} answer={answer} />
   if (depth >= MAX_SUBAGENT_DEPTH) {
     return (
       <Card padding={3} width="100%" data-testid="subagent-card">
-        <Header view={view} />
+        <VStack gap={2}>
+          <Header view={view} />
+          {waiting}
+        </VStack>
       </Card>
     )
   }
   return (
     <Card padding={3} width="100%" data-testid="subagent-card">
-      <Collapsible isOpen={open} onOpenChange={setOpen} chevronPosition="start" trigger={<Header view={view} />}>
-        {open && <Activity view={view} depth={depth} />}
-      </Collapsible>
+      <VStack gap={2}>
+        <Collapsible isOpen={open} onOpenChange={setOpen} chevronPosition="start" trigger={<Header view={view} />}>
+          {open && (
+            <VStack gap={2}>
+              {view.prompt && <Prompt text={view.prompt} />}
+              <Activity view={view} depth={depth} />
+            </VStack>
+          )}
+        </Collapsible>
+        {waiting}
+      </VStack>
     </Card>
   )
 }

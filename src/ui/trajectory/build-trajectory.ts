@@ -48,7 +48,10 @@ export interface TrajectoryRecord {
   /** Assistant text, or tool output. */
   output?: unknown
   thinking?: string
+  /** An assistant step's model, or the model a subagent ran (its resource's `model`, else the call's `model` argument). */
   model?: string
+  /** For a `subagent` call: what the subagent was asked (the call's `prompt`). */
+  prompt?: string
   /** Unix seconds (fractional); only when recorded. */
   startedAt?: number
   /** An assistant step's first streamed token. */
@@ -307,14 +310,20 @@ export function buildTrajectory(turns: OAITurn[], items: StoredSessionItem[], su
   for (const record of records) {
     if (record.kind !== 'tool' || record.name !== SUBAGENT_TOOL || typeof record.output !== 'string') continue
     const run = subagents.find((r) => (record.output as string).includes(r.subagent.id))
-    const description = record.input && typeof record.input === 'object' ? (record.input as { description?: unknown }).description : undefined
-    if (typeof description === 'string' && description) record.title = firstLine(description, 80)
+    const args = record.input && typeof record.input === 'object' ? (record.input as Record<string, unknown>) : {}
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+    const description = text(args.description)
+    if (description) record.title = firstLine(description, 80)
+    const prompt = text(args.prompt)
+    if (prompt) record.prompt = prompt
+    const model = run?.subagent.model ?? text(args.model)
+    if (model) record.model = model
     if (!run) continue
     const childStatus = new Map(run.turns.map((t) => [t.id, t.status]))
     record.subagentId = run.subagent.id
     record.subcalls = recordsOf(
       (run.items ?? []).map(({ subagent_id: _child, ...item }) => item as StoredSessionItem),
-      { prefix: `${run.subagent.id}/`, chatItemId: record.chatItemId, turnStatus: (id) => childStatus.get(id) },
+      { prefix: `${run.subagent.id}/`, chatItemId: record.chatItemId, turnStatus: (id) => childStatus.get(id), ...(model ? { model } : {}) },
     )
     const first = run.turns[0]
     const last = run.turns.at(-1)

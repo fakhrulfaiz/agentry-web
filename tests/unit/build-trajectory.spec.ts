@@ -131,6 +131,17 @@ describe('buildTrajectory on the recorded delegation', () => {
     expect(t.turns[1].endedAt).toBeUndefined()
   })
 
+  it('carries the subagent prompt and the model it ran (resource first, else the call argument)', () => {
+    expect(call.prompt).toMatch(/^Your task: list the files/)
+    expect(call.model).toBeUndefined()
+    const withModel = RUNS.map((run) => ({ ...run, subagent: { ...run.subagent, model: 'deepseek-flash' } }))
+    const traced = buildTrajectory(D_TURNS, D_ITEMS, withModel).turns[0].records.find((r) => r.name === 'subagent')!
+    expect(traced.model).toBe('deepseek-flash')
+    expect(traced.subcalls!.filter((r) => r.subKind === 'assistant').every((r) => r.model === 'deepseek-flash')).toBe(true)
+    const asked = D_ITEMS.map((item) => (item.type === 'function_call' && item.name === 'subagent' ? { ...item, arguments: { ...(item.arguments as object), model: 'deepseek-pro' } } : item)) as StoredSessionItem[]
+    expect(buildTrajectory(D_TURNS, asked).turns[0].records.find((r) => r.name === 'subagent')!.model).toBe('deepseek-pro')
+  })
+
   it('without subagent data the call has no subcalls', () => {
     expect(buildTrajectory(D_TURNS, D_ITEMS).turns[0].records.find((r) => r.name === 'subagent')?.subcalls).toBeUndefined()
   })

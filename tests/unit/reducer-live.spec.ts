@@ -211,6 +211,7 @@ describe('subagents on a recorded delegating turn', () => {
       sessionId: DELEGATION.session_id,
       subagentId: CHILD.subagent.id,
       name: 'List workspace files and count',
+      prompt: expect.stringMatching(/^Your task: list the files/),
       status: 'completed',
       startedAt: turn.started_at,
       endedAt: turn.completed_at,

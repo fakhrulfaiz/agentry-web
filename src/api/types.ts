@@ -210,6 +210,8 @@ export interface OAIApprovalAction {
   tool_name?: string
   call_id?: string
   questions?: AskUserQuestionItem[]
+  /** Set when a subagent of this session asked (its id in `/subagents`); answer it on this session as usual. */
+  subagent_id?: string
 }
 
 /** Action the application must complete before work can continue. */
@@ -270,6 +272,8 @@ export interface OAISubagent {
   status: 'active' | 'closed'
   created_at: number
   closed_at?: number
+  /** Model of the child's latest model request; `null` before its first (absent from older backends). */
+  model?: string | null
 }
 
 /** Text part on a message item. */

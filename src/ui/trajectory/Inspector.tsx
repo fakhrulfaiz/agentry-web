@@ -87,6 +87,14 @@ export function Inspector({ record, onShowInChat }: { record: TrajectoryRecord; 
         </HStack>
         <Button label="Show in chat" variant="secondary" size="sm" onClick={() => onShowInChat(record)} />
       </VStack>
+      {record.name === 'subagent' && (record.model !== undefined || record.prompt !== undefined) && (
+        <Section title="Subagent">
+          <VStack gap={2} data-testid="inspector-subagent">
+            <Row label="Model" value={record.model ?? NOT_RECORDED} />
+            {record.prompt !== undefined && <Text size="sm">{record.prompt}</Text>}
+          </VStack>
+        </Section>
+      )}
       <Section title="Token usage">
         <Usage usage={record.usage} />
       </Section>

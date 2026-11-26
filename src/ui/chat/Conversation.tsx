@@ -57,7 +57,8 @@ import { scrollToItem } from './reveal'
 import { SessionArtifacts } from './SessionArtifacts'
 import { SessionFilesContext } from './session-files'
 import { PanelRightIcon } from '@/ui/icons/PanelRightIcon'
-import { SubagentItems } from './SubagentCard'
+import { SubagentActions, SubagentItems } from './SubagentCard'
+import { splitSubagentActions } from '@/chat/subagent-actions'
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
 import { TurnGroup } from './TurnGroup'
@@ -361,6 +362,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   }, [router, settings.model, settings.effort, setModel, setEffort, modelOptions, sessionId, session?.metadata])
   const onStop = useCallback(() => void run(stop).catch(() => {}), [run, stop])
   const onAnswer = useCallback((id: string, a: ActionAnswer) => answer(id, a), [answer])
+  // A subagent's approvals render in its card, not at the end of the chat.
+  const split = useMemo(() => splitSubagentActions(state.items), [state.items])
 
   if (missing) {
     return (
@@ -378,7 +381,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   // before its first visible output. A closed stream or an unavailable server shows its own notice.
   const waiting = !closedReason && !failure?.unavailable && (loading || ((sent || state.status === 'in_progress') && !liveActivity))
   const retries = retryTexts(state.items)
-  const entries = groupTurns(state.items, state.turnOf, state.turns)
+  const entries = groupTurns(split.items, state.turnOf, state.turns)
   // A chat with nothing in it yet has no trajectory to switch to (unknown while its history loads).
   const blank = loaded && state.items.length === 0 && state.turns.length === 0
   const shown: View = blank ? 'chat' : view
@@ -427,6 +430,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             }
           >
             <SubagentItems.Provider value={subagentItems}>
+              <SubagentActions.Provider value={split.bySubagent}>
               <ChatMessageList isStreaming={streaming}>
                 {entries.map((entry) => {
                   const row = (view: MessageView) => {
@@ -466,6 +470,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                     artifacts), not pinned to the composer. */}
                 {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}
               </ChatMessageList>
+              </SubagentActions.Provider>
             </SubagentItems.Provider>
           </ChatLayout>
         </VStack>
