@@ -9,6 +9,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState } from "react";
 import type { MessageView } from "@/chat/reducer";
 import { ConnectCard } from "./ConnectCard";
+import { ToolImages } from "./ToolImages";
 import "./shimmer.css";
 
 type ToolView = Extract<MessageView, { kind: "tool" }>;
@@ -140,6 +141,9 @@ export function ToolCard({ view }: { view: ToolView }) {
                     maxHeight={320}
                     isWrapped
                   />
+                )}
+                {view.images && view.images.length > 0 && (
+                  <ToolImages images={view.images} />
                 )}
               </VStack>
             ),
