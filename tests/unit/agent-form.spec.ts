@@ -80,3 +80,15 @@ describe('review fixes: tool masks', () => {
     expect(toParams(form, ['read', 'write', 'agent_create']).host_tools).toEqual({ allow: ['read'], deny: ['agent_create'] })
   })
 })
+
+describe('browser field', () => {
+  it('is off unless the saved agent turned it on, and is sent on save', () => {
+    expect(agentToForm(agent({ metadata: {} })).browser).toBe(false)
+    expect(agentToForm(agent({ metadata: {}, browser: null })).browser).toBe(false)
+    const form = agentToForm(agent({ metadata: {}, browser: true }))
+    expect(form.browser).toBe(true)
+    expect(formToParams(form).browser).toBe(true)
+    expect(formToParams({ ...form, browser: false }).browser).toBe(false)
+    expect(emptyForm().browser).toBe(false)
+  })
+})

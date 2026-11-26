@@ -45,6 +45,8 @@ import { RenameDialog, SESSIONS_CHANGED, type SessionRef } from '@/ui/shell/sess
 import { TopBar } from '@/ui/shell/TopBar'
 import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
 import { PanelConversationContext, type PanelConversation } from '@/chat/panel-data'
+import { browserState } from '@/chat/browser-tools'
+import { BrowserAutoOpen } from '@/ui/preview/BrowserView'
 import { deriveTasks } from '@/chat/tasks'
 import { deriveTodos } from '@/chat/todos'
 import { PreviewPanel } from '@/ui/preview/PreviewPanel'
@@ -373,6 +375,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       tasks: deriveTasks(state.items, state.subagents, split.bySubagent),
       subagentViews: state.items.flatMap((v) => (v.kind === 'subagent' ? [v] : [])),
       todos: deriveTodos(state.items),
+      browser: browserState(state.items),
       items: subagentItems,
       actions: split.bySubagent,
       answer: onAnswer,
@@ -405,6 +408,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   return (
     <PreviewPanelProvider sessionId={session?.id ?? null}>
     <PanelConversationContext.Provider value={panelData}>
+    <BrowserAutoOpen loaded={loaded && ready} />
     <SessionFilesContext.Provider value={session?.id ?? null}>
     <VStack xstyle={styles.page}>
       <TopBar

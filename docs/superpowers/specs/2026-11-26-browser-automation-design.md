@@ -1,6 +1,6 @@
 # Browser automation (design)
 
-Status: 2026-11-26, draft for review. Not implemented. Backlog item 3 in `AGENTS.md`. Plan: `docs/superpowers/plans/2026-11-26-browser-automation.md`.
+Status: 2026-11-26, implemented on `fix/browser` with the user's decisions: Playwright MCP, Chromium in the standard image, off by default per agent, and **no host browser** (`browser.host` was dropped: local chats never get one). The web side also has a read-only Browser tab. Backlog item 3 in `AGENTS.md`. Plan: `docs/superpowers/plans/2026-11-26-browser-automation.md`.
 
 ## Goal
 

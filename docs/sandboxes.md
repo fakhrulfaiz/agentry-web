@@ -167,6 +167,7 @@ Other settings:
 - **Network:** the public internet only. The Docker host, your LAN, private ranges (10/8, 172.16/12, 192.168/16, 100.64/10), link-local and cloud metadata addresses, and multicast are blocked. Sandboxes of the same user can't talk to each other. A template with internet off gets no outbound connections at all.
 - **Container wall:** no privileged mode, no host folders, no Docker socket, a minimal set of Linux capabilities (no raw sockets, no network admin), and CPU, memory and process limits.
 - **Secrets:** the sandbox never sees the Agentry API key or the sandbox service key. Template variables *are* visible to the agent, so don't put secrets there that you wouldn't hand to it.
+- **Web browser:** the standard image has Chromium and Playwright MCP. Turn on **Web browser** on an agent's Tools tab and its sandbox chats can open pages, click, type and take screenshots, inside the sandbox and under its network rules; the chat's side panel has a **Browser** tab showing the page and the latest screenshot. Chats on the server get no browser. A sandbox made before the browser was added gets it after **Reset**.
 - **Skills:** your skills and the built-in ones are copied into the sandbox read-only, at the same paths as on the server, so `/skill-name` works there too.
 
 ## Using it from the API
