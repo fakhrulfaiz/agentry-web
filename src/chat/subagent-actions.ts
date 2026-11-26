@@ -4,7 +4,25 @@
  * the chat. One whose card is not shown (yet) stays a standalone row.
  */
 import type { OAIApprovalAction } from '@/api/types'
-import type { MessageView } from './reducer'
+import type { ConversationState, MessageView } from './reducer'
+
+const RUNNING_TURN = new Set(['queued', 'in_progress', 'waiting'])
+
+/**
+ * A background subagent waiting on an approval between the parent's turns
+ * makes the parent `requires_action`, but the parent itself is idle: the
+ * composer stays usable (the card stays inside the subagent's card).
+ *
+ * @param s - the conversation's status, views, open turn and turns.
+ * @returns true when every pending action belongs to a subagent and no
+ *   top-level turn is open or running.
+ */
+export function waitingOnSubagentsOnly(s: Pick<ConversationState, 'status' | 'items' | 'openTurn' | 'turns'>): boolean {
+  if (s.status !== 'requires_action' || s.openTurn !== null) return false
+  if (s.turns.some((t) => RUNNING_TURN.has(t.status))) return false
+  const actions = s.items.flatMap((v) => (v.kind === 'action' ? [v.action] : []))
+  return actions.length > 0 && actions.every((a) => a.type === 'approval' && a.subagent_id !== undefined)
+}
 
 /**
  * @param items - the conversation's views.

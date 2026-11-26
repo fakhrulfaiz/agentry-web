@@ -58,7 +58,7 @@ import { SessionArtifacts } from './SessionArtifacts'
 import { SessionFilesContext } from './session-files'
 import { PanelRightIcon } from '@/ui/icons/PanelRightIcon'
 import { SubagentActions, SubagentItems } from './SubagentCard'
-import { splitSubagentActions } from '@/chat/subagent-actions'
+import { splitSubagentActions, waitingOnSubagentsOnly } from '@/chat/subagent-actions'
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
 import { TurnGroup } from './TurnGroup'
@@ -374,7 +374,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     )
   }
 
-  const running = state.status === 'in_progress' || state.status === 'requires_action'
+  const running =
+    state.status === 'in_progress' || (state.status === 'requires_action' && !waitingOnSubagentsOnly(state))
   const streaming = state.items.some((v) => v.kind === 'assistant' && v.streaming)
   const loading = !loaded || !ready
   // The history is still arriving, the message is being queued, or the model is thinking
