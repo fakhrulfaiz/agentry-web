@@ -11,6 +11,7 @@ import type { MessageView } from "@/chat/reducer";
 import { ConnectCard, ConnectSettingsLink } from "./ConnectCard";
 import { ToolImages } from "./ToolImages";
 import { notConnectedApp } from "@/chat/not-connected";
+import { browserToolTitle, pageOf, shortUrl } from "@/chat/browser-tools";
 import "./shimmer.css";
 
 type ToolView = Extract<MessageView, { kind: "tool" }>;
@@ -105,15 +106,23 @@ export function ToolCard({ view }: { view: ToolView }) {
     full !== null && full.length > OUTPUT_MAX
       ? `${full.slice(0, OUTPUT_MAX)}\n… (${full.length - OUTPUT_MAX} more characters)`
       : full;
+  // Browser calls read as actions ("Opened example.com"), with the page they left the browser on.
+  const browserTitle = browserToolTitle(view.name, view.args);
+  const page = browserTitle === null ? null : pageOf(view);
   return (
     <div data-shimmer={view.status === "running" ? "row" : undefined}>
       <ChatToolCalls
         calls={[
           {
             key: view.id,
-            name: view.name,
+            name: browserTitle ?? view.name,
             status: STATUS[view.status],
-            target: summarizeArgs(view.args) || undefined,
+            target:
+              browserTitle === null
+                ? summarizeArgs(view.args) || undefined
+                : page && !browserTitle.startsWith("Opened")
+                  ? shortUrl(page.url)
+                  : undefined,
             ...(view.status === "failed" && output
               ? { errorMessage: output.slice(0, 200) }
               : {}),

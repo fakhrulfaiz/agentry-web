@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OAIApprovalAction, OAISubagent, OAITurn, StoredSessionItem } from '@/api/types'
 import { PanelConversationContext, type PanelConversation } from '@/chat/panel-data'
+import { EMPTY_BROWSER } from '@/chat/browser-tools'
 import { applyItems, applySubagents, initialState, type MessageView } from '@/chat/reducer'
 import { deriveTasks } from '@/chat/tasks'
 import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
@@ -30,6 +31,7 @@ function data(over: Partial<PanelConversation> = {}): PanelConversation {
     tasks: deriveTasks(state.items, state.subagents, actions),
     subagentViews: [subView],
     todos: [],
+    browser: EMPTY_BROWSER,
     items: new Map([[CHILD.subagent.id, CHILD.items]]),
     actions,
     answer: vi.fn(async () => {}),

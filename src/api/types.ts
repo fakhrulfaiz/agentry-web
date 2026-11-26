@@ -154,6 +154,8 @@ export interface OAIAgent {
   skills?: AgentSkillSelection | null
   apps?: AgentAppGrants | null
   send_policy?: 'ask' | 'auto' | null
+  /** The web browser (sandbox chats only); absent or `null` uses the server default (off). */
+  browser?: boolean | null
 }
 
 /** Body for `POST /v1/agents` (and, with every field optional, `POST /v1/agents/{id}`). */
@@ -168,6 +170,7 @@ export interface CreateAgentParams {
   skills?: AgentSkillSelection | null
   apps?: AgentAppGrants | null
   send_policy?: 'ask' | 'auto' | null
+  browser?: boolean | null
 }
 export type UpdateAgentParams = Partial<CreateAgentParams>
 

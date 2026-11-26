@@ -19,6 +19,7 @@ import {
   DocumentIcon,
   DocumentTextIcon,
   FolderIcon,
+  GlobeAltIcon,
   ListBulletIcon,
   UserGroupIcon,
   PhotoIcon,
@@ -39,6 +40,7 @@ import { Terminal } from '@/ui/terminal/Terminal'
 import { usePanelConversation } from '@/chat/panel-data'
 import { todoCount } from '@/chat/todos'
 import { PlanTab, SubagentTab, TasksTab } from './PanelTabs'
+import { BROWSER_TITLE, BROWSER_VIEW, BrowserTab } from './BrowserView'
 import { FileTree } from './FileTree'
 import { RendererBody } from './renderers'
 
@@ -271,6 +273,13 @@ function StartPage({ canTerminal }: { canTerminal: boolean }) {
           <Text type="supporting" color="secondary">The agent’s to-do list</Text>
         </span>
       </button>
+      <button type="button" onClick={() => actions.openView(BROWSER_VIEW, BROWSER_TITLE)} {...stylex.props(styles.startCard)}>
+        <Icon icon={GlobeAltIcon} size="md" />
+        <span {...stylex.props(styles.titles)}>
+          <Text weight="medium">Browser</Text>
+          <Text type="supporting" color="secondary">Pages the agent’s web browser visited</Text>
+        </span>
+      </button>
     </div>
   )
 }
@@ -403,7 +412,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
             </div>
             <div {...stylex.props(styles.divider)} />
             <div {...stylex.props(styles.filesPage)}>
-              {activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+              {activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
             </div>
           </>
         ) : onTerminal ? null : showingFiles ? (

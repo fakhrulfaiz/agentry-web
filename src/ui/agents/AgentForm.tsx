@@ -359,7 +359,17 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
             <div {...stylex.props(ui.panel)} role="tabpanel" id="agent-capability-panel" aria-label={SECTIONS.find((s) => s.value === section)?.label}>
               <VStack gap={5}>
               <Text type="supporting" color="secondary">{INTROS[section]}</Text>
-              {section === 'tools' && <ToolsPicker tools={tools} allTools={form.allTools} value={form.tools} onChange={(next) => set(next)} />}
+              {section === 'tools' && (
+                <VStack gap={4}>
+                  <Switch
+                    label="Web browser"
+                    description="Open web pages in a headless Chromium, read them, click, type and take screenshots. Runs in sandbox chats only, inside the sandbox; chats on the server get no browser."
+                    value={form.browser}
+                    onChange={(browser) => set({ browser })}
+                  />
+                  <ToolsPicker tools={tools} allTools={form.allTools} value={form.tools} onChange={(next) => set(next)} />
+                </VStack>
+              )}
               {section === 'skills' && <SkillsSection agentId={agentId} value={form.skills} onChange={(skills) => set({ skills })} />}
               {section === 'apps' && (
                 <AppsSection connected={apps} value={form.apps} onChange={(grants) => set({ apps: grants })} sendPolicy={form.sendPolicy} onSendPolicy={(sendPolicy) => set({ sendPolicy })} />
