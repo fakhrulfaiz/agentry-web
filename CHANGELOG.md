@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-26: `deploy/compose.yaml` gains a `sandbox` profile (`COMPOSE_PROFILES=full,sandbox`) that runs Agentry Sandbox (`ghcr.io/fakhrulfaiz/agentry-sandbox-service`, Docker socket mounted, host network, Linux) with its own Postgres database; `AGENTRY_SANDBOX_URL` / `_KEY` reach the API, and `agentry.env.example` and the README describe the new `AGENTRY_SANDBOX_SECRET` and `_ADMIN_KEY`.
 - 2026-11-26: Clicking a template card opens a dialog with exactly what it sets up (image, system, Python and npm packages, starter files, internet, limits). Template summaries in the lists and the New environment dropdown name the packages when there are four or fewer, instead of a count.
 - 2026-11-26: Templates marked "Built in" (Data science, Web and scraping, Node and TypeScript, Offline) appear in the Templates tab without a Delete button and in the New environment template dropdown. (A "Start from" row in the template editor and a radio list in the New environment dialog were tried and removed: too long.)
 - 2026-11-26: The chat's right-hand panel opens on a Start page from the header's Workspace button: Workspace files, and New terminal for chats that run in a sandbox. Terminals are tabs next to file tabs (several at once, each stays running while another tab is shown; closing a tab closes its shell), with a + for a new tab.
