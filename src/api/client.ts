@@ -17,6 +17,9 @@ import type {
   CommandRunResponse,
   SessionArtifactList,
   SessionDeliverableList,
+  TurnChangeDiff,
+  TurnChanges,
+  TurnChangesListEntry,
   CreateScheduleParams,
   CreateTemplateParams,
   EnvironmentFile,
@@ -417,6 +420,21 @@ export const api = {
   /** Files the agent delivered with `present` in one chat (`GET /v1/agents/sessions/{id}/deliverables`). */
   listSessionDeliverables(id: string, signal?: AbortSignal): Promise<SessionDeliverableList> {
     return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`, undefined, signal)
+  },
+
+  /** Turns of a chat that changed files, newest first. */
+  sessionChanges(id: string, signal?: AbortSignal): Promise<{ object: 'list'; data: TurnChangesListEntry[] }> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/changes`, undefined, signal)
+  },
+
+  /** The files one turn changed. */
+  turnChanges(id: string, turnId: string, signal?: AbortSignal): Promise<TurnChanges> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/turns/${seg(turnId)}/changes`, undefined, signal)
+  },
+
+  /** One changed file's diff. */
+  turnChangeDiff(id: string, turnId: string, index: number, signal?: AbortSignal): Promise<TurnChangeDiff> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/turns/${seg(turnId)}/changes/${String(index)}`, undefined, signal)
   },
 
   /** Sandbox providers and what each supports. */

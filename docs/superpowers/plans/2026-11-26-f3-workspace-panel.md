@@ -175,7 +175,7 @@
 
 **Files:** none committed unless the fallback is needed (then Task 9).
 
-- [ ] **Step 1:** Read `~/code/dsh-pinned/packages/deliverables/workspace-changes/src/{index,recorder,git,capture}.ts` and `dsh-agents-api/src/sandbox/presets.ts`. Decide on paper which `subprocess` and `fs` the root-level recorder gets in a sandbox chat.
+- [x] **Step 1:** Read `~/code/dsh-pinned/packages/deliverables/workspace-changes/src/{index,recorder,git,capture}.ts` and `dsh-agents-api/src/sandbox/presets.ts`. Decide on paper which `subprocess` and `fs` the root-level recorder gets in a sandbox chat.
 - [ ] **Step 2:** On the dev stack (the user starts it; do not start servers yourself), ask the user to run one sandbox chat turn that edits `/workspace/a.txt` with the edit tool and one that runs `echo x >> b.txt` in bash, then call `GET /v1/agents/sessions/{id}/turns/{turn}/changes`.
 - [ ] **Step 3:** Record the result under "Spike results" here. If both files are listed with counts, skip Task 9.
 
@@ -322,4 +322,6 @@
 
 ## Spike results
 
-(Filled in by Tasks 1 and 8.)
+**Task 1 (office, 2026-11-26):** works. `tests/office-live.spec.ts` (API, `AGENTRY_LIVE_OFFICE=1`) mounts DSH's `OfficeToPdf` and converts a small pptx (`color-blocks.pptx` from DSH's fixtures) in about 3 s, first conversion with engine start included; peak RSS of the test process about 1.3 GB; missing fonts reported: Arial. Docker: the runtime image installs `@deepseek-ai/dsh` from npm, whose `libreoffice-kit` pulls `libreoffice-kit-wasm` as an optional dependency, so no Dockerfile change; the slim image has no system fonts, so expect a missing-fonts note until fonts are added.
+
+**Task 8 (sandbox changes, 2026-11-26, on paper; no live run, servers were not started):** DSH's recorder cannot see sandbox chats. It is mounted once at the root and runs git through the root `subprocess` in the session `cwd` (`/workspace`, an empty host placeholder that is not a repository, so no snapshot) and captures file-tool edits by opening the host path (absent before and after, so nothing is listed). Task 9's fallback was built: a shadow git repository inside the sandbox through envd (`src/history/sandbox-changes.ts` in the API), checked against real git locally. Still worth one live sandbox turn (edit tool + `echo x >> b.txt`) to confirm.

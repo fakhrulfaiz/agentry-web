@@ -1,6 +1,6 @@
 # F3 remainder: workspace panel (design)
 
-Status: 2026-11-26, draft for review. Not implemented. Plan: `docs/superpowers/plans/2026-11-26-f3-workspace-panel.md`.
+Status: 2026-11-26. Parts 1 (Office) and 2 (Changes) implemented (branch `fix/f3-panel` in both repos); open questions 2 to 6 decided: Word as PDF with "Text", xlsx as PDF for now, changes in memory only (said in the UI), outside files hidden, links not in the panel by default. Parts 3 and 4 not implemented here. Plan: `docs/superpowers/plans/2026-11-26-f3-workspace-panel.md`.
 
 ## Goal
 
