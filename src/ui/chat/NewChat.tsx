@@ -185,7 +185,8 @@ export function NewChat() {
           <ChatLayout xstyle={styles.chat} density="spacious" composer={composer}>
             <ChatMessageList isStreaming={false}>
               <Message view={{ kind: 'user', id: 'pending', text: pending.text, ...(pending.files ? { files: pending.files } : {}) }} answer={async () => undefined} />
-              <Thinking label="Agentry is thinking…" />
+              {/* The session does not exist yet: say so instead of "thinking" (a new sandbox also has to start). */}
+              <Thinking label={environmentId?.startsWith(NEW_SANDBOX) ? 'Starting a sandbox…' : 'Starting the chat…'} />
             </ChatMessageList>
           </ChatLayout>
         </VStack>
