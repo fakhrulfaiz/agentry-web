@@ -465,7 +465,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
           <StartPage canTerminal={environmentId !== undefined} fileCount={entries.length} />
         ) : activeView ? (
           <div {...stylex.props(styles.filesPage)}>
-            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab sessionId={sessionId} /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
           </div>
         ) : onTerminal ? null : showingFiles ? (
           <div {...stylex.props(styles.filesPage)}>

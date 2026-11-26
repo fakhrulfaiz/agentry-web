@@ -70,6 +70,7 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'events'] },
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'commands', { id: 'command' }] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'items'] },
+  // The live browser view (`sessions/{id}/browser/live`, SSE) has its own route, like the event stream.
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'turns'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT] },

@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_BROWSER, type BrowserState } from '@/chat/browser-tools'
 import { PanelConversationContext, type PanelConversation } from '@/chat/panel-data'
 import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
@@ -68,6 +68,100 @@ describe('Browser tab', () => {
     expect(screen.queryByTestId('browser-tab')).not.toBeInTheDocument()
   })
 
+})
+
+class FakeSource {
+  static all: FakeSource[] = []
+  static CLOSED = 2
+  readyState = 1
+  listeners = new Map<string, (e: MessageEvent<string>) => void>()
+  url: string
+  constructor(url: string) { this.url = url; FakeSource.all.push(this) }
+  addEventListener(name: string, fn: (e: MessageEvent<string>) => void) { this.listeners.set(name, fn) }
+  close() { this.readyState = 2 }
+  emit(name: string, data: unknown) { act(() => { this.listeners.get(name)?.({ data: JSON.stringify(data) } as MessageEvent<string>) }) }
+}
+const lastSource = () => FakeSource.all.at(-1)!
+
+function openBrowserTab(browser: BrowserState) {
+  render(<Panel browser={browser} />)
+  act(() => controls!.openView('browser', 'Browser'))
+}
+
+describe('Browser tab live view', () => {
+  beforeEach(() => {
+    FakeSource.all = []
+    vi.stubGlobal('EventSource', FakeSource)
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+  it('shows the live frames with the current page and a Live status', async () => {
+    openBrowserTab(browsing)
+    expect(lastSource().url).toBe('/api/agentry/agents/sessions/s1/browser/live')
+    expect(screen.getByText('Not browsing')).toBeInTheDocument()
+    lastSource().emit('frame', { data: '/9j/AA==', url: 'https://news.example.org/a', title: 'News', width: 1280, height: 720, timestamp: 1 })
+    expect(screen.getByRole('img', { name: /live view/i })).toHaveAttribute('src', 'data:image/jpeg;base64,/9j/AA==')
+    expect(screen.getByLabelText('Live')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /News \(news\.example\.org/ })).toHaveAttribute('href', 'https://news.example.org/a')
+    // The history stays.
+    expect(screen.getByRole('list', { name: 'Pages visited' })).toBeInTheDocument()
+    // The browser closed: back to the last screenshot.
+    lastSource().emit('idle', { reason: 'not_started' })
+    expect(screen.getByRole('img', { name: /latest screenshot/i })).toBeInTheDocument()
+    expect(screen.getByText('Not browsing')).toBeInTheDocument()
+  })
+
+  it('shows live frames even before any browser call is in the history', () => {
+    openBrowserTab(EMPTY_BROWSER)
+    expect(screen.getByText('No browsing yet')).toBeInTheDocument()
+    lastSource().emit('frame', { data: 'AAA', url: 'about:blank', title: '' })
+    expect(screen.getByRole('img', { name: /live view/i })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['not_sandbox', 'Only chats on a sandbox can use a browser', /Start a chat on a sandbox/],
+    ['no_browser', 'This sandbox has no browser', /Create the environment from the Web and browser template, or reset it from one\./],
+    ['browser_off', 'The web browser is off for this agent', /Turn on Web browser in the agent's Tools\./],
+  ])('says why the chat cannot browse: %s', (reason, title, description) => {
+    openBrowserTab(EMPTY_BROWSER)
+    lastSource().emit('idle', { reason })
+    expect(screen.getByText(title)).toBeInTheDocument()
+    expect(screen.getByText(description)).toBeInTheDocument()
+    expect(screen.queryByText('No browsing yet')).not.toBeInTheDocument()
+  })
+
+  it('keeps saying "No browsing yet" while the browser has not started', () => {
+    openBrowserTab(EMPTY_BROWSER)
+    lastSource().emit('idle', { reason: 'not_started' })
+    expect(screen.getByText('No browsing yet')).toBeInTheDocument()
+  })
+
+  it('stops the stream while the page is hidden and reopens it when shown', () => {
+    openBrowserTab(browsing)
+    const first = lastSource()
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') })
+      act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    }
+    setHidden(true)
+    expect(first.readyState).toBe(2)
+    setHidden(false)
+    expect(FakeSource.all).toHaveLength(2)
+    expect(lastSource().readyState).toBe(1)
+  })
+
+  it('shows at most one frame a second with reduced motion, ending on the newest', () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduced-motion'), addEventListener() {}, removeEventListener() {} }))
+    vi.useFakeTimers()
+    openBrowserTab(browsing)
+    lastSource().emit('frame', { data: 'ONE', url: 'https://e.com/', title: 'E' })
+    lastSource().emit('frame', { data: 'TWO', url: 'https://e.com/', title: 'E' })
+    lastSource().emit('frame', { data: 'THREE', url: 'https://e.com/', title: 'E' })
+    const img = () => screen.getByRole('img', { name: /live view/i })
+    expect(img()).toHaveAttribute('src', 'data:image/jpeg;base64,ONE')
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(img()).toHaveAttribute('src', 'data:image/jpeg;base64,THREE')
+  })
 })
 
 describe('ToolCard for browser calls', () => {
