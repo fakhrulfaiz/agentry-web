@@ -8,17 +8,21 @@
 import { Center } from '@astryxdesign/core/Center'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
-import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
+import { colorVars, radiusVars, spacingVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react'
 import { keyEvent, mouseEvent, type BrowserInputEvent, type FrameBox } from '@/chat/browser-input'
-import type { LiveFrame } from '@/chat/use-browser-live'
+import type { LiveFocus, LiveFrame, LivePointer } from '@/chat/use-browser-live'
+import { BrowserCursor } from './BrowserCursor'
 
 export interface BrowserViewportProps {
   frame: LiveFrame | null
   screenshotUrl: string | null
   inControl: boolean
   send: (event: BrowserInputEvent) => void
+  /** The agent's pointer and focused field from the live stream; drawn over the live frame only. */
+  pointer?: LivePointer | undefined
+  focus?: LiveFocus | undefined
 }
 
 /** Smallest and largest page width sent with a resize (the API's limits). */
@@ -27,9 +31,13 @@ const PAGE_WIDTH = { min: 320, max: 1920 }
 const styles = stylex.create({
   fill: { flexGrow: 1, minBlockSize: 0 },
   viewport: {
-    aspectRatio: '16 / 10',
+    position: 'relative',
+    // Fills what the panel (or the expanded view) leaves: its size never depends on the frame.
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minBlockSize: `calc(${spacingVars['--spacing-12']} * 4)`,
     inlineSize: '100%',
-    blockSize: 'auto',
     overflow: 'hidden',
     backgroundColor: colorVars['--color-background-muted'],
     borderWidth: 1,
@@ -38,6 +46,8 @@ const styles = stylex.create({
     borderRadius: radiusVars['--radius-container'],
   },
   frame: {
+    position: 'absolute',
+    inset: 0,
     display: 'block',
     inlineSize: '100%',
     blockSize: '100%',
@@ -67,7 +77,7 @@ function frameBox(img: HTMLImageElement, frame: LiveFrame | null): FrameBox {
 }
 
 /** The live frame, contained in a constant-ratio surface. */
-export function BrowserViewport({ frame, screenshotUrl, inControl, send }: BrowserViewportProps) {
+export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer: agentPointer, focus: agentFocus }: BrowserViewportProps) {
   const ref = useRef<HTMLImageElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   // A new SSE frame arrives often; the control effect must not re-run (and re-focus the image) for it.
@@ -129,8 +139,7 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send }: Brows
 
   return (
     <VStack ref={viewportRef} data-testid="browser-viewport" xstyle={styles.viewport}>
-      <Center padding={0} xstyle={styles.fill}>
-        {src ? (
+      {src ? (
           // eslint-disable-next-line @next/next/no-img-element -- streamed frames / BFF bytes; next/image does not apply
           <img
             ref={ref}
@@ -157,10 +166,12 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send }: Brows
             data-testid="browser-frame"
             data-fit="contain"
           />
-        ) : (
+      ) : (
+        <Center padding={0} xstyle={styles.fill}>
           <Text type="supporting" color="secondary">No screenshot yet. The agent mostly reads pages as text; it takes a screenshot when the layout matters or you ask for one.</Text>
-        )}
-      </Center>
+        </Center>
+      )}
+      {frame && <BrowserCursor pointer={agentPointer} focus={agentFocus} page={frame} inControl={inControl} />}
     </VStack>
   )
 }

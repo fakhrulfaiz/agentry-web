@@ -152,6 +152,8 @@ const styles = stylex.create({
   tree: { width: 232, flexShrink: 0, overflow: 'auto', borderInlineEnd: `1px solid ${colorVars['--color-border']}` },
   content: { flex: 1, minWidth: 0, position: 'relative', overflow: 'auto' },
   filesPage: { flex: 1, minWidth: 0, overflow: 'auto', padding: 8 },
+  // The Browser tab sizes its viewport to the page, so the page neither scrolls nor grows.
+  fillPage: { display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' },
   startPage: { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 20, padding: '20px 12px' },
   startSection: { display: 'flex', flexDirection: 'column', gap: 2 },
   startHeading: { paddingInline: 8, paddingBottom: 4 },
@@ -464,7 +466,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
         {state.active === 'start' ? (
           <StartPage canTerminal={environmentId !== undefined} fileCount={entries.length} />
         ) : activeView ? (
-          <div {...stylex.props(styles.filesPage)}>
+          <div {...stylex.props(styles.filesPage, activeView.key === BROWSER_VIEW && styles.fillPage)}>
             {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab sessionId={sessionId} /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
           </div>
         ) : onTerminal ? null : showingFiles ? (

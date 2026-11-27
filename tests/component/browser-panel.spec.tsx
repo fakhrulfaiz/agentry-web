@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_BROWSER } from '@/chat/browser-tools'
@@ -116,5 +116,42 @@ describe('Browser panel layout', () => {
     source().emit('idle', { reason: 'no_browser' })
     const explanation = screen.getByText(/Its image has no browser/)
     expect(follows(screen.getByTestId('browser-viewport'), explanation)).toBe(true)
+  })
+
+  it('opens the same live view large from Expand and returns to the panel on close', async () => {
+    const user = userEvent.setup()
+    render(<PanelConversationContext.Provider value={panel()}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)
+    source().emit('frame', { data: 'AAA', url: 'https://e.com/', title: 'E', width: 1280, height: 800 })
+    expect(screen.queryByTestId('browser-expanded')).not.toBeInTheDocument()
+    await user.click(within(screen.getByTestId('browser-toolbar')).getByRole('button', { name: 'Expand' }))
+    const expanded = await screen.findByTestId('browser-expanded')
+    // One viewport at a time: the large one has the frame, the panel keeps a note.
+    expect(screen.getAllByTestId('browser-viewport')).toHaveLength(1)
+    expect(within(expanded).getByTestId('browser-frame')).toHaveAttribute('src', 'data:image/jpeg;base64,AAA')
+    expect(within(expanded).getByRole('button', { name: 'Take control' })).toBeInTheDocument()
+    await user.click(within(expanded).getByRole('button', { name: 'Close expanded view' }))
+    expect(screen.queryByTestId('browser-expanded')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('browser-viewport')).getByTestId('browser-frame')).toBeInTheDocument()
+  })
+
+  it('maps input with the box of the expanded frame, and shows the cursor there', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function mockRect(this: Element) {
+      const big = this.closest('[data-testid="browser-expanded"]') !== null
+      const [w, h] = big ? [1280, 800] : [640, 400]
+      return { left: 0, top: 0, width: w, height: h, right: w, bottom: h, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    render(<PanelConversationContext.Provider value={panel()}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)
+    source().emit('frame', { data: 'AAA', url: 'https://e.com/', title: 'E', width: 1280, height: 800 })
+    await user.click(screen.getByRole('button', { name: 'Expand' }))
+    const expanded = await screen.findByTestId('browser-expanded')
+    await user.click(within(expanded).getByRole('button', { name: 'Take control' }))
+    const img = within(expanded).getByTestId('browser-frame')
+    fireEvent.pointerDown(img, { clientX: 640, clientY: 400, button: 0, buttons: 1, detail: 1 })
+    await vi.waitFor(() => { expect(calls.input).toHaveBeenCalled() })
+    const sent = (calls.input.mock.calls.flatMap(c => c[2] as unknown[])) as Array<{ type: string; action?: string; x?: number; y?: number }>
+    // 1:1 in the expanded box; the panel's 640x400 box would have given 1280x800.
+    expect(sent).toContainEqual(expect.objectContaining({ type: 'mouse', action: 'down', x: 640, y: 400 }))
+    vi.restoreAllMocks()
   })
 })

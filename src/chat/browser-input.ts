@@ -49,6 +49,19 @@ export function toPagePoint(clientX: number, clientY: number, box: FrameBox): { 
   return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 }
 }
 
+/**
+ * The client point where a page point is drawn, the inverse of `toPagePoint` (same letterbox maths).
+ * `undefined` when the page point is outside the page or the box is empty.
+ */
+export function toFramePoint(pageX: number, pageY: number, box: FrameBox): { x: number; y: number } | undefined {
+  if (box.width <= 0 || box.height <= 0 || box.pageWidth <= 0 || box.pageHeight <= 0) return undefined
+  if (pageX < 0 || pageY < 0 || pageX > box.pageWidth || pageY > box.pageHeight) return undefined
+  const scale = Math.min(box.width / box.pageWidth, box.height / box.pageHeight)
+  const drawnW = box.pageWidth * scale
+  const drawnH = box.pageHeight * scale
+  return { x: box.left + (box.width - drawnW) / 2 + pageX * scale, y: box.top + (box.height - drawnH) / 2 + pageY * scale }
+}
+
 /** CDP modifier bits: Alt 1, Ctrl 2, Meta 4, Shift 8. */
 export function modifiersOf(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): number {
   return (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0)
