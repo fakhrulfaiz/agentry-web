@@ -30,6 +30,41 @@ export interface LiveControl {
   reason?: ControlEndReason
 }
 
+/** The agent's pointer in the page's CSS pixels; `at` is when it arrived (a new value for each event). */
+export interface LivePointer {
+  x: number
+  y: number
+  action: 'move' | 'down' | 'up'
+  at: number
+}
+
+/** The field the page just focused, in the page's CSS pixels. */
+export interface LiveFocus {
+  x: number
+  y: number
+  width: number
+  height: number
+  at: number
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+/** Parses a `pointer` event's data; `undefined` when it is not one. */
+export function parsePointer(data: string, at: number): LivePointer | undefined {
+  let m: { action?: unknown; x?: unknown; y?: unknown }
+  try { m = JSON.parse(data) as typeof m } catch { return undefined }
+  if (!m || (m.action !== 'move' && m.action !== 'down' && m.action !== 'up') || !finite(m.x) || !finite(m.y)) return undefined
+  return { x: m.x, y: m.y, action: m.action, at }
+}
+
+/** Parses a `focus` event's data; `undefined` when it is not one. */
+export function parseFocus(data: string, at: number): LiveFocus | undefined {
+  let m: { x?: unknown; y?: unknown; width?: unknown; height?: unknown }
+  try { m = JSON.parse(data) as typeof m } catch { return undefined }
+  if (!m || !finite(m.x) || !finite(m.y) || !finite(m.width) || !finite(m.height)) return undefined
+  return { x: m.x, y: m.y, width: m.width, height: m.height, at }
+}
+
 /** Decodes a frame image off-screen; `undefined` where decoding is not available (then it is shown at once). */
 function decoding(src: string): Promise<void> | undefined {
   if (typeof Image === 'undefined') return undefined
@@ -65,8 +100,10 @@ function useDocumentVisible(): boolean {
 }
 
 /** The live view of `sessionId`'s browser; `null` turns it off. */
-export function useBrowserLive(sessionId: string | null): BrowserLive & { control?: LiveControl } {
+export function useBrowserLive(sessionId: string | null): BrowserLive & { control?: LiveControl; pointer?: LivePointer; focus?: LiveFocus } {
   const [live, setLive] = useState<BrowserLive>({ status: 'connecting' })
+  const [pointer, setPointer] = useState<LivePointer | undefined>(undefined)
+  const [focus, setFocus] = useState<LiveFocus | undefined>(undefined)
   const [control, setControl] = useState<LiveControl | undefined>(undefined)
   const visible = useDocumentVisible()
   const reduced = usePrefersReducedMotion()
@@ -79,6 +116,8 @@ export function useBrowserLive(sessionId: string | null): BrowserLive & { contro
     let seq = 0
     let shownSeq = 0
     let closed = false
+    let shownUrl: string | undefined
+    const clearCursor = () => { setPointer(undefined); setFocus(undefined) }
     const show = (frame: LiveFrame) => {
       lastShown = Date.now()
       const n = ++seq
@@ -86,6 +125,9 @@ export function useBrowserLive(sessionId: string | null): BrowserLive & { contro
         // A later frame that decoded first wins; an older one is dropped.
         if (closed || n < shownSeq) return
         shownSeq = n
+        // The cursor belongs to the page it was seen on.
+        if (shownUrl !== undefined && shownUrl !== frame.url) clearCursor()
+        shownUrl = frame.url
         setLive({ status: 'live', frame })
       }
       const pendingDecode = decoding(frame.src)
@@ -113,8 +155,20 @@ export function useBrowserLive(sessionId: string | null): BrowserLive & { contro
       let reason: unknown
       try { reason = (JSON.parse((event as MessageEvent<string>).data) as { reason?: unknown }).reason } catch { reason = undefined }
       pending = undefined
+      shownUrl = undefined
+      clearCursor()
       setLive({ status: 'idle', reason: REASONS.has(reason as BrowserIdleReason) ? reason as BrowserIdleReason : 'not_started' })
     })
+    source.addEventListener('pointer', (event) => {
+      const next = parsePointer((event as MessageEvent<string>).data, Date.now())
+      if (next) setPointer(next)
+    })
+    source.addEventListener('focus', (event) => {
+      const next = parseFocus((event as MessageEvent<string>).data, Date.now())
+      if (next) setFocus(next)
+    })
+    // A reconnect may have missed events: start without a cursor.
+    source.addEventListener('open', () => { shownUrl = undefined; clearCursor() })
     source.addEventListener('control', (event) => {
       let msg: { controlled?: unknown; reason?: unknown }
       try { msg = JSON.parse((event as MessageEvent<string>).data) as typeof msg } catch { return }
@@ -133,5 +187,5 @@ export function useBrowserLive(sessionId: string | null): BrowserLive & { contro
       if (timer !== undefined) clearTimeout(timer)
     }
   }, [sessionId, visible, reduced])
-  return control ? { ...live, control } : live
+  return { ...live, ...(control ? { control } : {}), ...(pointer ? { pointer } : {}), ...(focus ? { focus } : {}) }
 }

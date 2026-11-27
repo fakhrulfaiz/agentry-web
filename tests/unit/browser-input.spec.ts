@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coalesce, keyEvent, modifiersOf, mouseEvent, toPagePoint, type FrameBox } from '@/chat/browser-input'
+import { coalesce, keyEvent, modifiersOf, mouseEvent, toFramePoint, toPagePoint, type FrameBox } from '@/chat/browser-input'
 
 const box: FrameBox = { left: 100, top: 50, width: 640, height: 360, pageWidth: 1280, pageHeight: 720 }
 const noMods = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
@@ -18,6 +18,18 @@ describe('browser take-over input', () => {
     expect(toPagePoint(100, 50 + 140, tall)).toEqual({ x: 0, y: 0 })
     expect(toPagePoint(420, 50 + 320, tall)).toEqual({ x: 640, y: 360 })
     expect(toPagePoint(420, 60, tall)).toBeUndefined()
+  })
+
+  it('maps a page point back to where it is drawn, the inverse of toPagePoint', () => {
+    expect(toFramePoint(0, 0, box)).toEqual({ x: 100, y: 50 })
+    expect(toFramePoint(640, 360, box)).toEqual({ x: 420, y: 230 })
+    expect(toFramePoint(1281, 10, box)).toBeUndefined()
+    const tall = { ...box, height: 640 }
+    expect(toFramePoint(0, 0, tall)).toEqual({ x: 100, y: 190 })
+    for (const [x, y] of [[0, 0], [300, 200], [1280, 720]] as const) {
+      const c = toFramePoint(x, y, tall)!
+      expect(toPagePoint(c.x, c.y, tall)).toEqual({ x, y })
+    }
   })
 
   it('turns keys into key events, with text for keys that type', () => {

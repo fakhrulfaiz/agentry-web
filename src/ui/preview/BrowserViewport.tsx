@@ -12,13 +12,17 @@ import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react'
 import { keyEvent, mouseEvent, type BrowserInputEvent, type FrameBox } from '@/chat/browser-input'
-import type { LiveFrame } from '@/chat/use-browser-live'
+import type { LiveFocus, LiveFrame, LivePointer } from '@/chat/use-browser-live'
+import { BrowserCursor } from './BrowserCursor'
 
 export interface BrowserViewportProps {
   frame: LiveFrame | null
   screenshotUrl: string | null
   inControl: boolean
   send: (event: BrowserInputEvent) => void
+  /** The agent's pointer and focused field from the live stream; drawn over the live frame only. */
+  pointer?: LivePointer | undefined
+  focus?: LiveFocus | undefined
 }
 
 /** Smallest and largest page width sent with a resize (the API's limits). */
@@ -27,6 +31,7 @@ const PAGE_WIDTH = { min: 320, max: 1920 }
 const styles = stylex.create({
   fill: { flexGrow: 1, minBlockSize: 0 },
   viewport: {
+    position: 'relative',
     aspectRatio: '16 / 10',
     inlineSize: '100%',
     blockSize: 'auto',
@@ -67,7 +72,7 @@ function frameBox(img: HTMLImageElement, frame: LiveFrame | null): FrameBox {
 }
 
 /** The live frame, contained in a constant-ratio surface. */
-export function BrowserViewport({ frame, screenshotUrl, inControl, send }: BrowserViewportProps) {
+export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer: agentPointer, focus: agentFocus }: BrowserViewportProps) {
   const ref = useRef<HTMLImageElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   // A new SSE frame arrives often; the control effect must not re-run (and re-focus the image) for it.
@@ -161,6 +166,7 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send }: Brows
           <Text type="supporting" color="secondary">No screenshot yet. The agent mostly reads pages as text; it takes a screenshot when the layout matters or you ask for one.</Text>
         )}
       </Center>
+      {frame && <BrowserCursor pointer={agentPointer} focus={agentFocus} page={frame} inControl={inControl} />}
     </VStack>
   )
 }

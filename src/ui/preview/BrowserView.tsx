@@ -74,6 +74,8 @@ export function BrowserTab({ sessionId = null }: { sessionId?: string | null }) 
         screenshotUrl={browser.screenshot?.file_id ? artifactUrl({ content_url: fileContentPath(browser.screenshot.file_id) }) : null}
         inControl={isLive && control.status === 'on'}
         send={send}
+        pointer={isLive ? live.pointer : undefined}
+        focus={isLive ? live.focus : undefined}
       />
       {blocked && <Text type="supporting" color="secondary">{blocked.title}. {blocked.description}</Text>}
       {control.status === 'on' && (
