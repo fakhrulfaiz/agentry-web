@@ -44,7 +44,7 @@ const styles = stylex.create({
 export function BrowserToolbar({ address, statusText, isLive, running, controlStatus, onTake, onHandBack }: BrowserToolbarProps) {
   const hasControl = controlStatus === 'on' || controlStatus === 'taking'
   return (
-    <HStack gap={2} vAlign="center" wrap="nowrap" padding="1" data-testid="browser-toolbar" xstyle={styles.row}>
+    <HStack gap={2} vAlign="center" wrap="nowrap" padding={1} data-testid="browser-toolbar" xstyle={styles.row}>
       <HStack data-testid="browser-address-icon" data-secure={address?.isSecure ? 'true' : 'false'}>
         <Icon icon={address?.isSecure ? LockClosedIcon : GlobeAltIcon} color="secondary" size="sm" />
       </HStack>
