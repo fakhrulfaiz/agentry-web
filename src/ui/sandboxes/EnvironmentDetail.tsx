@@ -28,7 +28,7 @@ import type { EnvironmentFile, SandboxEnvironment, SandboxPlace } from '@/api/ty
 import { goToLogin } from '@/chat/use-conversation'
 import { Terminal } from '@/ui/terminal/Terminal'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
-import { canChatIn, environmentLook, environmentName, formatBytes, gpuLabel, lastUsed, providerTitle, shortDate, shortId, toBase64 } from './format'
+import { canChatIn, environmentLook, environmentName, formatBytes, gpuLabel, lastUsed, providerTitle, setupProgressText, shortDate, shortId, toBase64 } from './format'
 
 const COLUMN_WIDTH = 880
 const WORKSPACE = '/workspace/'
@@ -269,7 +269,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             }
           />
         ) : settingUp ? (
-          <Banner status="info" title="Setting up this sandbox. Its terminal and files appear when it is ready." />
+          <Banner status="info" title="Setting up this sandbox. Its terminal and files appear when it is ready." description={env?.sandbox?.progress ? setupProgressText(env.sandbox.progress) : undefined} />
         ) : env?.status === 'failed' && env.provider === 'sandbox' && state === 'failed' ? null : (
         <VStack gap={5}>
         {env?.provider === 'sandbox' && (

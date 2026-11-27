@@ -1,4 +1,4 @@
-import type { CreateTemplateParams, SandboxEnvironment, SandboxPlace, SandboxProvider, SandboxTemplate } from '@/api/types'
+import type { CreateTemplateParams, SandboxProgress, SandboxEnvironment, SandboxPlace, SandboxProvider, SandboxTemplate } from '@/api/types'
 
 /** The separate browser-enabled sandbox image, used by the built-in Web browser template and the editor preset. */
 export const BROWSER_SANDBOX_IMAGE = 'ghcr.io/fakhrulfaiz/agentry-sandbox-browser:1'
@@ -239,4 +239,24 @@ export function sessionEnvironment(choice: string): Record<string, string> | und
   if (choice === NEW_SANDBOX) return { type: 'openai_hosted', provider: 'sandbox' }
   if (choice.startsWith(NEW_SANDBOX)) return { type: 'sandbox', template_id: choice.slice(NEW_SANDBOX.length) }
   return { type: 'sandbox', environment_id: choice }
+}
+
+const STAGE_TEXT: Record<SandboxProgress['stage'], string> = {
+  pulling_image: 'Downloading the image…',
+  starting: 'Starting…',
+  preparing: 'Preparing the sandbox…',
+  installing_packages: 'Installing packages…',
+  copying_runtime: 'Copying the agent runtime…',
+  writing_files: 'Adding files…',
+  running_setup: 'Running setup…',
+  finishing: 'Finishing…',
+}
+
+/** Plain words for a setup stage; `Setting up…` when the server sent none (or a stage this app does not know). */
+export function setupProgressText(progress: SandboxProgress | undefined): string {
+  if (!progress) return 'Setting up…'
+  if (progress.stage === 'running_setup' && progress.step !== undefined && progress.steps !== undefined) {
+    return `Running setup (${progress.step} of ${progress.steps})${progress.detail ? `: ${progress.detail}` : '…'}`
+  }
+  return STAGE_TEXT[progress.stage] ?? 'Setting up…'
 }

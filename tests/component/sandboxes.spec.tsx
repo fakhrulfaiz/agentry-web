@@ -163,6 +163,13 @@ describe('SandboxesPage', () => {
     expect(screen.queryByText('Setting up…')).not.toBeInTheDocument()
   }, 10000)
 
+  it('shows the setup stage on a card that is still setting up', async () => {
+    const setting = { ...env, id: 'env_new', name: 'Data box', provider: 'sandbox', status: 'pending', template_id: undefined, sandbox: { state: 'provisioning', progress: { stage: 'pulling_image', updated_at: 1 } } }
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([env, setting]))
+    render(<SandboxesPage />)
+    expect(await screen.findByText('Downloading the image…')).toBeInTheDocument()
+  })
+
   it('shows a failed environment with its reason and deletes it', async () => {
     const failed = { ...env, id: 'env_bad', name: 'Data box', provider: 'sandbox', status: 'failed', template_id: undefined, error: 'sandbox limit reached: owner-a has 5 sandboxes (limit 5)', sandbox: { state: 'failed' } }
     apiMock.listSandboxEnvironments.mockResolvedValue(page([failed]))
