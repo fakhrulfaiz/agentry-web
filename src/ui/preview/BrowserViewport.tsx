@@ -25,6 +25,7 @@ export interface BrowserViewportProps {
 const PAGE_WIDTH = { min: 320, max: 1920 }
 
 const styles = stylex.create({
+  fill: { flexGrow: 1, minBlockSize: 0 },
   viewport: {
     aspectRatio: '16 / 10',
     inlineSize: '100%',
@@ -68,16 +69,20 @@ function frameBox(img: HTMLImageElement, frame: LiveFrame | null): FrameBox {
 /** The live frame, contained in a constant-ratio surface. */
 export function BrowserViewport({ frame, screenshotUrl, inControl, send }: BrowserViewportProps) {
   const ref = useRef<HTMLImageElement>(null)
-  const lastWidth = useRef(0)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  // A new SSE frame arrives often; the control effect must not re-run (and re-focus the image) for it.
+  const frameRef = useRef(frame)
+  frameRef.current = frame
   const src = frame?.src ?? screenshotUrl
   useEffect(() => {
     const img = ref.current
-    if (!inControl || !img || !frame) return
+    if (!inControl || !img || !frameRef.current) return
+    let lastWidth = 0
     img.focus()
     // The wheel needs a non-passive listener so the panel does not scroll too.
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const box = frameBox(img, frame)
+      const box = frameBox(img, frameRef.current)
       const scale = box.pageWidth > 0 && box.width > 0 ? box.pageWidth / box.width : 1
       const m = mouseEvent({ clientX: e.clientX, clientY: e.clientY, button: 0, buttons: 0, detail: 0, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey }, 'move', box)
       if (m?.type === 'mouse') send({ type: 'wheel', x: m.x, y: m.y, delta_x: e.deltaX * scale, delta_y: e.deltaY * scale, ...(m.modifiers ? { modifiers: m.modifiers } : {}) })
@@ -85,21 +90,21 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send }: Brows
     img.addEventListener('wheel', onWheel, { passive: false })
     // The viewport's own ratio, not the screenshot's, decides the page size while in control.
     const fit = () => {
-      const r = img.getBoundingClientRect()
-      if (r.width <= 0 || r.height <= 0) return
+      const r = viewportRef.current?.getBoundingClientRect()
+      if (!r || r.width <= 0 || r.height <= 0) return
       const width = Math.round(Math.min(PAGE_WIDTH.max, Math.max(PAGE_WIDTH.min, r.width)))
-      if (Math.abs(width - lastWidth.current) < 8) return
-      lastWidth.current = width
+      if (Math.abs(width - lastWidth) < 8) return
+      lastWidth = width
       send({ type: 'resize', width, height: Math.round(width * r.height / r.width) })
     }
     fit()
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fit)
-    observer?.observe(img)
+    if (viewportRef.current) observer?.observe(viewportRef.current)
     return () => {
       img.removeEventListener('wheel', onWheel)
       observer?.disconnect()
     }
-  }, [inControl, frame, send])
+  }, [inControl, send])
 
   const pointer = (action: 'move' | 'down' | 'up') => (e: PointerEvent<HTMLImageElement>) => {
     if (!inControl || !ref.current) return
@@ -123,14 +128,14 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send }: Brows
   }
 
   return (
-    <VStack data-testid="browser-viewport" xstyle={styles.viewport}>
-      <Center padding={0}>
+    <VStack ref={viewportRef} data-testid="browser-viewport" xstyle={styles.viewport}>
+      <Center padding={0} xstyle={styles.fill}>
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element -- streamed frames / BFF bytes; next/image does not apply
           <img
             ref={ref}
             src={src}
-            alt={inControl ? 'The agent\'s browser. You have control: click, scroll and type here. Esc leaves.' : 'Live view of the agent\'s browser'}
+            alt={!frame ? 'Latest screenshot of the agent\'s browser' : inControl ? 'The agent\'s browser. You have control: click, scroll and type here. Esc leaves.' : 'Live view of the agent\'s browser'}
             draggable={false}
             {...(inControl ? {
               tabIndex: 0,

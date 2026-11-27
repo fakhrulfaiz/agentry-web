@@ -90,6 +90,26 @@ describe('Browser panel layout', () => {
     expect(within(screen.getByTestId('browser-toolbar')).getByText('You have control')).toBeInTheDocument()
   })
 
+  it('shows the page title as the accessible address label while keeping the URL visible', () => {
+    render(<PanelConversationContext.Provider value={panel()}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)
+    source().emit('frame', { data: 'AAA', url: 'https://e.com/a', title: 'Example page', width: 1280, height: 800 })
+    const address = screen.getByTestId('browser-address')
+    expect(address).toHaveAttribute('aria-label', 'Example page: e.com/a')
+    expect(address).toHaveTextContent('e.com/a')
+  })
+
+  it('keeps Hand back available when the live stream fails while control is held', async () => {
+    const user = userEvent.setup()
+    render(<PanelConversationContext.Provider value={panel()}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)
+    source().emit('frame', { data: 'AAA', url: 'https://e.com/', title: 'E', width: 1280, height: 800 })
+    await user.click(screen.getByRole('button', { name: 'Take control' }))
+    expect(calls.take).toHaveBeenCalledTimes(1)
+
+    source().emit('error', {})
+    expect(within(screen.getByTestId('browser-toolbar')).getByRole('button', { name: 'Hand back' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('browser-toolbar')).queryByRole('button', { name: 'Take control' })).not.toBeInTheDocument()
+  })
+
   it('puts a blocked explanation below the viewport when a browser is unavailable', () => {
     render(<PanelConversationContext.Provider value={panel()}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)
     source().emit('frame', { data: 'AAA', url: 'https://e.com/', title: 'E', width: 1280, height: 800 })

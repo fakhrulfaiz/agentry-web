@@ -35,8 +35,10 @@ function renderLive() {
   render(<PanelConversationContext.Provider value={panel}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)
   source().emit('frame', { data: 'AAA', url: 'https://e.com/', title: 'E', width: 1280, height: 720, timestamp: 1 })
   const frame = screen.getByTestId('browser-frame')
-  // jsdom has no layout: the frame is shown at half size at (100, 50).
-  frame.getBoundingClientRect = () => ({ left: 100, top: 50, width: 640, height: 360, right: 740, bottom: 410, x: 100, y: 50, toJSON: () => ({}) })
+  // jsdom has no layout: the frame fills a viewport shown at half size at (100, 50).
+  const box = () => ({ left: 100, top: 50, width: 640, height: 360, right: 740, bottom: 410, x: 100, y: 50, toJSON: () => ({}) })
+  frame.getBoundingClientRect = box
+  screen.getByTestId('browser-viewport').getBoundingClientRect = box
   return frame
 }
 

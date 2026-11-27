@@ -44,6 +44,13 @@ describe('Browser toolbar', () => {
     expect(fields[0]!.textContent).toBe(`${host}${rest}`)
   })
 
+  it('keeps the page title in the address tooltip without replacing the URL', () => {
+    show({ address: parseAddress('https://example.com/a?q=1'), ...({ title: 'Example page' } as unknown as Partial<BrowserToolbarProps>) })
+    const address = screen.getByTestId('browser-address')
+    expect(address).toHaveAttribute('aria-label', 'Example page: example.com/a?q=1')
+    expect(address).toHaveTextContent('example.com/a?q=1')
+  })
+
   it('shows a non-web address as text without an external link', () => {
     show({ address: parseAddress('about:blank') })
     expect(screen.getByTestId('browser-address-icon')).toHaveAttribute('data-secure', 'false')

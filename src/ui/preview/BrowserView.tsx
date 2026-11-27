@@ -61,6 +61,7 @@ export function BrowserTab({ sessionId = null }: { sessionId?: string | null }) 
     <VStack gap={3} data-testid="browser-tab">
       <BrowserToolbar
         address={current ? parseAddress(current.url) : null}
+        title={current?.title}
         statusText={statusText}
         isLive={isLive}
         running={browser.running}
@@ -71,7 +72,7 @@ export function BrowserTab({ sessionId = null }: { sessionId?: string | null }) 
       <BrowserViewport
         frame={isLive ? live.frame : null}
         screenshotUrl={browser.screenshot?.file_id ? artifactUrl({ content_url: fileContentPath(browser.screenshot.file_id) }) : null}
-        inControl={control.status === 'on'}
+        inControl={isLive && control.status === 'on'}
         send={send}
       />
       {blocked && <Text type="supporting" color="secondary">{blocked.title}. {blocked.description}</Text>}

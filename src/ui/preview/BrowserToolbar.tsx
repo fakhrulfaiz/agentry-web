@@ -16,6 +16,8 @@ import type { BrowserAddress } from './browser-address'
 
 export interface BrowserToolbarProps {
   address: BrowserAddress | null
+  /** The page title, kept as a tooltip so it never pushes the URL off the row. */
+  title?: string
   statusText: string
   isLive: boolean
   running: boolean
@@ -41,14 +43,21 @@ const styles = stylex.create({
 })
 
 /** A single fixed-height toolbar; address ellipsizes, controls never wrap. */
-export function BrowserToolbar({ address, statusText, isLive, running, controlStatus, onTake, onHandBack }: BrowserToolbarProps) {
+export function BrowserToolbar({ address, title, statusText, isLive, running, controlStatus, onTake, onHandBack }: BrowserToolbarProps) {
   const hasControl = controlStatus === 'on' || controlStatus === 'taking'
   return (
     <HStack gap={2} vAlign="center" wrap="nowrap" padding={1} data-testid="browser-toolbar" xstyle={styles.row}>
       <HStack data-testid="browser-address-icon" data-secure={address?.isSecure ? 'true' : 'false'}>
         <Icon icon={address?.isSecure ? LockClosedIcon : GlobeAltIcon} color="secondary" size="sm" />
       </HStack>
-      <HStack gap={1} vAlign="center" wrap="nowrap" data-testid="browser-address" xstyle={styles.field}>
+      <HStack
+        gap={1}
+        vAlign="center"
+        wrap="nowrap"
+        data-testid="browser-address"
+        aria-label={title ? `${title}: ${address ? `${address.host}${address.rest}` : 'No page open yet'}` : undefined}
+        xstyle={styles.field}
+      >
         {address ? (
           <>
             <Text weight="semibold" maxLines={1} xstyle={styles.host}>{address.host}</Text>
@@ -62,13 +71,11 @@ export function BrowserToolbar({ address, statusText, isLive, running, controlSt
       <StatusDot variant={isLive ? 'success' : 'neutral'} label={statusText} isPulsing={isLive} />
       <Text type="supporting" color="secondary" maxLines={1} textWrap="nowrap">{statusText}</Text>
       {running && <Spinner size="sm" aria-label="The browser is working" />}
-      {isLive && (
-        hasControl ? (
-          <Button label="Hand back" size="sm" variant="primary" isDisabled={controlStatus === 'taking'} onClick={onHandBack} />
-        ) : (
-          <Button label={controlStatus === 'held' ? 'Take control here' : 'Take control'} size="sm" onClick={onTake} />
-        )
-      )}
+      {hasControl ? (
+        <Button label="Hand back" size="sm" variant="primary" isDisabled={controlStatus === 'taking'} onClick={onHandBack} />
+      ) : isLive ? (
+        <Button label={controlStatus === 'held' ? 'Take control here' : 'Take control'} size="sm" onClick={onTake} />
+      ) : null}
     </HStack>
   )
 }
