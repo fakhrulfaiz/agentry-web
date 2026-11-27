@@ -4,6 +4,7 @@ import '../helpers/dom'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OAIAgent, OAIProject, SandboxEnvironment } from '@/api/types'
 
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), query: '' }))
 const pendingFirst = vi.hoisted(() => ({ setPendingFirst: vi.fn() }))
@@ -13,7 +14,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/',
 }))
 
-const apiMock = vi.hoisted(() => ({ models: vi.fn(), createSession: vi.fn(), listSkills: vi.fn(), listCommands: vi.fn(), listAgents: vi.fn(), listSandboxEnvironments: vi.fn(), listSandboxProviders: vi.fn(), listSandboxTemplates: vi.fn() }))
+const apiMock = vi.hoisted(() => ({ models: vi.fn(), createSession: vi.fn(), listSkills: vi.fn(), listCommands: vi.fn(), listAgents: vi.fn(), listSandboxEnvironments: vi.fn(), listSandboxProviders: vi.fn(), listSandboxTemplates: vi.fn(), getProject: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/pending-first', () => ({ setPendingFirst: pendingFirst.setPendingFirst }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
@@ -28,6 +29,7 @@ beforeEach(() => {
   nav.push.mockReset()
   nav.replace.mockReset()
   pendingFirst.setPendingFirst.mockReset()
+  apiMock.getProject.mockReset()
   apiMock.models.mockResolvedValue(['m1'])
   for (const list of [apiMock.listAgents, apiMock.listSandboxEnvironments, apiMock.listSandboxProviders, apiMock.listSandboxTemplates]) list.mockResolvedValue({ object: 'list', data: [], has_more: false })
 })
@@ -155,5 +157,93 @@ describe('New chat environment menu', () => {
     await user.click(input())
     await user.keyboard('hello{Enter}')
     await waitFor(() => expect(pendingFirst.setPendingFirst).toHaveBeenCalledWith('sess_created', expect.objectContaining({ text: 'hello', startLabel: 'Starting a sandbox…' })))
+  })
+})
+
+describe('New chat project preset', () => {
+  const page = <T,>(data: T[]) => ({ object: 'list', data, has_more: false })
+  const agent = (id: string, name: string, model: string, effort?: 'low' | 'medium' | 'high'): OAIAgent => ({
+    id, object: 'agent', created_at: 1, updated_at: 1, name, instructions: null, model,
+    metadata: {}, tools: [], ...(effort ? { reasoning: { effort } } : {}),
+  })
+  const environment = (id: string, name: string): SandboxEnvironment => ({
+    id, object: 'agent.environment', type: 'openai_hosted', status: 'connected', provider: 'sandbox', name,
+    created_at: 1, sandbox: { state: 'stopped' },
+  })
+  const project = (over: Partial<OAIProject> = {}): OAIProject => ({
+    id: 'proj_1', object: 'project', name: 'Research', status: 'active', pinned: false,
+    agent_id: 'agent_1', environment: { type: 'sandbox', environment_id: 'env_1' },
+    archived_at: null, created_at: 1, updated_at: 1, ...over,
+  })
+  const selection = () => ({
+    agent: screen.getByRole('combobox', { name: 'Agent' }),
+    environment: screen.getByRole('combobox', { name: 'Environment' }),
+    model: screen.getByRole('combobox', { name: 'Model' }),
+    effort: screen.getByRole('combobox', { name: 'Reasoning effort' }),
+  })
+  const send = async () => {
+    await userEvent.type(input(), 'hello{Enter}')
+    await waitFor(() => expect(apiMock.createSession).toHaveBeenCalled())
+  }
+
+  beforeEach(() => {
+    nav.query = 'project=proj_1'
+    apiMock.models.mockResolvedValue(['m-default', 'm-saved'])
+    apiMock.listAgents.mockResolvedValue(page([
+      agent('agent_1', 'Research agent', 'm-saved', 'medium'),
+      agent('agent_2', 'Override agent', 'm-default'),
+    ]))
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([environment('env_1', 'Data box'), environment('env_2', 'Other box')]))
+    apiMock.listSandboxProviders.mockResolvedValue(page([]))
+    apiMock.listSandboxTemplates.mockResolvedValue(page([]))
+    apiMock.getProject.mockResolvedValue(project())
+    apiMock.createSession.mockResolvedValue({ id: 'sess_created' } as never)
+  })
+
+  it('preselects agent environment model and effort from a project preset', async () => {
+    render(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Research agent'))
+    expect(selection().environment).toHaveTextContent('Data box')
+    await waitFor(() => expect(selection().model).toHaveTextContent('m-saved'))
+    expect(selection().effort).toHaveTextContent('Medium')
+    await send()
+    expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-saved', effort: 'medium', agentId: 'agent_1', environmentId: 'env_1', projectId: 'proj_1' })
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
+  })
+
+  it('keeps explicit agent and environment overrides while sending projectId', async () => {
+    const user = userEvent.setup()
+    render(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Research agent'))
+    expect(selection().environment).toHaveTextContent('Data box')
+    await user.click(selection().agent)
+    await user.click(await screen.findByRole('option', { name: 'Override agent' }))
+    await user.click(selection().environment)
+    await user.click(await screen.findByRole('option', { name: /Other box/ }))
+    await user.click(input())
+    await user.keyboard('hello{Enter}')
+    await waitFor(() => expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-saved', effort: 'medium', agentId: 'agent_2', environmentId: 'env_2', projectId: 'proj_1' }))
+  })
+
+  it('ignores an archived project preset', async () => {
+    apiMock.getProject.mockResolvedValue(project({ status: 'archived' }))
+    render(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
+    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().model).toHaveTextContent('m-default')
+    expect(selection().effort).toHaveTextContent('Auto')
+    await send()
+    expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
+  })
+
+  it('creates an unfiled chat when no project preset is present', async () => {
+    nav.query = ''
+    apiMock.models.mockResolvedValue(['m-default'])
+    render(<NewChat />)
+    await waitFor(() => expect(input()).toBeInTheDocument())
+    await send()
+    expect(apiMock.getProject).not.toHaveBeenCalled()
+    expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
+    expect(nav.replace).not.toHaveBeenCalled()
   })
 })
