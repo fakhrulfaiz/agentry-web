@@ -6,6 +6,7 @@
  * `window` (`PROJECTS_CHANGED` for Projects, `SESSIONS_CHANGED` for a moved
  * chat) so all open views reload. A failed move reports an error toast.
  */
+import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { HStack } from '@astryxdesign/core/HStack'
@@ -162,8 +163,12 @@ export function MoveProjectDialog({
   const [target, setTarget] = useState('')
 
   useEffect(() => {
-    if (session) setTarget(session.project_id ?? '')
-  }, [session])
+    if (!session) return
+    // Only an active Project can receive a chat. An archived (or otherwise
+    // unavailable) current target starts as Unfiled, matching the options.
+    const available = projects.some((project) => project.id === session.project_id && project.status === 'active')
+    setTarget(available ? (session.project_id ?? '') : '')
+  }, [session, projects])
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -195,6 +200,46 @@ export function MoveProjectDialog({
   )
 }
 
+/** Confirms an irreversible Project deletion, like the chat DeleteDialog. */
+export function DeleteProjectDialog({ project, onClose }: { project: OAIProject | null; onClose(): void }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => setError(null), [project])
+
+  async function remove() {
+    if (!project || busy) return
+    setBusy(true)
+    try {
+      await api.deleteProject(project.id)
+      announceProjects()
+      onClose()
+    } catch (e) {
+      if (isSignedOut(e)) {
+        window.location.assign('/login')
+        return
+      }
+      const message = errorText(e)
+      setError(message)
+      toast({ type: 'error', body: message, uniqueID: `project-delete-${project.id}` })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <AlertDialog
+      isOpen={project !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title="Delete project?"
+      description={error ?? `“${project?.name ?? ''}” will be permanently deleted.`}
+      actionLabel="Delete"
+      onAction={() => void remove()}
+      isActionLoading={busy}
+    />
+  )
+}
+
 /** Archived Projects and their Unarchive actions, opened from the sidebar. */
 export function ArchivedProjectsDialog({ isOpen, onClose }: { isOpen: boolean; onClose(): void }) {
   const toast = useToast()
@@ -203,8 +248,16 @@ export function ArchivedProjectsDialog({ isOpen, onClose }: { isOpen: boolean; o
 
   const load = useCallback(async () => {
     try {
-      const page = await api.listProjects({ status: 'archived' })
-      setItems(page.data.filter((project) => project.status === 'archived'))
+      // Archived Projects can span pages; follow the cursor like the active list.
+      const all: OAIProject[] = []
+      let after: string | undefined
+      for (;;) {
+        const page = await api.listProjects({ status: 'archived', ...(after ? { after } : {}) })
+        all.push(...page.data)
+        if (!page.has_more || !page.last_id || page.last_id === after) break
+        after = page.last_id
+      }
+      setItems(all.filter((project) => project.status === 'archived'))
       setError(null)
     } catch (e) {
       if (isSignedOut(e)) window.location.assign('/login')

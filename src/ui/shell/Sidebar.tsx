@@ -27,7 +27,7 @@ import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
 import type { OAIAgentSession, OAIProject } from '@/api/types'
 import { AgentryMark } from '@/ui/brand/Wordmark'
 import { sessionTitle } from './group'
-import { ArchivedProjectsDialog, MoveProjectDialog, ProjectDialog, useSessionMove } from './project-actions'
+import { ArchivedProjectsDialog, DeleteProjectDialog, MoveProjectDialog, ProjectDialog, useSessionMove } from './project-actions'
 import { announceProjects, useProjectChanges } from './project-events'
 import { groupSessionsForSidebar, type SidebarSection } from './project-groups'
 import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChanges, useStarToggle } from './session-actions'
@@ -88,6 +88,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [projectSessions, setProjectSessions] = useState<Record<string, Session[]>>({})
   const [projectCursors, setProjectCursors] = useState<Record<string, string | null>>({})
   const [projectHasMore, setProjectHasMore] = useState<Record<string, boolean>>({})
+  const [projectLoadErrors, setProjectLoadErrors] = useState<Record<string, string>>({})
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
@@ -98,6 +99,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [deleting, setDeleting] = useState<Session | null>(null)
   const [projectDialog, setProjectDialog] = useState<{ isOpen: boolean; project: OAIProject | null }>({ isOpen: false, project: null })
+  const [deletingProject, setDeletingProject] = useState<OAIProject | null>(null)
   const [moving, setMoving] = useState<Session | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
   const loadingRef = useRef(false)
@@ -177,8 +179,19 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
       setProjectSessions((prev) => ({ ...prev, [projectId]: after ? [...(prev[projectId] ?? []), ...page.data] : page.data }))
       setProjectCursors((prev) => ({ ...prev, [projectId]: page.last_id }))
       setProjectHasMore((prev) => ({ ...prev, [projectId]: page.has_more && page.last_id !== null }))
+      setProjectLoadErrors((prev) => {
+        if (!prev[projectId]) return prev
+        const next = { ...prev }
+        delete next[projectId]
+        return next
+      })
     } catch (error) {
-      if (isSignedOut(error)) window.location.assign('/login')
+      if (isSignedOut(error)) {
+        window.location.assign('/login')
+        return
+      }
+      // Keep any rows already loaded, but say why the section is incomplete.
+      setProjectLoadErrors((prev) => ({ ...prev, [projectId]: errorText(error) }))
     }
   }, [])
 
@@ -331,7 +344,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
                 { label: 'Rename', onClick: () => setProjectDialog({ isOpen: true, project }) },
                 { label: project.pinned ? 'Unpin' : 'Pin', onClick: () => changeProject('pin', () => api.updateProject(project.id, { pinned: !project.pinned })) },
                 { label: 'Archive', onClick: () => changeProject('archive', () => api.archiveProject(project.id)) },
-                { label: 'Delete', variant: 'destructive', onClick: () => changeProject('delete', () => api.deleteProject(project.id)) },
+                { label: 'Delete', variant: 'destructive', onClick: () => setDeletingProject(project) },
               ]}
             />
           </HStack>
@@ -341,7 +354,13 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         {isExpanded && (
           <>
             {rows(chats)}
-            {chats.length === 0 && <Text type="supporting">No chats yet.</Text>}
+            {chats.length === 0 && !projectLoadErrors[project.id] && <Text type="supporting">No chats yet.</Text>}
+            {projectLoadErrors[project.id] && (
+              <VStack padding={2} gap={1} hAlign="start">
+                <Text type="supporting">{projectLoadErrors[project.id]}</Text>
+                <Button label="Retry" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id)} />
+              </VStack>
+            )}
             {projectHasMore[project.id] && (
               <Button label="More" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id, projectCursors[project.id] ?? undefined)} />
             )}
@@ -447,6 +466,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog session={deleting} onClose={() => setDeleting(null)} onDeleted={removed} />
       <ProjectDialog project={projectDialog.project} isOpen={projectDialog.isOpen} onClose={() => setProjectDialog({ isOpen: false, project: null })} />
+      <DeleteProjectDialog project={deletingProject} onClose={() => setDeletingProject(null)} />
       <MoveProjectDialog session={moving} projects={projects} onClose={() => setMoving(null)} />
       <ArchivedProjectsDialog isOpen={archivedOpen} onClose={() => setArchivedOpen(false)} />
     </>

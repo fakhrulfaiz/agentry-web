@@ -4,6 +4,7 @@ import '../helpers/dom'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/client'
 import type { OAIAgentSession, OAIListResponse, OAIProject } from '@/api/types'
 import { groupSessions } from '@/ui/shell/group'
 import { bridgeFetch, startMockApi, type MockApi } from '../helpers/mock-api-flow'
@@ -39,6 +40,7 @@ vi.mock('@/api/client', async (importOriginal) => {
 })
 
 const { Sidebar, SIDEBAR_COLLAPSED_KEY } = await import('@/ui/shell/Sidebar')
+const { MoveProjectDialog } = await import('@/ui/shell/project-actions')
 const { Shell } = await import('@/ui/shell/Shell')
 
 const IDENTITY = { owner: 'u-1', roles: ['user'], displayName: 'Ada Lovelace' }
@@ -457,6 +459,97 @@ describe('Sidebar', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Unarchive' }))
     expect(apiMock.unarchiveProject).toHaveBeenCalledWith('p1')
     await waitFor(() => expect(group('Archived work')).toBeInTheDocument())
+  })
+
+  it('asks before deleting a project and keeps it when cancelled or refused with 409', async () => {
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
+    const openDelete = async () => {
+      await user.click(screen.getByRole('button', { name: 'Options for Website work' }))
+      await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+      return screen.findByRole('alertdialog')
+    }
+
+    const confirm = await openDelete()
+    expect(within(confirm).getByText(/Website work/)).toBeInTheDocument()
+    expect(apiMock.deleteProject).not.toHaveBeenCalled()
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(apiMock.deleteProject).not.toHaveBeenCalled()
+    expect(group('Website work')).toBeInTheDocument()
+
+    apiMock.deleteProject.mockRejectedValueOnce(new ApiError(409, 'project_has_sessions', 'Project has sessions'))
+    const refused = await openDelete()
+    await user.click(within(refused).getByRole('button', { name: 'Delete' }))
+    expect(refused).toHaveTextContent('Project has sessions')
+    expect(group('Website work')).toBeInTheDocument()
+    await user.click(within(refused).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+
+    apiMock.deleteProject.mockResolvedValueOnce({ id: 'p1', object: 'project.deleted', deleted: true })
+    apiMock.listProjects.mockResolvedValue(page([]))
+    const accepted = await openDelete()
+    await user.click(within(accepted).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(apiMock.deleteProject).toHaveBeenCalledTimes(2))
+    expect(apiMock.deleteProject).toHaveBeenNthCalledWith(1, 'p1')
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Website work' })).not.toBeInTheDocument())
+  })
+
+  it('shows a load error and a retry for a project whose chats fail to load', async () => {
+    let fail = true
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: unknown; projectId?: string }) => {
+      if (q.metadata) return page([])
+      if (q.projectId === 'p1') {
+        return fail ? Promise.reject(new ApiError(500, 'boom', 'Could not load chats')) : page([filed('s1', 'Website chat', 'p1')])
+      }
+      return page([])
+    })
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+
+    const section = group('Website work')
+    expect(await within(section).findByText('Could not load chats')).toBeInTheDocument()
+    expect(within(section).queryByText('No chats yet.')).not.toBeInTheDocument()
+    fail = false
+    await user.click(within(section).getByRole('button', { name: 'Retry' }))
+    expect(await within(section).findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
+    expect(within(section).queryByText('Could not load chats')).not.toBeInTheDocument()
+  })
+
+  it('treats an archived current project as Unfiled in the move dialog', async () => {
+    apiMock.setSessionProject.mockResolvedValue(undefined)
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    render(<MoveProjectDialog session={filed('s1', 'Chat in archived work', 'p_archived')} projects={[project('p1', 'Active work')]} onClose={onClose} />)
+
+    const dialog = await screen.findByRole('dialog')
+    const selector = within(dialog).getByRole('combobox', { name: 'Project' })
+    expect(selector).toHaveTextContent('Unfiled')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(apiMock.setSessionProject).toHaveBeenCalledWith('s1', null)
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('lists every page of archived projects', async () => {
+    apiMock.listProjects.mockImplementation(async (q: { status?: string; after?: string }) => {
+      if (q.status !== 'archived') return page([])
+      const first = page([project('a1', 'Old one', { status: 'archived' }), project('a2', 'Old two', { status: 'archived' })], true)
+      return q.after === 'a2' ? page([project('a3', 'Old three', { status: 'archived' })]) : first
+    })
+    apiMock.listSessions.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await user.click(await screen.findByRole('button', { name: 'Archived' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Old three')).toBeInTheDocument()
+    expect(apiMock.listProjects).toHaveBeenCalledWith({ status: 'archived', after: 'a2' })
   })
 
   it('links new chat here to /?project=<id>', async () => {
