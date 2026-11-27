@@ -71,6 +71,7 @@ import type {
   OAISessionEvent,
   OAISessionItem,
   OAISessionStatusEvent,
+  OAIJob,
   OAISubagent,
   OAITurn,
   SessionStatus,
@@ -119,6 +120,8 @@ export interface ConversationState {
   log: StoredSessionItem[]
   /** The latest subagent runs as read (for the trajectory). */
   subagents: SubagentActivity[]
+  /** Background jobs (`GET .../jobs`, then `agent.session.job.*` events), oldest first. */
+  jobs: OAIJob[]
 }
 
 type ToolView = Extract<MessageView, { kind: 'tool' }>
@@ -137,7 +140,7 @@ export interface SubagentActivity {
 export const LOCAL_PREFIX = 'local:'
 
 export function initialState(sessionId: string): ConversationState {
-  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [], subagents: [] }
+  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [], subagents: [], jobs: [] }
 }
 
 /**
@@ -352,6 +355,19 @@ function applySubagentEvent(s: ConversationState, event: SubagentEvent): Convers
   return applySubagents(s, children)
 }
 
+/** Replaces the jobs with a fresh read (`GET .../jobs`). */
+export function applyJobs(s: ConversationState, jobs: OAIJob[]): ConversationState {
+  return { ...s, jobs }
+}
+
+/** Upserts one job from a stream event, keeping the output last read (events carry none). */
+function upsertJob(s: ConversationState, job: OAIJob): ConversationState {
+  const at = s.jobs.findIndex((j) => j.id === job.id)
+  if (at === -1) return { ...s, jobs: [...s.jobs, job] }
+  const output = job.output ?? s.jobs[at].output
+  return { ...s, jobs: s.jobs.with(at, output ? { ...job, output } : job) }
+}
+
 function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean): ConversationState {
   switch (event.type) {
     case 'agent.session.created':
@@ -379,6 +395,10 @@ function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean
     case 'agent.session.subagent.item.added':
     case 'agent.session.subagent.item.done':
       return applySubagentEvent(s, event)
+    case 'agent.session.job.updated':
+      return upsertJob(s, event.job)
+    case 'agent.session.job.removed':
+      return s.jobs.some((j) => j.id === event.job_id) ? { ...s, jobs: s.jobs.filter((j) => j.id !== event.job_id) } : s
     case 'agent.session.turn.output_text.delta': {
       const current = find(s.items, event.item_id)
       if (current?.kind === 'assistant' && !current.streaming) return s // replay of a finished message

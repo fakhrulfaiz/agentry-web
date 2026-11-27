@@ -30,7 +30,7 @@ class FakeSource {
 const source = () => FakeSource.all.at(-1)!
 
 function panel(visited: PanelConversation['browser']['visited'] = []): PanelConversation {
-  return { tasks: [], subagentViews: [], todos: [], browser: { ...EMPTY_BROWSER, calls: 1, visited }, items: new Map(), actions: new Map(), answer: async () => {} }
+  return { tasks: [], jobs: [], subagentViews: [], todos: [], browser: { ...EMPTY_BROWSER, calls: 1, visited }, items: new Map(), actions: new Map(), answer: async () => {} }
 }
 
 function follows(before: Element, after: Element): boolean {

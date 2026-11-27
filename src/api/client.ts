@@ -8,6 +8,7 @@ import { sessionEnvironment } from '@/ui/sandboxes/format'
 import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
+  OAIJob,
   InstalledSkill,
   SkillManifest,
   SkillView,
@@ -384,6 +385,22 @@ export const api = {
   async subagents(id: string): Promise<OAISubagent[]> {
     const page = await request<OAIListResponse<OAISubagent>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/subagents`)
     return page.data
+  },
+
+  /** The session's background jobs, oldest first, each with the newest 16 KiB of output. */
+  async jobs(id: string): Promise<OAIJob[]> {
+    const page = await request<OAIListResponse<OAIJob>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/jobs`)
+    return page.data
+  },
+
+  /** One background job with the newest 64 KiB of output. */
+  job(id: string, jobId: string, signal?: AbortSignal): Promise<OAIJob> {
+    return request<OAIJob>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/jobs/${seg(jobId)}`, undefined, signal)
+  },
+
+  /** Stops a background job; a finished one answers `already_finished`. */
+  killJob(id: string, jobId: string): Promise<{ outcome: 'cancellation_requested' | 'already_finished'; job: OAIJob }> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(id)}/jobs/${seg(jobId)}/kill`, {})
   },
 
   /** One subagent's turns (its status and timing). */

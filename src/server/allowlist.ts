@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'job' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -20,6 +20,7 @@ const ENVIRONMENT = { id: 'environment' } as const
 const SKILL = { id: 'skill' } as const
 const TERMINAL = { id: 'terminal' } as const
 const TURN = { id: 'turn' } as const
+const JOB = { id: 'job' } as const
 /** A file's position in a turn's changes. */
 const INDEX = { id: 'index' } as const
 const INDEX_SEGMENT = /^[0-9]{1,5}$/
@@ -79,6 +80,10 @@ const RULES: readonly Rule[] = [
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT, 'items'] },
   { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'subagents', SUBAGENT, 'turns'] },
+  // Background jobs: list, one job's output, and Stop (POST, so the proxy's same-origin + CSRF check applies).
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'jobs'] },
+  { methods: ['GET'], segments: ['agents', 'sessions', SESSION, 'jobs', JOB] },
+  { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'jobs', JOB, 'kill'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'schedules'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'schedules', SCHEDULE] },
   { methods: ['POST'], segments: ['agents', 'schedules', SCHEDULE, 'pause'] },

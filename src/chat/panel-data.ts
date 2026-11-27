@@ -2,7 +2,7 @@
 
 /** The open conversation's state the preview panel's Tasks, Plan and subagent tabs read (provided by `Conversation`, never refetched). */
 import { createContext, useContext } from 'react'
-import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
+import type { OAIApprovalAction, OAIJob, StoredSessionItem } from '@/api/types'
 import { EMPTY_BROWSER, type BrowserState } from './browser-tools'
 import type { TaskRow } from './tasks'
 import type { SubagentView } from './tasks'
@@ -11,6 +11,8 @@ import type { ActionAnswer } from './use-conversation'
 
 export interface PanelConversation {
   tasks: TaskRow[]
+  /** Background jobs (commands the agent runs in the background), oldest first. */
+  jobs: OAIJob[]
   subagentViews: SubagentView[]
   todos: Todo[]
   /** The web browser's page, screenshot and history (Browser tab). */
@@ -22,6 +24,7 @@ export interface PanelConversation {
 
 export const PanelConversationContext = createContext<PanelConversation>({
   tasks: [],
+  jobs: [],
   subagentViews: [],
   todos: [],
   browser: EMPTY_BROWSER,

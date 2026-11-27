@@ -279,6 +279,39 @@ export interface OAISubagent {
   model?: string | null
 }
 
+/** The newest retained output of a background job (bounded by the route: 16 KiB in the list, 64 KiB for one job). */
+export interface OAIJobOutput {
+  text: string
+  total_bytes: number
+  /** Earlier output is not included. */
+  truncated: boolean
+}
+
+/**
+ * A background job of this session (`GET .../jobs`): a command the agent runs
+ * in the background (or a foreground one while it runs), or a workflow.
+ * Live changes come as ephemeral `agent.session.job.*` events; jobs live in
+ * the API's memory only.
+ */
+export interface OAIJob {
+  id: string
+  object: 'agent.session.job'
+  session_id: string
+  /** Producer kind: `bash`, `workflow`, ... */
+  kind: string
+  /** The command line for shell jobs. */
+  command: string
+  status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+  /** Live progress while running; the terminal reason once settled (`exit code: 0`). */
+  detail: string | null
+  exit_code: number | null
+  /** Epoch seconds. */
+  started_at: number
+  finished_at: number | null
+  /** Absent on stream events and kill answers. */
+  output?: OAIJobOutput
+}
+
 /** Text part on a message item. */
 export interface OAITextContentPart {
   type: 'input_text' | 'output_text'
@@ -577,6 +610,8 @@ export type OAISessionEvent =
   | { type: 'agent.session.subagent.closed'; event_id: string; session_id: string; subagent: OAISubagent }
   | { type: 'agent.session.subagent.item.added'; event_id: string; session_id: string; subagent_id: string; turn_id: string; item: StoredSessionItem }
   | { type: 'agent.session.subagent.item.done'; event_id: string; session_id: string; subagent_id: string; turn_id: string; item: StoredSessionItem }
+  | { type: 'agent.session.job.updated'; event_id: string; session_id: string; job: OAIJob }
+  | { type: 'agent.session.job.removed'; event_id: string; session_id: string; job_id: string }
 
 /** Session-status events: each carries the full session resource. */
 export type OAISessionStatusEvent = Extract<OAISessionEvent, { session: OAIAgentSession }>
