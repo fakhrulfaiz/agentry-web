@@ -18,6 +18,7 @@ import { VStack } from '@astryxdesign/core/VStack'
 import { ChatBubbleLeftIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
+import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
 import type { OAIAgentSession } from '@/api/types'
@@ -27,10 +28,45 @@ import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChan
 import { UserMenu, type ShellIdentity } from './UserMenu'
 
 const styles = stylex.create({
-  // Row menus fade in under the pointer or keyboard focus (and stay on the open chat).
-  rowActions: { display: 'flex', opacity: { default: 0, ':hover': 1, ':focus-within': 1 }, transitionProperty: 'opacity', transitionDuration: '120ms' },
-  rowActionsShown: { opacity: 1 },
+  // A row's menu takes no space until the row is under the pointer or focused, so titles use the full width.
+  rowActions: { display: 'flex', width: 0, overflow: 'hidden', opacity: 0 },
+  rowActionsShown: { width: 'auto', overflow: 'visible', opacity: 1 },
 })
+
+/** How long a row's menu stays after the pointer or focus leaves, so crossing the gap to it does not hide it. */
+const ROW_LEAVE_MS = 100
+
+type RowMenuItems = React.ComponentProps<typeof MoreMenu>['items']
+
+/** A chat row whose menu appears on hover or focus (and while it is open). */
+function ChatRow({ label, href, isSelected, items }: { label: string; href: string; isSelected: boolean; items: RowMenuItems }) {
+  const [hot, setHot] = useState(false)
+  const [open, setOpen] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const enter = () => {
+    clearTimeout(timer.current)
+    setHot(true)
+  }
+  const leave = () => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setHot(false), ROW_LEAVE_MS)
+  }
+  const hover = { onMouseEnter: enter, onMouseLeave: leave, onFocus: enter, onBlur: leave }
+  return (
+    <SideNavItem
+      label={label}
+      href={href}
+      isSelected={isSelected}
+      {...hover}
+      actions={
+        <span {...hover} {...stylex.props(styles.rowActions, (hot || open) && styles.rowActionsShown)}>
+          <MoreMenu label={`Options for ${label}`} size="sm" items={items} onOpenChange={setOpen} />
+        </span>
+      }
+    />
+  )
+}
 
 export const SIDEBAR_COLLAPSED_KEY = 'agentry.sidebar.collapsed'
 export const PAGE_SIZE = 30
@@ -199,25 +235,16 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
 
   const rows = (list: Session[]) =>
     list.map((s) => (
-      <SideNavItem
+      <ChatRow
         key={s.id}
         label={sessionTitle(s)}
         href={`/c/${encodeURIComponent(s.id)}`}
         isSelected={s.id === currentId}
-        actions={
-          // Shown on the open chat; on the others it appears under the pointer or keyboard focus, so the list stays calm.
-          <span {...stylex.props(styles.rowActions, s.id === currentId && styles.rowActionsShown)}>
-          <MoreMenu
-            label={`Options for ${sessionTitle(s)}`}
-            size="sm"
-            items={[
-              { label: isStarred(s) ? 'Unstar' : 'Star', onClick: () => void toggleStar(s) },
-              { label: 'Rename', onClick: () => setRenaming(s) },
-              { label: 'Delete', variant: 'destructive', onClick: () => setDeleting(s) },
-            ]}
-          />
-          </span>
-        }
+        items={[
+          { label: isStarred(s) ? 'Unstar' : 'Star', onClick: () => void toggleStar(s) },
+          { label: 'Rename', onClick: () => setRenaming(s) },
+          { label: 'Delete', variant: 'destructive', onClick: () => setDeleting(s) },
+        ]}
       />
     ))
 
