@@ -19,7 +19,15 @@ const list = (data: unknown[]) => Response.json({ object: 'list', data, first_id
 const session = { id: SID, object: 'agent.session', created_at: 1, last_active_at: 1, status: 'idle', error: null, metadata: { title: 'First message' }, vault_ids: [], agent: { id: 'a', object: 'agent', created_at: 1, updated_at: 1, name: null, instructions: null, model: 'mock-model', metadata: {}, tools: [] }, environment: { type: 'local' }, required_actions: [], usage: null }
 
 let resolveSession!: (response: Response) => void
+let stream!: ReadableStreamDefaultController<Uint8Array>
 let items: unknown[] = []
+
+/** Emits one SSE frame, the way the backend wakes the chat after its idle create response. */
+function emit(event: unknown) {
+  act(() => {
+    stream.enqueue(new TextEncoder().encode(`id: evt_test\ndata: ${JSON.stringify(event)}\n\n`))
+  })
+}
 
 beforeEach(() => {
   document.head.innerHTML = '<meta name="agentry-csrf" content="t">'
@@ -35,7 +43,7 @@ beforeEach(() => {
       if (url.startsWith(`/api/agentry/agents/sessions/${SID}/turns`)) return list([])
       if (url.startsWith(`/api/agentry/agents/sessions/${SID}/subagents`)) return list([])
       if (url === `/api/agentry/agents/sessions/${SID}`) return snapshot
-      if (url.endsWith('/stream')) return new Response(new ReadableStream({ start() {} }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      if (url.endsWith('/stream')) return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
       return Response.json({ error: 'not_found' }, { status: 404 })
     }),
   )
@@ -56,6 +64,19 @@ describe('first-send waiting row', () => {
     await act(async () => { resolveSession(Response.json({ ...session, status: 'in_progress' })) })
     await waitFor(() => expect(screen.getByText('Agentry is thinking…')).toBeInTheDocument())
     expect(screen.queryByText('Loading conversation…')).not.toBeInTheDocument()
+  })
+
+  it('keeps the waiting row through the idle snapshot before the first turn', async () => {
+    // The backend answers session creation with status idle and starts the turn only afterwards.
+    setPendingFirst(SID, { text: 'hello there', startLabel: 'Starting the chat…' })
+    render(<Conversation sessionId={SID} />)
+    expect(await screen.findByText('Starting the chat…')).toBeInTheDocument()
+    await act(async () => { resolveSession(Response.json({ ...session, status: 'idle' })) })
+    await waitFor(() => expect(screen.getByTestId('thinking')).toBeInTheDocument())
+    expect(screen.getByText('Starting the chat…')).toBeInTheDocument()
+    emit({ type: 'agent.session.in_progress', session: { ...session, status: 'in_progress' } })
+    await waitFor(() => expect(screen.getByText('Agentry is thinking…')).toBeInTheDocument())
+    expect(screen.getByTestId('thinking')).toBeInTheDocument()
   })
 
   it('keeps the handoff when React runs effects twice in development', async () => {

@@ -32,8 +32,9 @@ export function writeShowSteps(on: boolean): void {
  * @param firstSend - the handoff from the new-chat page, if this chat was just created.
  * @param ready - the session status is known (a snapshot or stream frame was read).
  */
-export function waitingLabel(loading: boolean, status: string, firstSend: FirstSend | null = null, ready = true): string {
-  if (firstSend && !ready) return firstSend.startLabel
+export function waitingLabel(loading: boolean, status: string, firstSend: FirstSend | null = null, ready = true, followingUp = false): string {
+  // Session creation answers `idle` before the first turn is queued; that is still the start.
+  if (firstSend && !followingUp && (!ready || status !== 'in_progress')) return firstSend.startLabel
   if (loading && !firstSend) return 'Loading conversation…'
   return status === 'in_progress' ? 'Agentry is thinking…' : 'Sending…'
 }
@@ -61,12 +62,14 @@ export type WaitOptions = {
   endedInNotice: boolean
   closedReason: boolean
   unavailable: boolean
+  /** A finished turn record; an idle session before one exists is still waiting, not done. */
+  turnEnded?: boolean
 }
 
 /** Whether the waiting row should still be shown for the current turn. */
 export function shouldWaitForOutput(options: WaitOptions): boolean {
   if (options.closedReason || options.unavailable || options.visibleOutput || options.endedInNotice) return false
   if (options.loading || options.sent) return true
-  if (options.firstSend) return !(options.ready && (options.status === 'idle' || options.status === 'failed'))
+  if (options.firstSend) return !(options.ready && (options.status === 'failed' || (options.status === 'idle' && options.turnEnded)))
   return options.status === 'in_progress'
 }

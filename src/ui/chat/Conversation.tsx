@@ -402,6 +402,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     state.status === 'in_progress' || (state.status === 'requires_action' && !waitingOnSubagentsOnly(state))
   const streaming = state.items.some((v) => v.kind === 'assistant' && v.streaming)
   const loading = !loaded || !ready
+  // A new chat's session is `idle` until the turn starts, so only a finished turn record ends its wait.
+  const turnEnded = state.turns.some((t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
   // The history is still arriving, the message is being queued, or the model is thinking
   // before its first visible output. A closed stream or an unavailable server shows its own notice.
   const waiting = shouldWaitForOutput({
@@ -414,6 +416,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     endedInNotice,
     closedReason: closedReason !== null,
     unavailable: Boolean(failure?.unavailable),
+    turnEnded,
   })
   const retries = retryTexts(state.items)
   const entries = groupTurns(split.items, state.turnOf, state.turns)
@@ -506,7 +509,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   )
                   return card ? [group, card] : group
                 })}
-                {waiting && <Thinking label={waitingLabel(loading, state.status, firstSend, ready)} />}
+                {waiting && <Thinking label={waitingLabel(loading, state.status, firstSend, ready, sent)} />}
                 {/* The files the agent created, as a card at the end of the chat (claude.ai's
                     artifacts), not pinned to the composer. */}
                 {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}

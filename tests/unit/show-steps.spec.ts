@@ -29,6 +29,9 @@ describe('waitingLabel', () => {
     expect(waitingLabel(true, 'in_progress', firstSend, true)).toBe('Agentry is thinking…')
     expect(waitingLabel(true, 'in_progress', null, false)).toBe('Loading conversation…')
   })
+  it('keeps the start label while the new session is idle before its turn', () => {
+    expect(waitingLabel(true, 'idle', { startLabel: 'Starting the chat…' }, true)).toBe('Starting the chat…')
+  })
 })
 
 describe('visible output', () => {
@@ -52,7 +55,6 @@ describe('shouldWaitForOutput', () => {
     expect(shouldWaitForOutput({ ...base, loading: true })).toBe(true)
     expect(shouldWaitForOutput({ ...base, firstSend: true, ready: false })).toBe(true)
     expect(shouldWaitForOutput({ ...base, firstSend: true, status: 'in_progress' })).toBe(true)
-    expect(shouldWaitForOutput({ ...base, firstSend: true, status: 'idle' })).toBe(false)
     expect(shouldWaitForOutput({ ...base, firstSend: true, status: 'failed' })).toBe(false)
     expect(shouldWaitForOutput({ ...base, firstSend: true, visibleOutput: true })).toBe(false)
     expect(shouldWaitForOutput({ ...base, firstSend: true, endedInNotice: true })).toBe(false)
@@ -66,5 +68,11 @@ describe('shouldWaitForOutput', () => {
     const base = { loading: false, ready: true, status: 'idle', sent: false, firstSend: false, visibleOutput: false, endedInNotice: false, closedReason: false, unavailable: false }
     expect(shouldWaitForOutput({ ...base, firstSend: true, sent: true })).toBe(true)
     expect(shouldWaitForOutput({ ...base, firstSend: true, sent: true, visibleOutput: true })).toBe(false)
+  })
+
+  it('does not treat the new session’s idle snapshot as the end of the first turn', () => {
+    const base = { loading: false, ready: true, status: 'idle', sent: false, firstSend: true, visibleOutput: false, endedInNotice: false, closedReason: false, unavailable: false }
+    expect(shouldWaitForOutput(base)).toBe(true)
+    expect(shouldWaitForOutput({ ...base, turnEnded: true })).toBe(false)
   })
 })
