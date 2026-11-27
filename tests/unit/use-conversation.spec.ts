@@ -616,4 +616,25 @@ describe('useConversation first message', () => {
     expect(result.current.state.items.some((v) => v.kind === 'user')).toBe(true)
     unmount()
   })
+
+  it('exposes and consumes the new-chat handoff as firstSend', async () => {
+    const { peekPendingFirst, setPendingFirst } = await import('@/chat/pending-first')
+    setPendingFirst(SID, { text: 'hello there', startLabel: 'Starting the chat…' })
+    const { result, unmount } = renderHook(() => useConversation(SID))
+    expect(result.current.firstSend).toEqual({ startLabel: 'Starting the chat…' })
+    await flush()
+    expect(peekPendingFirst(SID)).toBeUndefined()
+    unmount()
+  })
+
+  it('does not leak firstSend when the hook switches sessions', async () => {
+    const { setPendingFirst } = await import('@/chat/pending-first')
+    setPendingFirst(SID, { text: 'hello there' })
+    const { result, rerender, unmount } = renderHook(({ id }) => useConversation(id), { initialProps: { id: SID } })
+    expect(result.current.firstSend).toEqual({ startLabel: 'Starting the chat…' })
+    rerender({ id: 'sess_other' })
+    await flush()
+    expect(result.current.firstSend).toBeNull()
+    unmount()
+  })
 })

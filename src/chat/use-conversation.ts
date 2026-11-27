@@ -52,7 +52,7 @@ import {
   type ConversationState,
   type SubagentActivity,
 } from './reducer'
-import { clearPendingFirst, peekPendingFirst } from './pending-first'
+import { clearPendingFirst, peekPendingFirst, type FirstSend } from './pending-first'
 import { readSse } from './sse'
 import { cached, remember } from '@/ui/page-cache'
 
@@ -152,6 +152,8 @@ export function useConversation(
   loaded: boolean
   /** False until the session status is known (the first snapshot or stream frame has been read). */
   ready: boolean
+  /** The new-chat handoff this session consumed, if it was just created from `/`. */
+  firstSend: FirstSend | null
   connection: Connection
   closedReason: ClosedReason | null
   /** Sends a message, with the model / effort the user changed (if any). */
@@ -167,6 +169,7 @@ export function useConversation(
   const [closedReason, setClosedReason] = useState<ClosedReason | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [ready, setReady] = useState(false)
+  const [firstSend, setFirstSend] = useState<FirstSend | null>(null)
   // A ref, so an inline callback does not restart the stream on every render.
   const signedOutRef = useRef(options.onSignedOut ?? goToLogin)
   useEffect(() => {
@@ -175,6 +178,8 @@ export function useConversation(
   const onSignedOut = useCallback(() => signedOutRef.current(), [])
 
   useEffect(() => {
+    const handoff = peekPendingFirst(sessionId)
+    setFirstSend(handoff ? { startLabel: handoff.startLabel ?? 'Starting the chat…' } : null)
     dispatch({ type: 'reset', sessionId })
     clearPendingFirst(sessionId)
     setConnection('live')
@@ -445,5 +450,5 @@ export function useConversation(
     [guard, sessionId],
   )
 
-  return { state, loaded, ready, connection, closedReason, send, stop, answer, runCommand }
+  return { state, loaded, ready, firstSend, connection, closedReason, send, stop, answer, runCommand }
 }
