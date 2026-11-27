@@ -68,7 +68,7 @@ import { splitSubagentActions, waitingOnSubagentsOnly } from '@/chat/subagent-ac
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
 import { TurnGroup } from './TurnGroup'
-import { readShowSteps, waitingLabel } from '@/chat/show-steps'
+import { hasVisibleOutput, readShowSteps, shouldWaitForOutput, waitingLabel } from '@/chat/show-steps'
 import { readOpenFolds, writeOpenFolds } from '@/chat/open-folds'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
@@ -145,7 +145,7 @@ function retryTexts(items: MessageView[]): Map<string, string> {
 }
 
 export function Conversation({ sessionId }: { sessionId: string }) {
-  const { state, loaded, ready, connection, closedReason, send, stop, answer, runCommand } = useConversation(sessionId)
+  const { state, loaded, ready, firstSend, connection, closedReason, send, stop, answer, runCommand } = useConversation(sessionId)
   const router = useRouter()
   const toast = useToast()
   const [session, setSession] = useState<OAIAgentSession | null>(null)
@@ -184,13 +184,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const seenNotices = useRef<Set<string>>(new Set())
   const noticesAtSend = useRef<Set<string>>(new Set())
   const reducedMotion = usePrefersReducedMotion()
-  // Something visibly happened already (a streaming thought or answer, a running tool): no waiting row.
-  const liveActivity = state.items.some(
-    (v) =>
-      (v.kind === 'assistant' && v.streaming && v.text.trim() !== '') ||
-      (v.kind === 'reasoning' && v.streaming && v.text.trim() !== '') ||
-      (v.kind === 'tool' && v.status === 'running'),
-  )
+  // Something the user can actually see already: no waiting row.
+  const visibleOutput = hasVisibleOutput(state.items)
   useEffect(() => {
     for (const view of state.items) if (view.kind === 'notice') seenNotices.current.add(view.id)
   }, [state.items])
@@ -200,13 +195,13 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       sent &&
       (state.status === 'in_progress' ||
         state.status === 'requires_action' ||
-        liveActivity ||
+        visibleOutput ||
         endedInNotice ||
         closedReason)
     ) {
       setSent(false)
     }
-  }, [sent, state.status, liveActivity, endedInNotice, closedReason])
+  }, [sent, state.status, visibleOutput, endedInNotice, closedReason])
   // Same state as the chat, so the trajectory updates live with it.
   const model = session?.agent.model
   const trajectory = useMemo(
@@ -402,7 +397,17 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const loading = !loaded || !ready
   // The history is still arriving, the message is being queued, or the model is thinking
   // before its first visible output. A closed stream or an unavailable server shows its own notice.
-  const waiting = !closedReason && !failure?.unavailable && (loading || ((sent || state.status === 'in_progress') && !liveActivity))
+  const waiting = shouldWaitForOutput({
+    loading,
+    ready,
+    status: state.status,
+    sent,
+    firstSend: firstSend !== null,
+    visibleOutput,
+    endedInNotice,
+    closedReason: closedReason !== null,
+    unavailable: Boolean(failure?.unavailable),
+  })
   const retries = retryTexts(state.items)
   const entries = groupTurns(split.items, state.turnOf, state.turns)
   const changesAt = changesPlacement(entries, state.turnOf, state.turns)
@@ -494,7 +499,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   )
                   return card ? [group, card] : group
                 })}
-                {waiting && <Thinking label={waitingLabel(loading, state.status)} />}
+                {waiting && <Thinking label={waitingLabel(loading, state.status, firstSend, ready)} />}
                 {/* The files the agent created, as a card at the end of the chat (claude.ai's
                     artifacts), not pinned to the composer. */}
                 {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}
