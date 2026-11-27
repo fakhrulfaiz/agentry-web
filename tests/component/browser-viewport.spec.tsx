@@ -109,4 +109,19 @@ describe('Browser viewport', () => {
     fireEvent.keyDown(img, { key: 'h', code: 'KeyH', keyCode: 72 })
     expect(send).toHaveBeenCalledWith({ type: 'key', action: 'down', key: 'h', code: 'KeyH', key_code: 72, text: 'h' })
   })
+
+  it('fits the page inside the panel-sized viewport keeping its aspect, whatever the page size', () => {
+    const send = vi.fn<(event: BrowserInputEvent) => void>()
+    // A 900x700 viewport and a 1280x800 page: drawn 900x562.5, letterboxed 68.75 above and below.
+    mockBoxes([900, 700], [900, 700])
+    render(<BrowserViewport {...base} inControl send={send} />)
+    const img = screen.getByTestId('browser-frame')
+    expect(img).toHaveAttribute('data-fit', 'contain')
+    fireEvent.pointerDown(img, { clientX: 100 + 450, clientY: 50 + 350, button: 0, buttons: 1, detail: 1 })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'down', x: 640, y: 400 }))
+    send.mockClear()
+    // Inside the letterbox, above the drawn page: nothing is sent.
+    fireEvent.pointerDown(img, { clientX: 100 + 450, clientY: 50 + 20, button: 0, buttons: 1, detail: 1 })
+    expect(send).not.toHaveBeenCalled()
+  })
 })

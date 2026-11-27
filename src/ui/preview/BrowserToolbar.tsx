@@ -4,12 +4,13 @@
 import { Button } from '@astryxdesign/core/Button'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Link } from '@astryxdesign/core/Link'
 import { Spinner } from '@astryxdesign/core/Spinner'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
 import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
-import { GlobeAltIcon, LockClosedIcon } from '@heroicons/react/24/outline'
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, GlobeAltIcon, LockClosedIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import type { BrowserControl } from '@/chat/browser-input'
 import type { BrowserAddress } from './browser-address'
@@ -24,6 +25,10 @@ export interface BrowserToolbarProps {
   controlStatus: BrowserControl['status']
   onTake: () => void
   onHandBack: () => void
+  /** Opens the live view large. */
+  onExpand?: () => void
+  /** Closes the large view (shown instead of Expand). */
+  onCollapse?: () => void
 }
 
 const styles = stylex.create({
@@ -43,7 +48,7 @@ const styles = stylex.create({
 })
 
 /** A single fixed-height toolbar; address ellipsizes, controls never wrap. */
-export function BrowserToolbar({ address, title, statusText, isLive, running, controlStatus, onTake, onHandBack }: BrowserToolbarProps) {
+export function BrowserToolbar({ address, title, statusText, isLive, running, controlStatus, onTake, onHandBack, onExpand, onCollapse }: BrowserToolbarProps) {
   const hasControl = controlStatus === 'on' || controlStatus === 'taking'
   return (
     <HStack gap={2} vAlign="center" wrap="nowrap" padding={1} data-testid="browser-toolbar" xstyle={styles.row}>
@@ -75,6 +80,11 @@ export function BrowserToolbar({ address, title, statusText, isLive, running, co
         <Button label="Hand back" size="sm" variant="primary" isDisabled={controlStatus === 'taking'} onClick={onHandBack} />
       ) : isLive ? (
         <Button label={controlStatus === 'held' ? 'Take control here' : 'Take control'} size="sm" onClick={onTake} />
+      ) : null}
+      {onCollapse ? (
+        <IconButton label="Close expanded view" tooltip="Close expanded view" variant="ghost" size="sm" icon={<Icon icon={ArrowsPointingInIcon} size="sm" />} onClick={onCollapse} />
+      ) : onExpand ? (
+        <IconButton label="Expand" tooltip="Expand the browser view" variant="ghost" size="sm" icon={<Icon icon={ArrowsPointingOutIcon} size="sm" />} onClick={onExpand} />
       ) : null}
     </HStack>
   )
