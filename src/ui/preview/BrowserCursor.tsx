@@ -5,7 +5,7 @@
  * mouse events report, a press and ripple on a click, and a short outline on the field the agent types
  * into. It sits over the same box the frame is drawn in, so page pixels are mapped with the take-over's
  * letterbox maths (`toFramePoint`). Hidden before the first event, three seconds after the last one, and
- * while the user has control.
+ * while the user has control. A recording's player (`VideoView`) drives it with the video's time (`clock`).
  */
 import { colorVars, radiusVars, spacingVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
@@ -22,6 +22,11 @@ export interface BrowserCursorProps {
   page: { width?: number; height?: number } | undefined
   /** The user has control: the agent's cursor is hidden. */
   inControl: boolean
+  /**
+   * A recording's video time (ms). When given, `pointer.at` and `focus.at` are video times too, and visibility
+   * follows the video (shown until `CURSOR_HIDE_MS` / `FOCUS_OUTLINE_MS` after the event) instead of the wall clock.
+   */
+  clock?: number
 }
 
 /** How long the cursor stays after the last event, and how long a focus outline shows. */
@@ -94,7 +99,7 @@ function useRecent(key: number | undefined, ms: number): boolean {
   return shown
 }
 
-export function BrowserCursor({ pointer, focus, page, inControl }: BrowserCursorProps) {
+export function BrowserCursor({ pointer, focus, page, inControl, clock }: BrowserCursorProps) {
   const layerRef = useRef<HTMLDivElement>(null)
   const reduced = usePrefersReducedMotion()
   const [size, setSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
@@ -110,8 +115,11 @@ export function BrowserCursor({ pointer, focus, page, inControl }: BrowserCursor
     observer?.observe(layer)
     return () => { observer?.disconnect() }
   }, [])
-  const cursorVisible = useRecent(pointer?.at, CURSOR_HIDE_MS)
-  const focusVisible = useRecent(focus?.at, FOCUS_OUTLINE_MS)
+  const liveCursor = useRecent(clock === undefined ? pointer?.at : undefined, CURSOR_HIDE_MS)
+  const liveFocus = useRecent(clock === undefined ? focus?.at : undefined, FOCUS_OUTLINE_MS)
+  const within = (at: number | undefined, ms: number) => clock !== undefined && at !== undefined && clock >= at && clock - at < ms
+  const cursorVisible = clock === undefined ? liveCursor : within(pointer?.at, CURSOR_HIDE_MS)
+  const focusVisible = clock === undefined ? liveFocus : within(focus?.at, FOCUS_OUTLINE_MS)
 
   const box: FrameBox = { left: 0, top: 0, width: size.width, height: size.height, pageWidth: page?.width ?? 0, pageHeight: page?.height ?? 0 }
   const at = pointer ? toFramePoint(pointer.x, pointer.y, box) : undefined

@@ -124,3 +124,33 @@ export function browserState(items: readonly MessageView[]): BrowserState {
   }
   return state
 }
+
+/** The browser recording tools (`browser_recording_start` / `browser_recording_stop`), by their short action. */
+export function recordingAction(name: string): 'start' | 'stop' | null {
+  const m = /^(?:[a-z0-9_]+__)?browser_recording_(start|stop)$/.exec(name)
+  return m ? (m[1] as 'start' | 'stop') : null
+}
+
+const basenameOf = (path: string): string => path.split('/').pop() ?? path
+
+/**
+ * A recording tool call as a card: its title ("Started recording", "Saved recording demo.webm") and the video
+ * file to open in the side panel (the saved one, or one that stopped by itself, reported with the next call).
+ * `null` for other tools.
+ */
+export function recordingCard(view: Pick<ToolView, 'name' | 'output' | 'status'>): { title: string; file?: string } | null {
+  const action = recordingAction(view.name)
+  if (action === null) return null
+  const out = argsOf(view.output)
+  const path = str(out['path'])
+  const earlier = argsOf(out['earlier_recording'])
+  const earlierPath = str(earlier['path'])
+  const failed = view.status === 'failed' || str(out['error']) !== undefined
+  if (action === 'start') {
+    const title = view.status === 'running' ? 'Starting recording' : failed ? 'Could not start recording' : 'Started recording'
+    return earlierPath?.endsWith('.webm') ? { title, file: earlierPath } : { title }
+  }
+  if (view.status === 'running') return { title: 'Saving recording' }
+  if (path?.endsWith('.webm') && !failed) return { title: `Saved recording ${basenameOf(path)}`, file: path }
+  return { title: str(out['error']) === 'not_recording' ? 'No recording to stop' : 'Could not save recording' }
+}

@@ -19,6 +19,7 @@ import {
   DocumentTextIcon,
   PresentationChartBarIcon,
   TableCellsIcon,
+  FilmIcon,
 } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from 'react'
@@ -36,6 +37,7 @@ const KIND_LABEL: Record<ArtifactKind, string> = {
   sheet: 'Spreadsheet',
   pdf: 'PDF',
   code: 'Code',
+  video: 'Video',
   other: 'File',
 }
 
@@ -45,6 +47,7 @@ const KIND_ICON: Record<ArtifactKind, IconType> = {
   sheet: TableCellsIcon,
   pdf: DocumentIcon,
   code: CodeBracketIcon,
+  video: FilmIcon,
   other: DocumentIcon,
 }
 

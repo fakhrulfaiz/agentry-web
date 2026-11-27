@@ -6,8 +6,8 @@
  */
 import type { Artifact } from '@/api/types'
 
-export type ArtifactKind = 'doc' | 'slides' | 'sheet' | 'pdf' | 'code' | 'other'
-export type PreviewMode = 'image' | 'pdf' | 'text' | 'none'
+export type ArtifactKind = 'doc' | 'slides' | 'sheet' | 'pdf' | 'code' | 'video' | 'other'
+export type PreviewMode = 'image' | 'pdf' | 'text' | 'video' | 'none'
 
 const extension = (name: string): string => name.slice(name.lastIndexOf('.') + 1).toLowerCase()
 
@@ -20,6 +20,9 @@ const CONTENT_TYPES: Record<string, string> = {
   webp: 'image/webp',
   svg: 'image/svg+xml',
   pdf: 'application/pdf',
+  webm: 'video/webm',
+  mp4: 'video/mp4',
+  jsonl: 'text/plain; charset=utf-8',
   txt: 'text/plain; charset=utf-8',
   md: 'text/plain; charset=utf-8',
   log: 'text/plain; charset=utf-8',
@@ -62,7 +65,7 @@ export function isPresentedArtifact(path: string): boolean {
 }
 
 export const CODE_EXTENSIONS = new Set([
-  'md', 'txt', 'json', 'yaml', 'yml', 'xml', 'csv', 'log', 'js', 'jsx', 'ts', 'tsx', 'py', 'sh',
+  'md', 'txt', 'json', 'jsonl', 'yaml', 'yml', 'xml', 'csv', 'log', 'js', 'jsx', 'ts', 'tsx', 'py', 'sh',
   'html', 'css', 'sql', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'rb', 'toml',
 ])
 
@@ -74,6 +77,7 @@ export function artifactKind(artifact: Pick<Artifact, 'name' | 'mime_type'>): Ar
   const mime = artifact.mime_type.toLowerCase()
   const ext = extension(artifact.name)
   if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
+  if (mime.startsWith('video/') || ext === 'webm' || ext === 'mp4') return 'video'
   if (mime.includes('wordprocessingml') || mime === 'application/msword' || ext === 'doc' || ext === 'docx') return 'doc'
   if (mime.includes('presentationml') || mime.includes('powerpoint') || ext === 'ppt' || ext === 'pptx') return 'slides'
   if (mime.includes('spreadsheetml') || mime.includes('ms-excel') || ext === 'xls' || ext === 'xlsx') return 'sheet'
@@ -85,6 +89,7 @@ export function previewMode(artifact: Pick<Artifact, 'name' | 'mime_type'>): Pre
   if (artifact.mime_type.toLowerCase().startsWith('image/')) return 'image'
   const kind = artifactKind(artifact)
   if (kind === 'pdf') return 'pdf'
+  if (kind === 'video') return 'video'
   return kind === 'code' ? 'text' : 'none'
 }
 

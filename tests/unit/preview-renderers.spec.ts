@@ -17,6 +17,8 @@ describe('renderersFor', () => {
     ['a.xls', 'officePdf', ['officePdf', 'download']],
     ['a.bin', 'download', ['download']],
     ['a.PDF', 'pdf', ['pdf']],
+    ['recordings/demo.webm', 'video', ['video', 'download']],
+    ['clip.MP4', 'video', ['video', 'download']],
   ])('%s', (name, def, options) => {
     expect(renderersFor(name)).toEqual({ default: def, options })
   })
