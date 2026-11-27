@@ -57,6 +57,15 @@ describe('EnvironmentDetail', () => {
     await waitFor(() => expect(apiMock.listEnvironmentFiles).toHaveBeenCalled())
   }, 10000)
 
+  it('says where the setup is, and moves on as the stage changes', async () => {
+    const at = (progress: object) => ({ ...base, status: 'pending', sandbox: { state: 'provisioning', progress } })
+    apiMock.getSandboxEnvironment.mockResolvedValue(at({ stage: 'installing_packages', updated_at: 1 }))
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByText('Installing packages…')).toBeInTheDocument()
+    apiMock.getSandboxEnvironment.mockResolvedValue(at({ stage: 'running_setup', step: 2, steps: 3, detail: 'npm install', updated_at: 2 }))
+    expect(await screen.findByText('Running setup (2 of 3): npm install', undefined, { timeout: 6000 })).toBeInTheDocument()
+  }, 10000)
+
   it('stops a running sandbox, then offers Start', async () => {
     apiMock.stopSandboxEnvironment.mockResolvedValue(stopped)
     const user = userEvent.setup()

@@ -43,7 +43,7 @@ import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTempl
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { IconTile } from '@/ui/shared/IconTile'
-import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, shortDate, shortId, templateSummary } from './format'
+import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, setupProgressText, shortDate, shortId, templateSummary } from './format'
 import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
 import { TemplateDetailsDialog } from './TemplateDetails'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
@@ -334,7 +334,7 @@ export function SandboxesPage() {
                     trailing={
                       <HStack gap={2} vAlign="center">
                         {busy || setting ? <Spinner size="sm" /> : <StatusDot variant={look.variant} label={look.text} />}
-                        <Text type="supporting" color="secondary">{setting ? 'Setting up…' : look.text}</Text>
+                        <Text type="supporting" color="secondary">{setting ? setupProgressText(env.sandbox?.progress) : look.text}</Text>
                         <MoreMenu label={`More options for ${environmentName(env)}`} size="sm" alignment="end" isDisabled={busy} items={menu} />
                       </HStack>
                     }
