@@ -4,7 +4,7 @@ import '../helpers/dom'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OAIAgentSession, OAIListResponse } from '@/api/types'
+import type { OAIAgentSession, OAIListResponse, OAIProject } from '@/api/types'
 import { groupSessions } from '@/ui/shell/group'
 
 const nav = vi.hoisted(() => ({ pathname: '/', push: vi.fn() }))
@@ -15,6 +15,16 @@ vi.mock('next/navigation', () => ({
 
 const apiMock = vi.hoisted(() => ({
   listSessions: vi.fn(),
+  listProjects: vi.fn(),
+  getProject: vi.fn(),
+  createProject: vi.fn(),
+  updateProject: vi.fn(),
+  archiveProject: vi.fn(),
+  unarchiveProject: vi.fn(),
+  deleteProject: vi.fn(),
+  setSessionProject: vi.fn(),
+  listAgents: vi.fn(),
+  listSandboxEnvironments: vi.fn(),
   renameSession: vi.fn(),
   deleteSession: vi.fn(),
   setStarred: vi.fn(),
@@ -38,8 +48,32 @@ function session(id: string, title: string, createdAt = NOW_S, extra: Record<str
 const starred = (id: string, title: string, createdAt = NOW_S) => session(id, title, createdAt, { starred: 'true' })
 const group = (name: string) => screen.getByRole('group', { name })
 
-function page(data: OAIAgentSession[], hasMore = false): OAIListResponse<OAIAgentSession> {
+function page<T extends { id: string }>(data: T[], hasMore = false): OAIListResponse<T> {
   return { object: 'list', data, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null, has_more: hasMore }
+}
+
+function project(id: string, name: string, extra: Partial<OAIProject> = {}): OAIProject {
+  return {
+    id,
+    object: 'project',
+    name,
+    status: 'active',
+    pinned: false,
+    agent_id: null,
+    environment: null,
+    archived_at: null,
+    created_at: NOW_S,
+    updated_at: NOW_S,
+    ...extra,
+  }
+}
+
+function filed(id: string, title: string, projectId: string | null): OAIAgentSession {
+  return { ...session(id, title), project_id: projectId } as OAIAgentSession
+}
+
+function before(first: HTMLElement, second: HTMLElement): void {
+  expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 }
 
 /** IntersectionObserver stand-in: `intersect()` reports the observed nodes as visible. */
@@ -87,6 +121,9 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', FakeObserver)
   window.localStorage.clear()
   for (const fn of Object.values(apiMock)) fn.mockReset()
+  apiMock.listProjects.mockResolvedValue(page<OAIProject>([]))
+  apiMock.listAgents.mockResolvedValue({ object: 'list', data: [], first_id: null, last_id: null, has_more: false })
+  apiMock.listSandboxEnvironments.mockResolvedValue({ object: 'list', data: [], has_more: false })
   // @ts-expect-error jsdom has no matchMedia by default; astryx then assumes desktop.
   delete window.matchMedia
 })
@@ -322,6 +359,158 @@ describe('Sidebar', () => {
     expect(await screen.findByRole('menuitem', { name: /u-1/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /user/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
+  })
+
+  it('renders pinned and active project sections before starred and recent', async () => {
+    apiMock.listProjects.mockResolvedValue(page([project('p_pin', 'Pinned work', { pinned: true }), project('p_active', 'Other work')]))
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: unknown; projectId?: string }) =>
+      q.metadata || q.projectId ? page([]) : page([session('s1', 'One-off chat'), starred('s2', 'Starred chat')]),
+    )
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'One-off chat' })
+
+    const pinned = group('Pinned work')
+    const active = group('Other work')
+    const star = group('Starred')
+    const today = group('Today')
+    before(pinned, active)
+    before(active, star)
+    before(star, today)
+    expect(within(pinned).getByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p_pin')
+    expect(apiMock.listProjects).toHaveBeenCalledWith({ status: 'active' })
+  })
+
+  it('loads filtered sessions only when a project section is expanded', async () => {
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: unknown; projectId?: string }) =>
+      q.metadata ? page([]) : q.projectId ? page([filed('s1', 'Website chat', 'p1')]) : page([session('s2', 'One-off chat')]),
+    )
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'One-off chat' })
+    // The client turns `{ projectId }` into the `project_id` query checked in the API client tests.
+    expect(apiMock.listSessions).not.toHaveBeenCalledWith({ projectId: 'p1' })
+
+    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
+    expect(apiMock.listSessions).toHaveBeenCalledWith({ projectId: 'p1' })
+    expect(apiMock.listSessions).toHaveBeenCalledTimes(3) // global page, starred page, filtered page
+  })
+
+  it('moves a chat to a project and back to unfiled', async () => {
+    let attached: string | null = null
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: unknown; projectId?: string }) =>
+      q.metadata
+        ? page([])
+        : q.projectId
+          ? page(attached === q.projectId ? [filed('s1', 'Launch notes', 'p1')] : [])
+          : page(attached ? [] : [session('s1', 'Launch notes')]),
+    )
+    apiMock.setSessionProject.mockImplementation(async (_id: string, next: string | null) => {
+      attached = next
+      return filed('s1', 'Launch notes', next)
+    })
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Launch notes' })
+
+    await user.click(screen.getByRole('button', { name: 'Options for Launch notes' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to project…' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('combobox', { name: 'Project' })).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('combobox', { name: 'Project' }))
+    await user.click(await screen.findByRole('option', { name: 'Website work' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(apiMock.setSessionProject).toHaveBeenCalledWith('s1', 'p1')
+
+    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    expect(await within(group('Website work')).findByRole('link', { name: 'Launch notes' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Options for Launch notes' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Unfiled' }))
+    expect(apiMock.setSessionProject).toHaveBeenLastCalledWith('s1', null)
+    expect(await within(group('Today')).findByRole('link', { name: 'Launch notes' })).toBeInTheDocument()
+    await waitFor(() => expect(within(group('Website work')).queryByRole('link', { name: 'Launch notes' })).not.toBeInTheDocument())
+  })
+
+  it('hides an archived project from active sections', async () => {
+    let archived = true
+    apiMock.listProjects.mockImplementation(async () =>
+      page([project('p1', 'Archived work', { status: archived ? 'archived' : 'active' }), project('p2', 'Active work')]),
+    )
+    apiMock.listSessions.mockResolvedValue(page([]))
+    apiMock.unarchiveProject.mockImplementation(async () => {
+      archived = false
+      return project('p1', 'Archived work', { status: 'active' })
+    })
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await waitFor(() => expect(group('Active work')).toBeInTheDocument())
+    expect(screen.queryByRole('group', { name: 'Archived work' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Archived' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Archived work')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Unarchive' }))
+    expect(apiMock.unarchiveProject).toHaveBeenCalledWith('p1')
+    await waitFor(() => expect(group('Archived work')).toBeInTheDocument())
+  })
+
+  it('links new chat here to /?project=<id>', async () => {
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
+    expect(within(group('Website work')).getByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p1')
+
+    await user.click(screen.getByRole('button', { name: 'Options for Website work' }))
+    expect(await screen.findByRole('menuitem', { name: 'New chat here' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Pin' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('shows one-off chats under recent date groups', async () => {
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: unknown; projectId?: string }) =>
+      q.metadata || q.projectId ? page([]) : page([session('s1', 'One-off chat'), filed('s2', 'Filed chat', 'p1')]),
+    )
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'One-off chat' })
+    expect(within(group('Today')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Filed chat' })).not.toBeInTheDocument()
+  })
+
+  it('creates a project with its name, agent, environment and pinned flag', async () => {
+    apiMock.listSessions.mockResolvedValue(page([]))
+    apiMock.listAgents.mockResolvedValue({ object: 'list', data: [{ id: 'a1', name: 'Research' }], first_id: null, last_id: null, has_more: false })
+    apiMock.listSandboxEnvironments.mockResolvedValue({ object: 'list', data: [{ id: 'e1', name: 'Python data' }], has_more: false })
+    apiMock.createProject.mockResolvedValue(project('p2', 'Launch project'))
+    const heard: string[] = []
+    const listen = () => heard.push('changed')
+    window.addEventListener('agentry:projects-changed', listen)
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await user.click(await screen.findByRole('button', { name: 'New project' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'Launch project')
+    await user.click(within(dialog).getByRole('combobox', { name: 'Default agent' }))
+    await user.click(await screen.findByRole('option', { name: 'Research' }))
+    await user.click(within(dialog).getByRole('combobox', { name: 'Environment' }))
+    await user.click(await screen.findByRole('option', { name: 'Python data' }))
+    await user.click(within(dialog).getByRole('switch', { name: 'Pinned' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    expect(apiMock.createProject).toHaveBeenCalledWith({
+      name: 'Launch project',
+      agent_id: 'a1',
+      environment: { type: 'sandbox', environment_id: 'e1' },
+      pinned: true,
+    })
+    expect(heard).toContain('changed')
+    window.removeEventListener('agentry:projects-changed', listen)
   })
 })
 
