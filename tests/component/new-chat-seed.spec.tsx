@@ -236,6 +236,19 @@ describe('New chat project preset', () => {
     expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
   })
 
+  it('ignores an unknown or foreign project preset', async () => {
+    nav.query = 'project=bad_id'
+    apiMock.getProject.mockRejectedValue(Object.assign(new Error('Project not found'), { status: 404 }))
+    render(<NewChat />)
+    await waitFor(() => expect(apiMock.getProject).toHaveBeenCalledWith('bad_id'))
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
+    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().model).toHaveTextContent('m-default')
+    expect(selection().effort).toHaveTextContent('Auto')
+    await send()
+    expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
+  })
+
   it('creates an unfiled chat when no project preset is present', async () => {
     nav.query = ''
     apiMock.models.mockResolvedValue(['m-default'])
