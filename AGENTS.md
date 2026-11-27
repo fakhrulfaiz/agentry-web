@@ -74,11 +74,12 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 
 **P0 (risk or debt)**
 - [ ] Release `develop` → `main` in all three repos (version bump, `## <version>` CHANGELOG section, one e2e run, PR). M.
-- [ ] Rotate the sandbox access key that was pasted in a chat (`AGENTRY_SANDBOX_KEY` in the API `.env`, the sandbox service's key list). S.
 - [x] DONE 2026-11-28, live checks: jobs in the Tasks tab (API list, Tasks row with timer, live output tab, Stop); recording playback (found and fixed: the API sent no `Content-Length`, so videos could not seek); Composio read tools (found and fixed: the Composio relay route never matched DSH's web server, so Composio was disconnected in every new chat since the relay landed; `gmail_search_emails` now works in one call).
-- [ ] Live checks still owed: schedule tools with two owners (dev mode has one owner, `dev` in the API's `cordis.patch.yml`; needs a second API key there); a sandbox chat with no host `/workspace` (needs root to move `/workspace` aside). S each.
+- [x] SKIPPED 2026-11-28 (user's decision): live check of schedule tools with two owners (needs `apiKeys` mode with a second key; unit tests cover the owner filter).
+- [x] DONE 2026-11-28: sandbox chat with no host `/workspace` works (chat created, `pwd` → `/workspace` inside the sandbox).
+- [x] DONE 2026-11-28: sandbox access and admin keys rotated in the API `.env`; sandbox service and API restarted on them.
 - [x] DONE 2026-11-28: SSH-machine envd ports moved to 30000-30599, below Linux's ephemeral range (a real bug: envd could hit EADDRINUSE on a busy machine; it also made `tests/ssh-machine.spec.ts` fail while the dev stack ran). agentry-sandbox `develop`.
-- [ ] Keycloak live check (README "Keycloak live check"). S; needs a Keycloak from the user.
+- [x] DONE 2026-11-28: Keycloak live check, README steps 1–7 all pass against a local Keycloak 26 (`agentry-keycloak` container on 127.0.0.1:8180, realm `agentry`, user `tester`; API accepts it with `AGENTRY_KEYCLOAK_ISSUER`, web in Keycloak mode on :3020).
 
 **P1 (largest user-facing wins)**
 - [ ] Compact live steps while a turn runs (running turns show every row expanded). M.
