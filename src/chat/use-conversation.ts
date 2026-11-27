@@ -169,7 +169,14 @@ export function useConversation(
   const [closedReason, setClosedReason] = useState<ClosedReason | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [ready, setReady] = useState(false)
-  const [firstSend, setFirstSend] = useState<FirstSend | null>(null)
+  // Captured during render, keyed by session: StrictMode runs the mount effect twice in development,
+  // and the second run would otherwise see the handoff already cleared and erase the label.
+  const firstSendRef = useRef<{ sessionId: string; handoff: FirstSend | null } | null>(null)
+  if (firstSendRef.current?.sessionId !== sessionId) {
+    const handoff = peekPendingFirst(sessionId)
+    firstSendRef.current = { sessionId, handoff: handoff ? { startLabel: handoff.startLabel ?? 'Starting the chat…' } : null }
+  }
+  const firstSend = firstSendRef.current.handoff
   // A ref, so an inline callback does not restart the stream on every render.
   const signedOutRef = useRef(options.onSignedOut ?? goToLogin)
   useEffect(() => {
@@ -178,8 +185,6 @@ export function useConversation(
   const onSignedOut = useCallback(() => signedOutRef.current(), [])
 
   useEffect(() => {
-    const handoff = peekPendingFirst(sessionId)
-    setFirstSend(handoff ? { startLabel: handoff.startLabel ?? 'Starting the chat…' } : null)
     dispatch({ type: 'reset', sessionId })
     clearPendingFirst(sessionId)
     setConnection('live')

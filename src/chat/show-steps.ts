@@ -66,7 +66,7 @@ export type WaitOptions = {
 /** Whether the waiting row should still be shown for the current turn. */
 export function shouldWaitForOutput(options: WaitOptions): boolean {
   if (options.closedReason || options.unavailable || options.visibleOutput || options.endedInNotice) return false
-  if (options.loading) return true
+  if (options.loading || options.sent) return true
   if (options.firstSend) return !(options.ready && (options.status === 'idle' || options.status === 'failed'))
-  return options.sent || options.status === 'in_progress'
+  return options.status === 'in_progress'
 }

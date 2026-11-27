@@ -61,4 +61,10 @@ describe('shouldWaitForOutput', () => {
     expect(shouldWaitForOutput({ ...base, sent: true })).toBe(true)
     expect(shouldWaitForOutput({ ...base, status: 'in_progress' })).toBe(true)
   })
+
+  it('waits for a new send even when the session was created by an earlier first send', () => {
+    const base = { loading: false, ready: true, status: 'idle', sent: false, firstSend: false, visibleOutput: false, endedInNotice: false, closedReason: false, unavailable: false }
+    expect(shouldWaitForOutput({ ...base, firstSend: true, sent: true })).toBe(true)
+    expect(shouldWaitForOutput({ ...base, firstSend: true, sent: true, visibleOutput: true })).toBe(false)
+  })
 })

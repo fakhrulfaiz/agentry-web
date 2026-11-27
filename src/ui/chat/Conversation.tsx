@@ -183,9 +183,15 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   // Notices already shown: a turn that fails or is stopped after the send adds a new one and ends the wait.
   const seenNotices = useRef<Set<string>>(new Set())
   const noticesAtSend = useRef<Set<string>>(new Set())
+  // Older turns are not output for the send we are waiting on; keep their ids as a baseline.
+  const itemsAtSend = useRef<ReadonlySet<string>>(new Set())
+  const itemsNow = useRef(state.items)
+  itemsNow.current = state.items
   const reducedMotion = usePrefersReducedMotion()
-  // Something the user can actually see already: no waiting row.
-  const visibleOutput = hasVisibleOutput(state.items)
+  // Something the user can actually see from this send already: no waiting row.
+  const visibleOutput = hasVisibleOutput(
+    itemsAtSend.current.size > 0 ? state.items.filter((v) => !itemsAtSend.current.has(v.id)) : state.items,
+  )
   useEffect(() => {
     for (const view of state.items) if (view.kind === 'notice') seenNotices.current.add(view.id)
   }, [state.items])
@@ -304,6 +310,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const { change, revert } = settings
   const onSend = useCallback(
     async (text: string, files?: UserFile[]) => {
+      itemsAtSend.current = new Set(itemsNow.current.map((v) => v.id))
       noticesAtSend.current = new Set(seenNotices.current)
       setSent(true)
       try {
