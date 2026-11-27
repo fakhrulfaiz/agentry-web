@@ -56,7 +56,8 @@ describe('Browser tab', () => {
     rerender(<Panel browser={browsing} />)
     const tab = await screen.findByTestId('browser-tab')
     expect(tab).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /latest screenshot/i })).toHaveAttribute('src', '/api/agentry/agents/files/file_9/content')
+    expect(screen.getByTestId('browser-frame')).toHaveAttribute('src', '/api/agentry/agents/files/file_9/content')
+    await userEvent.click(screen.getByRole('button', { name: /Pages visited \(2\)/ }))
     expect(screen.getByRole('list', { name: 'Pages visited' }).querySelectorAll('li')).toHaveLength(2)
     expect(screen.getAllByRole('link', { name: /IANA/ })[0]).toHaveAttribute('href', 'https://www.iana.org/')
   })
@@ -102,12 +103,16 @@ describe('Browser tab live view', () => {
     lastSource().emit('frame', { data: '/9j/AA==', url: 'https://news.example.org/a', title: 'News', width: 1280, height: 720, timestamp: 1 })
     expect(screen.getByRole('img', { name: /live view/i })).toHaveAttribute('src', 'data:image/jpeg;base64,/9j/AA==')
     expect(screen.getByLabelText('Live')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /News \(news\.example\.org/ })).toHaveAttribute('href', 'https://news.example.org/a')
-    // The history stays.
+    const toolbar = screen.getByTestId('browser-toolbar')
+    expect(toolbar).toHaveTextContent('news.example.org')
+    expect(toolbar).toHaveTextContent('/a')
+    expect(toolbar.querySelector('a')).toHaveAttribute('href', 'https://news.example.org/a')
+    // The history is still there, behind its collapsed disclosure.
+    await userEvent.click(screen.getByRole('button', { name: /Pages visited \(2\)/ }))
     expect(screen.getByRole('list', { name: 'Pages visited' })).toBeInTheDocument()
     // The browser closed: back to the last screenshot.
     lastSource().emit('idle', { reason: 'not_started' })
-    expect(screen.getByRole('img', { name: /latest screenshot/i })).toBeInTheDocument()
+    expect(screen.getByTestId('browser-frame')).toHaveAttribute('src', '/api/agentry/agents/files/file_9/content')
     expect(screen.getByText('Not browsing')).toBeInTheDocument()
   })
 
