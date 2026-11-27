@@ -27,6 +27,7 @@ import { api, ApiError, isSignedOut } from '@/api/client'
 import type { EnvironmentFile, SandboxEnvironment, SandboxPlace } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { Terminal } from '@/ui/terminal/Terminal'
+import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
 import { canChatIn, environmentLook, environmentName, formatBytes, gpuLabel, lastUsed, providerTitle, shortDate, shortId, toBase64 } from './format'
 
 const COLUMN_WIDTH = 880
@@ -65,6 +66,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const [keepWorkspace, setKeepWorkspace] = useState(true)
   const [places, setPlaces] = useState<SandboxPlace[]>([])
   const [acting, setActing] = useState<'start' | 'stop' | 'reset' | null>(null)
+  const [renaming, setRenaming] = useState(false)
 
   // The environment and its files load separately: a sandbox lists files slowly, and the header and actions should not wait for it.
   const loadFiles = useCallback(async () => {
@@ -228,6 +230,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
               {state === 'stopped' && <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} />}
               {state === 'running' && <Button label="Stop" size="sm" isLoading={acting === 'stop'} isDisabled={acting !== null} onClick={() => void act('stop')} />}
               {state !== undefined && state !== 'gone' && canReset && <Button label="Reset" size="sm" isDisabled={acting !== null} onClick={() => setConfirmReset(true)} />}
+              <Button label="Rename" size="sm" isDisabled={acting !== null} onClick={() => setRenaming(true)} />
               {env.session_id && <Button label="Open its chat" size="sm" variant="ghost" onClick={() => router.push(`/c/${encodeURIComponent(env.session_id!)}`)} />}
               {state !== 'gone' && <StackItem size="fill">{null}</StackItem>}
               {state !== 'gone' && <Button label="Delete environment" size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} />}
@@ -317,6 +320,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
           </HStack>
         </VStack>
       </Dialog>
+      <RenameEnvironmentDialog environment={renaming ? env : null} onClose={() => setRenaming(false)} onRenamed={setEnv} />
       <AlertDialog
         isOpen={confirmDelete}
         onOpenChange={setConfirmDelete}

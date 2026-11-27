@@ -16,6 +16,10 @@ const apiMock = vi.hoisted(() => ({
   listSandboxProviders: vi.fn(),
   listSandboxRuntimes: vi.fn(),
   createSandboxEnvironment: vi.fn(),
+  renameSandboxEnvironment: vi.fn(),
+  startSandboxEnvironment: vi.fn(),
+  stopSandboxEnvironment: vi.fn(),
+  deleteSandboxEnvironment: vi.fn(),
   createSandboxTemplate: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
 }))
@@ -101,6 +105,42 @@ describe('SandboxesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Providers' }))
     expect(screen.getAllByText('Agentry Sandbox is not reachable').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
+  })
+
+  it('renames, starts, stops and deletes an environment from its card menu', async () => {
+    const sandboxEnv = { ...env, id: 'env_sbx', name: 'Data box', provider: 'sandbox', type: 'openai_hosted', template_id: undefined, sandbox: { state: 'stopped' } }
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([sandboxEnv]))
+    apiMock.renameSandboxEnvironment.mockResolvedValue({ ...sandboxEnv, name: 'Notebook' })
+    apiMock.startSandboxEnvironment.mockResolvedValue({ ...sandboxEnv, name: 'Notebook', sandbox: { state: 'running' } })
+    apiMock.stopSandboxEnvironment.mockResolvedValue({ ...sandboxEnv, name: 'Notebook', sandbox: { state: 'stopped' } })
+    apiMock.deleteSandboxEnvironment.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    expect(await screen.findByText('Data box')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'More options for Data box' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    const input = await screen.findByRole('textbox', { name: 'Name' })
+    await user.clear(input)
+    await user.type(input, ' Notebook ')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(apiMock.renameSandboxEnvironment).toHaveBeenCalledWith('env_sbx', 'Notebook'))
+    expect(await screen.findByText('Notebook')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'More options for Notebook' }))
+    expect(screen.queryByRole('menuitem', { name: 'Stop' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('menuitem', { name: 'Start' }))
+    await waitFor(() => expect(apiMock.startSandboxEnvironment).toHaveBeenCalledWith('env_sbx'))
+
+    await user.click(await screen.findByRole('button', { name: 'More options for Notebook' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Stop' }))
+    await waitFor(() => expect(apiMock.stopSandboxEnvironment).toHaveBeenCalledWith('env_sbx'))
+
+    await user.click(await screen.findByRole('button', { name: 'More options for Notebook' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete environment' }))
+    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_sbx'))
+    await waitFor(() => expect(screen.queryByText('Notebook')).not.toBeInTheDocument())
   })
 
   it('closes the dialog at once and shows a setting-up card until the environment is ready', async () => {

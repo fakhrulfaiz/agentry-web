@@ -469,6 +469,10 @@ export const api = {
       ...(input.place ? { place: input.place } : {}),
     })
   },
+  /** Renames an environment; an empty name clears it. Answers the environment. */
+  renameSandboxEnvironment(id: string, name: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}`, { name })
+  },
   /** Starts, stops or rebuilds an Agentry Sandbox environment; answers the environment. */
   startSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
     return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/start`, {})

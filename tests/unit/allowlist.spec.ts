@@ -36,6 +36,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/environments'],
     ['POST', '/agents/environments'],
     ['GET', '/agents/environments/env_1'],
+    ['POST', '/agents/environments/env_1'],
     ['DELETE', '/agents/environments/env_1'],
     ['GET', '/agents/environments/env_1/files'],
     ['POST', '/agents/environments/env_1/files'],
@@ -211,7 +212,7 @@ describe('sandbox routes', () => {
   it('keep file bytes off the proxy and refuse methods the page does not use', () => {
     expect(isAllowed('GET', '/agents/environments/env_1/files/a.txt')).toBe(false)
     expect(isAllowed('POST', '/agents/environments/providers')).toBe(false)
-    expect(isAllowed('POST', '/agents/environments/env_1')).toBe(false)
+    expect(isAllowed('POST', '/agents/environments/runtimes')).toBe(false)
     expect(isAllowed('DELETE', '/agents/environments')).toBe(false)
   })
 

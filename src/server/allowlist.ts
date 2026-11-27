@@ -53,7 +53,7 @@ const RULES: readonly Rule[] = [
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', 'templates'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'environments', 'templates', TEMPLATE] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments'] },
-  { methods: ['GET', 'DELETE'], segments: ['agents', 'environments', ENVIRONMENT] },
+  { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'environments', ENVIRONMENT] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'start'] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'stop'] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'reset'] },
@@ -99,6 +99,8 @@ function matches(rule: Segment, part: string): boolean {
   if (!ID_SEGMENT.test(part)) return false
   if (rule.id === 'skill') return SKILL_ID.test(part)
   if (rule.id === 'index') return INDEX_SEGMENT.test(part)
+  // Environment ids are `env_…`, so `providers`, `runtimes` and `templates` never pass as one.
+  if (rule.id === 'environment') return part.startsWith('env_')
   return rule.id !== 'agent' || !RESERVED_AGENT_IDS.has(part)
 }
 

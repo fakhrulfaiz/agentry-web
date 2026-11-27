@@ -15,6 +15,7 @@ import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { Layout, LayoutContent, LayoutFooter, StackItem } from '@astryxdesign/core/Layout'
+import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { Spinner } from '@astryxdesign/core/Spinner'
@@ -46,6 +47,7 @@ import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, 
 import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
 import { TemplateDetailsDialog } from './TemplateDetails'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
+import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
 import { useCachedState } from '@/ui/page-cache'
 
 const COLUMN_WIDTH = 880
@@ -232,6 +234,40 @@ export function SandboxesPage() {
   }
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)
   const [viewing, setViewing] = useState<SandboxTemplate | null>(null)
+  const [renaming, setRenaming] = useState<SandboxEnvironment | null>(null)
+  const [deletingEnv, setDeletingEnv] = useState<SandboxEnvironment | null>(null)
+  const [acting, setActing] = useState<string | null>(null)
+  const replaceEnvironment = (updated: SandboxEnvironment) => setEnvironments((cur) => (cur ?? []).map((e) => (e.id === updated.id ? updated : e)))
+
+  /** Start or stop a sandbox from its card; the answer is the updated environment. */
+  async function lifecycle(env: SandboxEnvironment, action: 'start' | 'stop') {
+    setActing(env.id)
+    setError(null)
+    try {
+      replaceEnvironment(action === 'start' ? await api.startSandboxEnvironment(env.id) : await api.stopSandboxEnvironment(env.id))
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(err instanceof ApiError ? err.message : `Could not ${action} ${environmentName(env)}.`)
+    } finally {
+      setActing(null)
+    }
+  }
+
+  async function removeEnvironment() {
+    const env = deletingEnv
+    if (!env) return
+    setDeletingEnv(null)
+    setActing(env.id)
+    try {
+      await api.deleteSandboxEnvironment(env.id)
+      setEnvironments((cur) => (cur ?? []).filter((e) => e.id !== env.id))
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(err instanceof ApiError ? err.message : `Could not delete ${environmentName(env)}.`)
+    } finally {
+      setActing(null)
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -316,13 +352,28 @@ export function SandboxesPage() {
                 const look = environmentLook(env)
                 const from = templateName(env.template_id)
                 const used = lastUsed(env.sandbox?.last_used_at)
+                const state = env.sandbox?.state
+                const busy = acting === env.id
+                const menu = [
+                  { label: 'Rename', onClick: () => setRenaming(env) },
+                  ...(state === 'stopped' ? [{ label: 'Start', onClick: () => void lifecycle(env, 'start') }] : []),
+                  ...(state === 'running' ? [{ label: 'Stop', onClick: () => void lifecycle(env, 'stop') }] : []),
+                  { type: 'divider' as const },
+                  { label: 'Delete', variant: 'destructive' as const, onClick: () => setDeletingEnv(env) },
+                ]
                 return (
                   <EntityCard
                     key={env.id}
                     href={`/sandboxes/${env.id}`}
                     title={environmentName(env)}
                     leading={<IconTile icon={providerIcon(env.provider)} hue={look.variant === 'success' ? (env.provider === 'local' ? 'teal' : 'blue') : look.variant === 'error' ? 'red' : 'slate'} />}
-                    trailing={<HStack gap={2} vAlign="center"><StatusDot variant={look.variant} label={look.text} /><Text type="supporting" color="secondary">{look.text}</Text></HStack>}
+                    trailing={
+                      <HStack gap={2} vAlign="center">
+                        {busy ? <Spinner size="sm" /> : <StatusDot variant={look.variant} label={look.text} />}
+                        <Text type="supporting" color="secondary">{look.text}</Text>
+                        <MoreMenu label={`More options for ${environmentName(env)}`} size="sm" alignment="end" isDisabled={busy} items={menu} />
+                      </HStack>
+                    }
                     footer={
                       <>
                         <Meta icon={providerIcon(env.provider)}>{providerTitle(env.provider)}</Meta>
@@ -384,6 +435,15 @@ export function SandboxesPage() {
       </VStack>
 
       <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreate={startCreate} />
+      <RenameEnvironmentDialog environment={renaming} onClose={() => setRenaming(null)} onRenamed={replaceEnvironment} />
+      <AlertDialog
+        isOpen={deletingEnv !== null}
+        onOpenChange={(open: boolean) => !open && setDeletingEnv(null)}
+        title={`Delete ${deletingEnv ? environmentName(deletingEnv) : 'this environment'}?`}
+        description="Its workspace and every file in it are removed. Chats that used it keep their history."
+        actionLabel="Delete environment"
+        onAction={() => void removeEnvironment()}
+      />
       <TemplateDetailsDialog template={viewing} onClose={() => setViewing(null)} />
       <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onCreated={() => void load()} />
       <AlertDialog
