@@ -1,11 +1,16 @@
 'use client'
 
 import { Collapsible } from '@astryxdesign/core/Collapsible'
+import { HStack } from '@astryxdesign/core/HStack'
+import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import type { MessageView } from '@/chat/reducer'
+import { browserToolTitle } from '@/chat/browser-tools'
 import type { ChatEntry } from './group-turns'
 import { formatDuration } from './group-turns'
+import { summarizeArgs } from './ToolCard'
 
 type Group = Extract<ChatEntry, { type: 'group' }>
 
@@ -23,18 +28,65 @@ export function groupLabel(g: Pick<Group, 'thinking' | 'commands' | 'edits' | 's
   return [`Worked${time}`, ...parts].join(' · ')
 }
 
-/** A finished turn's process rows behind one collapsed summary row; `children` is the full timeline. */
+/** What a running turn is doing right now, in a few words: "Thinking…", "command pnpm test", "Subagent: research". */
+export function currentStepLabel(view: MessageView | undefined): string {
+  if (!view) return 'Working…'
+  if (view.kind === 'reasoning') return view.streaming ? 'Thinking…' : 'Thought'
+  if (view.kind === 'subagent') return `Subagent: ${view.name}`
+  if (view.kind === 'tool') {
+    const title = browserToolTitle(view.name, view.args)
+    if (title) return title
+    const args = summarizeArgs(view.args)
+    return args ? `${view.name} ${args}` : view.name
+  }
+  return 'Working…'
+}
+
+/** "command pnpm test · 4 steps · 12s" for a running group; `now` is epoch seconds. */
+export function runningLabel(group: Pick<Group, 'current' | 'steps' | 'startedAt'>, now: number): string {
+  const parts = [currentStepLabel(group.current)]
+  if (group.steps > 1) parts.push(`${String(group.steps)} steps`)
+  if (group.startedAt !== undefined && now >= group.startedAt) parts.push(formatDuration(now - group.startedAt))
+  return parts.join(' · ')
+}
+
+/** Epoch seconds, ticking once a second while `active`. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    if (!active) return
+    const timer = setInterval(() => { setNow(Math.floor(Date.now() / 1000)) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [active])
+  return now
+}
+
+/**
+ * A turn's process rows behind one summary row; `children` is the full timeline. A finished turn reads
+ * "Worked for 48s · …"; a running one shows a spinner and what it is doing now, with a live timer.
+ */
 export function TurnGroup({ group, open, onOpenChange, children }: { group: Group; open: boolean; onOpenChange(open: boolean): void; children: ReactNode }) {
+  const now = useNow(group.running === true)
   return (
     <Collapsible
       isOpen={open}
       onOpenChange={onOpenChange}
       chevronPosition="start"
       data-testid="turn-group"
+      data-running={group.running ? '' : undefined}
       trigger={
-        <Text type="supporting" weight="medium" textWrap="nowrap">
-          {groupLabel(group)}
-        </Text>
+        group.running ? (
+          <HStack gap={2} vAlign="center">
+            <Spinner size="sm" />
+            <Text type="supporting" weight="medium" maxLines={1}>
+              {runningLabel(group, now)}
+            </Text>
+          </HStack>
+        ) : (
+          <Text type="supporting" weight="medium" textWrap="nowrap">
+            {groupLabel(group)}
+          </Text>
+        )
       }
     >
       <VStack gap={2}>{children}</VStack>

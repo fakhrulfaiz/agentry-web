@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-28: A running turn is now one compact live line (spinner, the step in progress, step count, timer) instead of every step expanded; click it to see the steps. Approvals, questions, failed tools, delivered files and the newest answer text stay visible. Settings → Chat → "Always show steps" keeps the old fully expanded view. (`groupTurns` live mode, `TurnGroup`.)
 ## 0.4.0 — 2026-11-28
 
 - 2026-11-27: Delivered file cards now sit under the reply that made them. They used to collect at the very end of the chat, so after a later turn they looked like part of the newest reply. Each delivery's `turn_id` (from `GET /agents/sessions/{id}/deliverables`) now places its cards right after that turn, before its "files changed" card (`useSessionDeliverables`, `DeliveredFiles` in `src/ui/chat/SessionArtifacts.tsx`); a delivery without a turn id still shows at the end. Checked in a live chat.

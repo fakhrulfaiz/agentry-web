@@ -420,7 +420,8 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     turnEnded,
   })
   const retries = retryTexts(state.items)
-  const entries = groupTurns(split.items, state.turnOf, state.turns)
+  // A running turn folds into one live line too, unless "Always show steps" is on.
+  const entries = groupTurns(split.items, state.turnOf, state.turns, { live: !showSteps })
   const changesAt = changesPlacement(entries, state.turnOf, state.turns)
   // Delivered files sit after the turn whose `present` call delivered them; any whose turn is not shown go last.
   const deliverables = useSessionDeliverables(sessionId ?? null, ready, !running)

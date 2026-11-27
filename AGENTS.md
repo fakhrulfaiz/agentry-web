@@ -82,8 +82,8 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: Keycloak live check, README steps 1–7 all pass against a local Keycloak 26 (`agentry-keycloak` container on 127.0.0.1:8180, realm `agentry`, user `tester`; API accepts it with `AGENTRY_KEYCLOAK_ISSUER`, web in Keycloak mode on :3020).
 
 **P1 (largest user-facing wins)**
-- [ ] Compact live steps while a turn runs (running turns show every row expanded). M.
-- [ ] Open the chat stream in parallel with the history load. S–M.
+- [x] DONE 2026-11-28: compact live steps while a turn runs (default; "Always show steps" keeps full detail). Not yet looked at in a live chat.
+- [ ] Open the chat stream in parallel with the history load. S–M. WIP patch (2 ordering tests still failing) was saved in the session scratchpad as `stream-parallel-wip.patch`; redo from the plan in `src/chat/use-conversation.ts`: start the first `Last-Event-ID: 0` fetch with `loadItems`, read it only after items + snapshot.
 - [ ] Sandboxes page: edit and duplicate templates (API `POST /agents/environments/templates/{id}` exists), "New chat here" in the card menu, refresh card states on focus. M.
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [ ] Finish sandbox snapshots (`agentry-sandbox` branch `feat/snapshots`, WIP, unmerged). M.

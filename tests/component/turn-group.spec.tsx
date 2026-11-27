@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { OAITurn } from '@/api/types'
 import type { MessageView } from '@/chat/reducer'
 import { groupTurns } from '@/ui/chat/group-turns'
-import { groupLabel, TurnGroup } from '@/ui/chat/TurnGroup'
+import { currentStepLabel, groupLabel, runningLabel, TurnGroup } from '@/ui/chat/TurnGroup'
 
 afterEach(cleanup)
 
@@ -67,5 +67,44 @@ describe('TurnGroup', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     await userEvent.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  })
+})
+
+describe('live running turns', () => {
+  const running: MessageView[] = [
+    { kind: 'user', id: 'u', text: 'go' },
+    { kind: 'reasoning', id: 'r', text: 'plan', streaming: false },
+    { kind: 'tool', id: 'c1', callId: 'c1', name: 'command', args: { command: 'ls' }, status: 'done' },
+    { kind: 'tool', id: 'c2', callId: 'c2', name: 'command', args: { command: 'pnpm test' }, status: 'running' },
+    { kind: 'action', id: 'x', action: { type: 'tool_approval' } as never },
+    { kind: 'assistant', id: 'a', text: 'Running the tests now', streaming: true },
+  ]
+  const of = new Map(running.slice(1).map((v) => [v.id, 't1']))
+
+  it('folds a running turn into one live group; actions and the newest text stay outside', () => {
+    const entries = groupTurns(running, of, [turn('in_progress')], { live: true })
+    const group = entries.find((e) => e.type === 'group')
+    expect(group).toMatchObject({ type: 'group', running: true, steps: 3, startedAt: 10 })
+    expect(group && group.type === 'group' && group.current?.id).toBe('c2')
+    const outside = entries.filter((e) => e.type === 'view').map((e) => e.type === 'view' && e.view.id)
+    expect(outside).toEqual(['u', 'x', 'a'])
+  })
+
+  it('leaves a running turn expanded without live mode ("Always show steps")', () => {
+    expect(groupTurns(running, of, [turn('in_progress')]).every((e) => e.type === 'view')).toBe(true)
+  })
+
+  it('describes the step in progress', () => {
+    expect(currentStepLabel({ kind: 'tool', id: 't', callId: 't', name: 'command', args: { command: 'pnpm test' }, status: 'running' })).toBe('command pnpm test')
+    expect(currentStepLabel({ kind: 'reasoning', id: 'r', text: '', streaming: true })).toBe('Thinking…')
+    expect(currentStepLabel(undefined)).toBe('Working…')
+    expect(runningLabel({ current: undefined, steps: 4, startedAt: 100 }, 112)).toBe('Working… · 4 steps · 12s')
+  })
+
+  it('shows a spinner and the live line while running', () => {
+    const group = groupTurns(running, of, [turn('in_progress')], { live: true }).find((e) => e.type === 'group')!
+    render(<TurnGroup group={group as never} open={false} onOpenChange={() => {}}><p>steps</p></TurnGroup>)
+    expect(screen.getByTestId('turn-group')).toHaveAttribute('data-running')
+    expect(screen.getByText(/^command pnpm test · 3 steps/)).toBeInTheDocument()
   })
 })
