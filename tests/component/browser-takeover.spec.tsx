@@ -64,7 +64,10 @@ describe('Browser tab take-over', () => {
     expect(app).toHaveFocus()
 
     fireEvent.pointerDown(app, { clientX: 420, clientY: 230, button: 0, buttons: 1, detail: 1 })
-    expect(calls.input).toHaveBeenLastCalledWith('s1', 'bctl_1', [{ type: 'mouse', action: 'down', x: 640, y: 360, button: 'left', buttons: 1, click_count: 1 }])
+    expect(calls.input).toHaveBeenLastCalledWith('s1', 'bctl_1', [
+      { type: 'resize', width: 640, height: 360 },
+      { type: 'mouse', action: 'down', x: 640, y: 360, button: 'left', buttons: 1, click_count: 1 },
+    ])
     fireEvent.keyDown(app, { key: 'h', code: 'KeyH', keyCode: 72 })
     expect(calls.input).toHaveBeenLastCalledWith('s1', 'bctl_1', [{ type: 'key', action: 'down', key: 'h', code: 'KeyH', key_code: 72, text: 'h' }])
 

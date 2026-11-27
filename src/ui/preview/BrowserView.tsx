@@ -18,41 +18,23 @@ import { Spinner } from '@astryxdesign/core/Spinner'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
-import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import { GlobeAltIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useRef } from 'react'
 import { artifactUrl } from '@/artifacts/kind'
 import { fileContentPath } from '@/chat/attachments'
 import { shortUrl } from '@/chat/browser-tools'
 import { usePanelConversation } from '@/chat/panel-data'
-import { useBrowserLive, type BrowserIdleReason, type LiveFrame } from '@/chat/use-browser-live'
-import { keyEvent, mouseEvent, useBrowserControl, type BrowserInputEvent, type ControlEndReason, type FrameBox } from '@/chat/browser-input'
+import { useBrowserLive, type BrowserIdleReason } from '@/chat/use-browser-live'
+import { useBrowserControl, type ControlEndReason } from '@/chat/browser-input'
 import { usePreviewPanel } from '@/preview/store'
+import { BrowserViewport } from './BrowserViewport'
 
 export const BROWSER_VIEW = 'browser'
 export const BROWSER_TITLE = 'Browser'
 
 const styles = stylex.create({
-  shot: {
-    display: 'block',
-    inlineSize: '100%',
-    blockSize: 'auto',
-    borderRadius: radiusVars['--radius-container'],
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: colorVars['--color-border'],
-  },
   list: { margin: 0, paddingInlineStart: 20 },
-  controlled: {
-    cursor: 'default',
-    touchAction: 'none',
-    userSelect: 'none',
-    outlineStyle: { default: 'none', ':focus': 'solid' },
-    outlineWidth: 2,
-    outlineOffset: 2,
-    outlineColor: colorVars['--color-accent'],
-  },
 })
 
 /** What the user is told when control went back to the agent without them handing it back. */
@@ -61,101 +43,6 @@ const ENDED: Partial<Record<ControlEndReason, string>> = {
   left: 'Control went back to the agent when you left the chat.',
   taken: 'You took control in another tab.',
   closed: 'Control ended because the browser view closed.',
-}
-
-/** Smallest and largest page width sent with a resize (the API's limits). */
-const PAGE_WIDTH = { min: 320, max: 1920 }
-
-function frameBox(img: HTMLImageElement, frame: LiveFrame): FrameBox {
-  const r = img.getBoundingClientRect()
-  return { left: r.left, top: r.top, width: r.width, height: r.height, pageWidth: frame.width ?? img.naturalWidth, pageHeight: frame.height ?? img.naturalHeight }
-}
-
-/**
- * The live frame. While the user has control it takes focus and sends pointer, wheel, key and paste
- * input to the page, and asks the page to fit the panel's width (restored on hand-back).
- */
-function LiveFrameView({ frame, inControl, send }: { frame: LiveFrame; inControl: boolean; send: (event: BrowserInputEvent) => void }) {
-  const ref = useRef<HTMLImageElement>(null)
-  const frameRef = useRef(frame)
-  frameRef.current = frame
-  useEffect(() => {
-    const img = ref.current
-    if (!inControl || !img) return
-    img.focus()
-    // The wheel needs a non-passive listener so the panel does not scroll too.
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      const box = frameBox(img, frameRef.current)
-      const scale = box.pageWidth > 0 && box.width > 0 ? box.pageWidth / box.width : 1
-      const m = mouseEvent({ clientX: e.clientX, clientY: e.clientY, button: 0, buttons: 0, detail: 0, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey }, 'move', box)
-      if (m?.type === 'mouse') send({ type: 'wheel', x: m.x, y: m.y, delta_x: e.deltaX * scale, delta_y: e.deltaY * scale, ...(m.modifiers ? { modifiers: m.modifiers } : {}) })
-    }
-    img.addEventListener('wheel', onWheel, { passive: false })
-    let lastWidth = 0
-    const fit = () => {
-      const f = frameRef.current
-      const width = Math.round(Math.min(PAGE_WIDTH.max, Math.max(PAGE_WIDTH.min, img.clientWidth)))
-      if (!f.width || !f.height || img.clientWidth === 0 || Math.abs(width - lastWidth) < 8) return
-      lastWidth = width
-      send({ type: 'resize', width, height: Math.round(width * f.height / f.width) })
-    }
-    fit()
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fit)
-    observer?.observe(img)
-    return () => {
-      img.removeEventListener('wheel', onWheel)
-      observer?.disconnect()
-    }
-  }, [inControl, send])
-
-  const pointer = (action: 'move' | 'down' | 'up') => (e: PointerEvent<HTMLImageElement>) => {
-    if (!inControl || !ref.current) return
-    if (action === 'down') {
-      e.preventDefault()
-      ref.current.focus()
-      ref.current.setPointerCapture?.(e.pointerId)
-    }
-    const m = mouseEvent(e, action, frameBox(ref.current, frame))
-    if (m) send(m)
-  }
-  const key = (action: 'down' | 'up') => (e: KeyboardEvent<HTMLImageElement>) => {
-    if (!inControl) return
-    // Esc is never sent: it leaves the frame, so keyboard users are not trapped.
-    if (e.key === 'Escape') {
-      if (action === 'down') ref.current?.blur()
-      return
-    }
-    e.preventDefault()
-    send(keyEvent(e, action))
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- streamed frames (data URLs); next/image does not apply
-    <img
-      ref={ref}
-      src={frame.src}
-      alt={inControl ? 'The agent\'s browser. You have control: click, scroll and type here. Esc leaves.' : 'Live view of the agent\'s browser'}
-      draggable={false}
-      {...(inControl ? {
-        tabIndex: 0,
-        role: 'application',
-        'aria-roledescription': 'remote browser',
-        onPointerDown: pointer('down'),
-        onPointerMove: pointer('move'),
-        onPointerUp: pointer('up'),
-        onContextMenu: (e: { preventDefault: () => void }) => { e.preventDefault() },
-        onKeyDown: key('down'),
-        onKeyUp: key('up'),
-        onPaste: (e: { preventDefault: () => void; clipboardData: DataTransfer }) => {
-          const text = e.clipboardData.getData('text')
-          e.preventDefault()
-          if (text) send({ type: 'text', text: text.slice(0, 2000) })
-        },
-      } : {})}
-      {...stylex.props(styles.shot, inControl && styles.controlled)}
-      data-testid="browser-frame"
-    />
-  )
 }
 
 /** Only web addresses become links; anything else (about:blank, data:) stays text. */
@@ -225,14 +112,12 @@ export function BrowserTab({ sessionId = null }: { sessionId?: string | null }) 
           )}
         </HStack>
       )}
-      {isLive ? (
-        <LiveFrameView frame={live.frame} inControl={control.status === 'on'} send={send} />
-      ) : browser.screenshot?.file_id ? (
-        // eslint-disable-next-line @next/next/no-img-element -- BFF bytes; next/image does not apply
-        <img src={artifactUrl({ content_url: fileContentPath(browser.screenshot.file_id) })} alt="Latest screenshot of the agent's browser" {...stylex.props(styles.shot)} />
-      ) : (
-        <Text type="supporting" color="secondary">No screenshot yet. The agent mostly reads pages as text; it takes a screenshot when the layout matters or you ask for one.</Text>
-      )}
+      <BrowserViewport
+        frame={isLive ? live.frame : null}
+        screenshotUrl={browser.screenshot?.file_id ? artifactUrl({ content_url: fileContentPath(browser.screenshot.file_id) }) : null}
+        inControl={control.status === 'on'}
+        send={send}
+      />
       {browser.visited.length > 0 && (
         <VStack gap={2}>
           <Text type="label">Pages visited</Text>
