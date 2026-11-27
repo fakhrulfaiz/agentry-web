@@ -116,7 +116,11 @@ export function NewChat() {
     setPending({ text, ...(files?.length ? { files } : {}) })
     try {
       const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}), ...(environmentId ? { environmentId } : {}) })
-      setPendingFirst(session.id, { text, ...(files?.length ? { files } : {}) })
+      setPendingFirst(session.id, {
+        text,
+        ...(files?.length ? { files } : {}),
+        startLabel: environmentId?.startsWith(NEW_SANDBOX) ? 'Starting a sandbox…' : 'Starting the chat…',
+      })
       window.dispatchEvent(new Event(SESSIONS_CHANGED))
       router.push(`/c/${encodeURIComponent(session.id)}`)
     } catch (error) {
@@ -158,7 +162,7 @@ export function NewChat() {
       isDisabled={!model}
       commands={commands}
       appHandlers={appHandlers}
-      density="spacious"
+      density={pending ? 'balanced' : 'spacious'}
       key={restore?.n ?? 0}
       initialValue={restore?.text ?? initialValue}
       placeholder="How can Agentry help today?"

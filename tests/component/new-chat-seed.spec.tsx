@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), query: '' }))
+const pendingFirst = vi.hoisted(() => ({ setPendingFirst: vi.fn() }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: nav.push, replace: nav.replace, refresh: vi.fn() }),
   useSearchParams: () => new URLSearchParams(nav.query),
@@ -14,6 +15,7 @@ vi.mock('next/navigation', () => ({
 
 const apiMock = vi.hoisted(() => ({ models: vi.fn(), createSession: vi.fn(), listSkills: vi.fn(), listCommands: vi.fn(), listAgents: vi.fn(), listSandboxEnvironments: vi.fn(), listSandboxProviders: vi.fn(), listSandboxTemplates: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
+vi.mock('@/chat/pending-first', () => ({ setPendingFirst: pendingFirst.setPendingFirst }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
 vi.mock('@/ui/shell/TopBar', () => ({ TopBar: () => null }))
 
@@ -25,6 +27,7 @@ const input = () => screen.queryByRole('combobox', { name: 'Message input' }) ??
 beforeEach(() => {
   nav.push.mockReset()
   nav.replace.mockReset()
+  pendingFirst.setPendingFirst.mockReset()
   apiMock.models.mockResolvedValue(['m1'])
   for (const list of [apiMock.listAgents, apiMock.listSandboxEnvironments, apiMock.listSandboxProviders, apiMock.listSandboxTemplates]) list.mockResolvedValue({ object: 'list', data: [], has_more: false })
 })
@@ -88,6 +91,7 @@ describe('New chat send', () => {
     fail(new Error('boom'))
     await waitFor(() => expect(screen.queryByText('Starting the chat…')).not.toBeInTheDocument(), { timeout: 5000 })
     await waitFor(() => expect(input()).toHaveTextContent('hello world'), { timeout: 5000 })
+    expect(input().closest('[data-tall]')).not.toBeNull()
   })
 }, 15_000)
 
@@ -98,9 +102,11 @@ describe('New chat first prompt', () => {
     const user = userEvent.setup()
     render(<NewChat />)
     await waitFor(() => expect(input()).toBeInTheDocument())
+    expect(input().closest('[data-tall]')).not.toBeNull()
     await user.click(input())
     await user.keyboard('Plan my week{Enter}')
     const pane = await screen.findByTestId('new-chat-pending')
+    expect(input().closest('[data-tall]')).toBeNull()
     expect(pane).toHaveTextContent('Plan my week')
     expect(pane).toContainElement(input())
     expect(screen.queryByTestId('new-chat-start')).toBeNull()
@@ -138,5 +144,16 @@ describe('New chat environment menu', () => {
     await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
     expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
     expect(screen.queryByText('New sandbox for this chat')).not.toBeInTheDocument()
+  })
+
+  it('carries the sandbox start label into the new-chat handoff', async () => {
+    const user = userEvent.setup()
+    apiMock.createSession.mockResolvedValue({ id: 'sess_created' } as never)
+    render(<NewChat />)
+    await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
+    await user.click(screen.getByRole('option', { name: /Empty sandbox/ }))
+    await user.click(input())
+    await user.keyboard('hello{Enter}')
+    await waitFor(() => expect(pendingFirst.setPendingFirst).toHaveBeenCalledWith('sess_created', expect.objectContaining({ text: 'hello', startLabel: 'Starting a sandbox…' })))
   })
 })
