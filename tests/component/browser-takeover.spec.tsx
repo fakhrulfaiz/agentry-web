@@ -29,7 +29,7 @@ class FakeSource {
 }
 const source = () => FakeSource.all.at(-1)!
 
-const panel: PanelConversation = { tasks: [], subagentViews: [], todos: [], browser: { ...EMPTY_BROWSER, calls: 1 }, items: new Map(), actions: new Map(), answer: async () => {} }
+const panel: PanelConversation = { tasks: [], jobs: [], subagentViews: [], todos: [], browser: { ...EMPTY_BROWSER, calls: 1 }, items: new Map(), actions: new Map(), answer: async () => {} }
 
 function renderLive() {
   render(<PanelConversationContext.Provider value={panel}><BrowserTab sessionId="s1" /></PanelConversationContext.Provider>)

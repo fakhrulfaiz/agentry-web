@@ -234,3 +234,15 @@ describe('browser take-over routes', () => {
     expect(isAllowed('POST', '/agents/sessions/../browser/input')).toBe(false)
   })
 })
+
+describe('background job routes', () => {
+  it('allows the list, one job and Stop, and nothing else', () => {
+    expect(isAllowed('GET', `/agents/sessions/${ID}/jobs`)).toBe(true)
+    expect(isAllowed('GET', `/agents/sessions/${ID}/jobs/bash-3f2a9c1e`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/jobs/bash-3f2a9c1e/kill`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/jobs`)).toBe(false)
+    expect(isAllowed('DELETE', `/agents/sessions/${ID}/jobs/bash-1`)).toBe(false)
+    expect(isAllowed('GET', `/agents/sessions/${ID}/jobs/bash-1/kill`)).toBe(false)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/jobs/bash.1/kill`)).toBe(false)
+  })
+})

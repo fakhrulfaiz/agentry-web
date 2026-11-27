@@ -22,7 +22,9 @@
  * which are never replayed: subagents (`GET .../subagents`, each one's turns
  * and items; one read at a time) are read on open and again on every
  * reconnect, with the newest turn records (`GET .../turns`, for the trace). A
- * finished, closed subagent's turns and items are not read again.
+ * finished, closed subagent's turns and items are not read again. Background
+ * jobs (`GET .../jobs`) are read the same way, on open and every reconnect;
+ * live `job.*` events keep them current in between.
  *
  * Opening a chat again in this tab shows its last read history at once (kept
  * in memory, see `page-cache`) while the reads above refresh it; the cached
@@ -39,11 +41,12 @@
 import type { UserFile } from './attachments'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { api, isSignedOut, type SettingsChange } from '@/api/client'
-import type { OAIAgentSession, OAISessionEvent, OAITurn, StoredSessionItem } from '@/api/types'
+import type { OAIAgentSession, OAIJob, OAISessionEvent, OAITurn, StoredSessionItem } from '@/api/types'
 import {
   appendLocalUserMessage,
   applyEvent,
   applyItems,
+  applyJobs,
   applySubagents,
   applyTurns,
   initialState,
@@ -79,6 +82,7 @@ type Action =
   | { type: 'items'; items: StoredSessionItem[] }
   | { type: 'turns'; turns: OAITurn[] }
   | { type: 'subagents'; children: SubagentActivity[] }
+  | { type: 'jobs'; jobs: OAIJob[] }
   | { type: 'local-user'; text: string; files?: UserFile[] }
   | { type: 'drop-local'; text: string }
 
@@ -112,6 +116,8 @@ function reducer(s: ConversationState, a: Action): ConversationState {
       return applyTurns(s, a.turns)
     case 'subagents':
       return applySubagents(s, a.children)
+    case 'jobs':
+      return applyJobs(s, a.jobs)
     case 'local-user':
       return appendLocalUserMessage(s, a.text, a.files)
     case 'drop-local':
@@ -318,6 +324,16 @@ export function useConversation(
       }
     }
 
+    /** Background jobs; their `job.*` events are live only, so this runs on open and on every reconnect. Optional. */
+    const loadJobs = async () => {
+      try {
+        const jobs = await api.jobs(sessionId)
+        if (!signal.aborted) dispatch({ type: 'jobs', jobs })
+      } catch (error) {
+        if (!signal.aborted && isSignedOut(error)) onSignedOut()
+      }
+    }
+
     /** One subagent read at a time; a call during one reads again after it and shares its result. */
     const loadSubagents = (): Promise<boolean> => {
       if (subagentsRead) {
@@ -348,11 +364,13 @@ export function useConversation(
       setLoaded(true)
       // Not awaited: subagent cards must not hold back the stream.
       void loadSubagents()
+      void loadJobs()
       let reconnect = false
       while (!signal.aborted) {
         if (reconnect) {
           // Subagent events are never replayed: catch up on what happened while disconnected.
           void loadSubagents()
+          void loadJobs()
           void loadRecentTurns()
         }
         reconnect = true

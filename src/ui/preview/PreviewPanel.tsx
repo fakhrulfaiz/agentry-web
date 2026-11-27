@@ -47,6 +47,8 @@ import { usePanelConversation } from '@/chat/panel-data'
 import { todoCount } from '@/chat/todos'
 import { PlanTab, SubagentTab, TasksTab } from './PanelTabs'
 import { BROWSER_TITLE, BROWSER_VIEW, BrowserTab } from './BrowserView'
+import { JobTab } from './JobView'
+import { isLiveJob, parseJobViewKey } from '@/chat/jobs'
 import { ChangesTab, DiffView, officeKind } from './ChangesPanel'
 import { parseDiffKey } from '@/preview/diff'
 import { FileTree } from './FileTree'
@@ -312,11 +314,12 @@ const hostOf = (url: string) => {
 /** The panel's home: what this chat's workspace holds, each row with its live status. */
 function StartPage({ canTerminal, fileCount }: { canTerminal: boolean; fileCount: number }) {
   const { state, actions } = usePreviewPanel()
-  const { tasks, todos, browser } = usePanelConversation()
-  const running = tasks.filter((t) => t.status === 'running').length
+  const { tasks, todos, browser, jobs } = usePanelConversation()
+  const running = tasks.filter((t) => t.status === 'running').length + jobs.filter(isLiveJob).length
   const waiting = tasks.reduce((n, t) => n + t.waiting, 0)
   const count = todoCount(todos)
-  const taskStatus = waiting > 0 ? `${plural(waiting, 'approval')} waiting` : running > 0 ? `${String(running)} running` : tasks.length > 0 ? `${String(tasks.length)} finished` : undefined
+  const finished = tasks.length + jobs.length
+  const taskStatus = waiting > 0 ? `${plural(waiting, 'approval')} waiting` : running > 0 ? `${String(running)} running` : finished > 0 ? `${String(finished)} finished` : undefined
   return (
     <div {...stylex.props(styles.startPage)} data-testid="preview-start">
       <div {...stylex.props(styles.startSection)}>
@@ -340,7 +343,7 @@ function StartPage({ canTerminal, fileCount }: { canTerminal: boolean; fileCount
       </div>
       <div {...stylex.props(styles.startSection)}>
         <span {...stylex.props(styles.startHeading)}><Text type="supporting" weight="medium" color="secondary">This chat</Text></span>
-        <StartRow icon={UserGroupIcon} title="Tasks" description="Subagents this chat started" status={taskStatus} onOpen={() => actions.openView('tasks', 'Tasks')} />
+        <StartRow icon={UserGroupIcon} title="Tasks" description="Subagents and background commands" status={taskStatus} onOpen={() => actions.openView('tasks', 'Tasks')} />
         <StartRow icon={ListBulletIcon} title="Plan" description="The agent’s to-do list" status={count ? `${count} done` : undefined} onOpen={() => actions.openView('plan', 'Plan')} />
         <StartRow icon={PencilSquareIcon} title="Changes" description="Files each turn changed, with diffs" onOpen={() => actions.openView('changes', 'Changes')} />
       </div>
@@ -351,6 +354,7 @@ function StartPage({ canTerminal, fileCount }: { canTerminal: boolean; fileCount
 /** The icon a tab shows, by what it holds. */
 function viewIcon(key: string): IconType {
   if (key === 'tasks' || key.startsWith('sub:')) return UserGroupIcon
+  if (parseJobViewKey(key) !== null) return CommandLineIcon
   if (key === 'plan') return ListBulletIcon
   if (key === 'changes') return PencilSquareIcon
   if (key.startsWith('diff:')) return DocumentMagnifyingGlassIcon
@@ -469,7 +473,7 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
           <StartPage canTerminal={environmentId !== undefined} fileCount={entries.length} />
         ) : activeView ? (
           <div {...stylex.props(styles.filesPage, activeView.key === BROWSER_VIEW && styles.fillPage)}>
-            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab sessionId={sessionId} /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab sessionId={sessionId} /> : parseJobViewKey(activeView.key) !== null ? <JobTab key={activeView.key} sessionId={sessionId} jobId={parseJobViewKey(activeView.key)!} /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
           </div>
         ) : onTerminal ? null : showingFiles ? (
           <div {...stylex.props(styles.filesPage)}>

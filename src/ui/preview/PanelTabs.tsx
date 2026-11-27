@@ -1,6 +1,6 @@
 'use client'
 
-/** The preview panel's Tasks, Plan and subagent tabs; they read the conversation through `PanelConversationContext`. */
+/** The preview panel's Tasks (subagents and background jobs), Plan and subagent tabs; they read the conversation through `PanelConversationContext`. */
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
@@ -9,11 +9,13 @@ import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
-import { CheckCircleIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { CheckCircleIcon, ClockIcon, CommandLineIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { useEffect, useState } from 'react'
 import { usePanelConversation } from '@/chat/panel-data'
 import type { TaskRow, TaskStatus } from '@/chat/tasks'
+import type { OAIJob } from '@/api/types'
+import { isLiveJob, jobElapsed, jobState, jobTitle, jobViewKey, visibleJobs } from '@/chat/jobs'
 import type { TodoStatus } from '@/chat/todos'
 import { usePreviewPanel } from '@/preview/store'
 import { SubagentItems, SubagentActions, SubagentTranscript, Waiting, formatDuration } from '@/ui/chat/SubagentCard'
@@ -26,7 +28,7 @@ const LABEL: Record<TaskStatus, string> = { running: 'Running', done: 'Done', fa
 const COLOR = { running: 'blue', done: 'green', failed: 'red', closed: 'gray' } as const
 
 /** Seconds now, ticking once a second while `live`. */
-function useNow(live: boolean): number {
+export function useNow(live: boolean): number {
   const [now, setNow] = useState(() => Date.now() / 1000)
   useEffect(() => {
     if (!live) return
@@ -59,14 +61,40 @@ function Row({ task, now }: { task: TaskRow; now: number }) {
   )
 }
 
-/** The chat's subagents with status, model, time, tokens and a waiting-approval badge. */
+export const JOB_COLOR = { running: 'blue', done: 'green', failed: 'red', stopped: 'gray' } as const
+
+function JobRow({ job, now }: { job: OAIJob; now: number }) {
+  const { actions } = usePreviewPanel()
+  const title = jobTitle(job)
+  const state = jobState(job)
+  const meta = [job.kind === 'bash' ? 'Command' : job.kind, formatDuration(jobElapsed(job, now))].join(' · ')
+  return (
+    <button type="button" aria-label={`Open ${title}`} onClick={() => actions.openView(jobViewKey(job.id), title)} {...stylex.props(styles.row)}>
+      <HStack gap={2} vAlign="center">
+        <Icon icon={CommandLineIcon} color="secondary" size="sm" />
+        <StackItem size="fill">
+          <VStack gap={0}>
+            <Text maxLines={1} weight="medium">{title}</Text>
+            <Text type="supporting" color="secondary" maxLines={1} hasTabularNumbers>{meta}</Text>
+          </VStack>
+        </StackItem>
+        {job.status === 'running' && <Spinner size="sm" aria-label="Running" />}
+        <Token size="sm" label={state.label} color={JOB_COLOR[state.tone]} />
+      </HStack>
+    </button>
+  )
+}
+
+/** The chat's subagents (status, model, time, tokens, a waiting-approval badge) and background commands (status, live time). */
 export function TasksTab() {
-  const { tasks } = usePanelConversation()
-  const now = useNow(tasks.some((t) => t.status === 'running'))
-  if (tasks.length === 0) return <EmptyState title="No background tasks" description="Subagents this chat starts will be listed here." headingLevel={2} />
+  const { tasks, jobs } = usePanelConversation()
+  const now = useNow(tasks.some((t) => t.status === 'running') || jobs.some(isLiveJob))
+  const shown = visibleJobs(jobs, now)
+  if (tasks.length === 0 && shown.length === 0) return <EmptyState title="No background tasks" description="Subagents and background commands this chat starts will be listed here." headingLevel={2} />
   return (
     <VStack gap={3} data-testid="tasks-list">
       {tasks.map((t) => <Row key={t.id} task={t} now={now} />)}
+      {shown.map((j) => <JobRow key={j.id} job={j} now={now} />)}
     </VStack>
   )
 }

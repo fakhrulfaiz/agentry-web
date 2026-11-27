@@ -379,6 +379,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const panelData = useMemo<PanelConversation>(
     () => ({
       tasks: deriveTasks(state.items, state.subagents, split.bySubagent),
+      jobs: state.jobs,
       subagentViews: state.items.flatMap((v) => (v.kind === 'subagent' ? [v] : [])),
       todos: deriveTodos(state.items),
       browser: browserState(state.items),
@@ -386,7 +387,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       actions: split.bySubagent,
       answer: onAnswer,
     }),
-    [state.items, state.subagents, split.bySubagent, subagentItems, onAnswer],
+    [state.items, state.subagents, state.jobs, split.bySubagent, subagentItems, onAnswer],
   )
 
   if (missing) {

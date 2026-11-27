@@ -29,6 +29,7 @@ function data(over: Partial<PanelConversation> = {}): PanelConversation {
   const actions = new Map([[CHILD.subagent.id, [approval]]])
   return {
     tasks: deriveTasks(state.items, state.subagents, actions),
+    jobs: [],
     subagentViews: [subView],
     todos: [],
     browser: EMPTY_BROWSER,
