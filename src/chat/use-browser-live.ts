@@ -125,8 +125,10 @@ export function useBrowserLive(sessionId: string | null): BrowserLive & { contro
         // A later frame that decoded first wins; an older one is dropped.
         if (closed || n < shownSeq) return
         shownSeq = n
-        // The cursor belongs to the page it was seen on.
-        if (shownUrl !== undefined && shownUrl !== frame.url) clearCursor()
+        // A focus outline belongs to the page it was seen on. The arrow stays: most agent clicks follow a link,
+        // and the new page's first frame comes a moment after the click, so clearing it here hid nearly every
+        // click. It still hides three seconds after the last pointer event.
+        if (shownUrl !== undefined && shownUrl !== frame.url) setFocus(undefined)
         shownUrl = frame.url
         setLive({ status: 'live', frame })
       }

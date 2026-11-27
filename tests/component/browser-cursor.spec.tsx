@@ -97,7 +97,7 @@ describe('useBrowserLive pointer and focus', () => {
     expect(parseFocus('{"x":1,"y":2,"width":3}', 7)).toBeUndefined()
   })
 
-  it('exposes pointer and focus, and clears them on idle, a new page and a reconnect', () => {
+  it('exposes pointer and focus; a new page clears the focus but keeps the arrow; idle and a reconnect clear both', () => {
     const { result } = renderHook(() => useBrowserLive('s1'))
     const source = FakeSource.all[0]!
     source.emit('frame', frame('https://a.com/'))
@@ -108,8 +108,9 @@ describe('useBrowserLive pointer and focus', () => {
 
     source.emit('frame', frame('https://a.com/'))
     expect(result.current.pointer).toBeDefined()
+    // The click that followed a link: the new page's frame arrives after it, and the arrow must still show.
     source.emit('frame', frame('https://b.com/'))
-    expect(result.current.pointer).toBeUndefined()
+    expect(result.current.pointer).toMatchObject({ x: 10, y: 20 })
     expect(result.current.focus).toBeUndefined()
 
     source.emit('pointer', { action: 'down', x: 1, y: 1 })
