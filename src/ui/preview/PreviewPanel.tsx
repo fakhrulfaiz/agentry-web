@@ -32,6 +32,7 @@ import {
   PencilSquareIcon,
   DocumentMagnifyingGlassIcon,
   ChevronRightIcon,
+  FilmIcon,
 } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePrefersReducedMotion } from '@/ui/chat/use-reduced-motion'
@@ -187,13 +188,14 @@ const extOf = (path: string) => path.slice(path.lastIndexOf('.') + 1).toUpperCas
 
 /** Preview-side renderers vs code-side ones, for the two-way header switch. */
 const SIDE: Record<RendererId, 'preview' | 'code'> = {
-  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', pdf: 'preview', officePdf: 'preview', download: 'preview',
+  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', video: 'preview', pdf: 'preview', officePdf: 'preview', download: 'preview',
   code: 'code', source: 'code', text: 'code', docx: 'code',
 }
 const TEXT_LIKE = new Set<RendererId>(['markdown', 'html', 'table', 'json', 'code', 'source', 'text'])
 
 function kindOf(path: string, id: RendererId): { label: string; icon: IconType } {
   if (id === 'image') return { label: 'Image', icon: PhotoIcon }
+  if (id === 'video') return { label: 'Video', icon: FilmIcon }
   if (id === 'pdf') return { label: 'PDF', icon: DocumentIcon }
   if (id === 'officePdf') return officeKind(path)
   if (id === 'table') return { label: 'Table', icon: TableCellsIcon }

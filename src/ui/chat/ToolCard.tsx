@@ -11,7 +11,10 @@ import type { MessageView } from "@/chat/reducer";
 import { ConnectCard, ConnectSettingsLink } from "./ConnectCard";
 import { ToolImages } from "./ToolImages";
 import { notConnectedApp } from "@/chat/not-connected";
-import { browserToolTitle, pageOf, shortUrl } from "@/chat/browser-tools";
+import { browserToolTitle, pageOf, recordingCard, shortUrl } from "@/chat/browser-tools";
+import { Button } from "@astryxdesign/core/Button";
+import { FilmIcon } from "@heroicons/react/24/outline";
+import { usePreviewPanel } from "@/preview/store";
 import "./shimmer.css";
 
 type ToolView = Extract<MessageView, { kind: "tool" }>;
@@ -107,8 +110,10 @@ export function ToolCard({ view }: { view: ToolView }) {
       ? `${full.slice(0, OUTPUT_MAX)}\n… (${full.length - OUTPUT_MAX} more characters)`
       : full;
   // Browser calls read as actions ("Opened example.com"), with the page they left the browser on.
-  const browserTitle = browserToolTitle(view.name, view.args);
-  const page = browserTitle === null ? null : pageOf(view);
+  const recording = recordingCard(view);
+  const browserTitle = browserToolTitle(view.name, view.args) ?? recording?.title ?? null;
+  const page = browserTitle === null || recording !== null ? null : pageOf(view);
+  const { actions } = usePreviewPanel();
   return (
     <div data-shimmer={view.status === "running" ? "row" : undefined}>
       <ChatToolCalls
@@ -120,6 +125,8 @@ export function ToolCard({ view }: { view: ToolView }) {
             target:
               browserTitle === null
                 ? summarizeArgs(view.args) || undefined
+                : recording !== null
+                  ? undefined
                 : page && !browserTitle.startsWith("Opened")
                   ? shortUrl(page.url)
                   : undefined,
@@ -160,6 +167,17 @@ export function ToolCard({ view }: { view: ToolView }) {
           },
         ]}
       />
+      {recording?.file !== undefined && (
+        <HStack gap={2} vAlign="center" paddingBlock={1}>
+          <Button
+            label={`Open ${recording.file.split("/").pop() ?? recording.file}`}
+            variant="secondary"
+            size="sm"
+            icon={<FilmIcon width={16} height={16} aria-hidden />}
+            onClick={() => actions.openFile(recording.file!)}
+          />
+        </HStack>
+      )}
       {view.connect ? (
         <ConnectCard request={view.connect} />
       ) : (

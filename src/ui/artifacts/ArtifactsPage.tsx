@@ -24,6 +24,7 @@ import {
   PresentationChartBarIcon,
   RectangleStackIcon,
   TableCellsIcon,
+  FilmIcon,
 } from "@heroicons/react/24/outline";
 import * as stylex from "@stylexjs/stylex";
 import { useRouter } from "next/navigation";
@@ -64,6 +65,7 @@ const KIND_STYLE: Record<ArtifactKind, { icon: IconType; hue: string }> = {
   sheet: { icon: TableCellsIcon, hue: "#22a06b" },
   pdf: { icon: DocumentIcon, hue: "#e5484d" },
   code: { icon: CodeBracketIcon, hue: "#8b5cf6" },
+  video: { icon: FilmIcon, hue: "#0ea5e9" },
   other: { icon: DocumentIcon, hue: "#7c8794" },
 };
 

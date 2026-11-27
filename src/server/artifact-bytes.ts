@@ -19,6 +19,8 @@ const INLINE = new Set([
   'image/webp',
   'image/svg+xml',
   'application/pdf',
+  'video/webm',
+  'video/mp4',
   'text/plain; charset=utf-8',
   'text/csv; charset=utf-8',
 ])

@@ -61,6 +61,8 @@ function Body({ artifact }: { artifact: Artifact }) {
       )
     case 'pdf':
       return <iframe title={artifact.name} src={artifactUrl(artifact)} style={{ width: '100%', height: '60vh', border: 0 }} />
+    case 'video':
+      return <video src={artifactUrl(artifact)} controls preload="metadata" style={{ width: '100%', maxHeight: '60vh' }} />
     case 'text':
       return <TextPreview artifact={artifact} />
     case 'none':
