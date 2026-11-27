@@ -262,9 +262,9 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const loadedProjectRows = Object.values(projectSessions).flat()
 
   // Search is a flat list: partial Project sections would be confusing while filtering.
-  const searchRows = [...visible, ...starred, ...loadedProjectRows].filter(
-    (s, i, all) => all.findIndex((other) => other.id === s.id) === i,
-  )
+  const searchRows = [...visible, ...starred, ...loadedProjectRows]
+    .filter(matches)
+    .filter((s, i, all) => all.findIndex((other) => other.id === s.id) === i)
 
   const removed = (id: string) => {
     if (id === currentId) router.push('/')

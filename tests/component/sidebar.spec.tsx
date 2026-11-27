@@ -512,6 +512,29 @@ describe('Sidebar', () => {
     expect(heard).toContain('changed')
     window.removeEventListener('agentry:projects-changed', listen)
   })
+
+  it('search filters chats loaded into expanded project sections', async () => {
+    apiMock.listProjects.mockResolvedValue(page([project('p1', 'Website work')]))
+    apiMock.listSessions.mockImplementation(async (q: { metadata?: unknown; projectId?: string }) =>
+      q.metadata ? page([]) : q.projectId ? page([filed('s1', 'Website chat', 'p1')]) : page([]),
+    )
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
+
+    const search = screen.getByRole('searchbox', { name: 'Search chats' })
+    await user.type(search, 'no such chat')
+    expect(group('Search results')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Website chat' })).not.toBeInTheDocument()
+    expect(screen.getByText('No chats match.')).toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, 'Website chat')
+    expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
+    expect(screen.queryByText('No chats match.')).not.toBeInTheDocument()
+  })
 })
 
 describe('Shell', () => {
