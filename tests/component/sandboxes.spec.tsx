@@ -18,6 +18,7 @@ const apiMock = vi.hoisted(() => ({
   createSandboxEnvironment: vi.fn(),
   createSandboxTemplate: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
+  deleteSandboxEnvironment: vi.fn(),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
@@ -103,37 +104,47 @@ describe('SandboxesPage', () => {
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   })
 
-  it('closes the dialog at once and shows a setting-up card until the environment is ready', async () => {
-    let finish: (v: unknown) => void = () => {}
-    apiMock.createSandboxEnvironment.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+  it('closes the dialog at once and lists the record the server answers with, setting up until it is ready', async () => {
+    const setting = { ...env, id: 'env_new', name: 'Data box', provider: 'sandbox', status: 'pending', template_id: undefined, sandbox: { state: 'provisioning' } }
+    apiMock.createSandboxEnvironment.mockResolvedValue(setting)
+    apiMock.listSandboxEnvironments.mockResolvedValueOnce(page([env])).mockResolvedValue(page([env, setting]))
     const user = userEvent.setup()
     render(<SandboxesPage />)
     await user.click((await screen.findAllByRole('button', { name: 'New environment' }))[0]!)
     await user.type(await screen.findByRole('textbox', { name: /Name/ }), 'Data box')
     await user.click(screen.getByRole('button', { name: 'Create environment' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    const card = await screen.findByTestId('environment-pending')
-    expect(card).toHaveTextContent('Data box')
-    expect(card).toHaveTextContent('Setting up')
-    apiMock.listSandboxEnvironments.mockResolvedValue(page([env, { ...env, id: 'env_new', name: 'Data box' }]))
-    finish({ ...env, id: 'env_new', name: 'Data box' })
-    await waitFor(() => expect(screen.queryByTestId('environment-pending')).not.toBeInTheDocument())
-    expect(await screen.findByRole('link', { name: 'Data box' })).toBeInTheDocument()
+    const link = await screen.findByRole('link', { name: 'Data box' })
+    expect(link).toHaveAttribute('href', '/sandboxes/env_new')
+    expect(screen.getAllByText('Setting up…').length).toBeGreaterThan(0)
+    expect(screen.getByText(/This can take a few minutes/)).toBeInTheDocument()
+    // The list refreshes on its own until the sandbox is ready.
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([env, { ...setting, status: 'connected', sandbox: { state: 'running' } }]))
+    expect(await screen.findByText('Running', undefined, { timeout: 6000 })).toBeInTheDocument()
+    expect(screen.queryByText('Setting up…')).not.toBeInTheDocument()
+  }, 10000)
+
+  it('shows a failed environment with its reason and deletes it', async () => {
+    const failed = { ...env, id: 'env_bad', name: 'Data box', provider: 'sandbox', status: 'failed', template_id: undefined, error: 'sandbox limit reached: owner-a has 5 sandboxes (limit 5)', sandbox: { state: 'failed' } }
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([failed]))
+    apiMock.deleteSandboxEnvironment.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<SandboxesPage />)
+    expect(await screen.findByText(/limit 5/)).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Delete Data box' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete environment' }))
+    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_bad'))
+    await waitFor(() => expect(screen.queryByText(/limit 5/)).not.toBeInTheDocument())
   })
 
-  it('shows the reason on the card when the sandbox is refused', async () => {
-    apiMock.listSandboxEnvironments.mockResolvedValue(page([]))
-    apiMock.createSandboxEnvironment.mockResolvedValue({ ...env, status: 'failed', error: 'sandbox limit reached: owner-a has 5 sandboxes (limit 5)' })
+  it('shows a refused create as an error banner', async () => {
+    apiMock.createSandboxEnvironment.mockRejectedValue(new (await import('@/api/client')).ApiError(400, 'bad_request', 'template not found'))
     const user = userEvent.setup()
     render(<SandboxesPage />)
     await user.click((await screen.findAllByRole('button', { name: 'New environment' }))[0]!)
-    await user.type(await screen.findByRole('textbox', { name: /Name/ }), 'Data box')
-    await user.click(screen.getByRole('button', { name: 'Create environment' }))
-    await waitFor(() => expect(apiMock.createSandboxEnvironment).toHaveBeenCalledWith({ name: 'Data box', provider: 'local' }))
-    expect(await screen.findByText(/limit 5/)).toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
-    expect(screen.queryByText(/limit 5/)).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Create environment' }))
+    expect(await screen.findByText('template not found')).toBeInTheDocument()
   })
 
   it('edits a template on the isolated sandbox and sends only what it applies', async () => {

@@ -49,6 +49,10 @@ const fileHref = (environmentId: string, path: string, download: boolean): strin
   return `/api/agentry/agents/environments/${encodeURIComponent(environmentId)}/files/${encoded}${download ? '?download' : ''}`
 }
 
+const SETTLING_POLL_MS = 3000
+/** A sandbox the server is still creating: nothing can start, stop or list files yet. */
+const isSettingUp = (env: SandboxEnvironment): boolean => env.status === 'pending' || env.sandbox?.state === 'provisioning'
+
 export function EnvironmentDetail({ environmentId }: { environmentId: string }) {
   const router = useRouter()
   const [env, setEnv] = useState<SandboxEnvironment | null>(null)
@@ -84,8 +88,8 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
       const loaded = await api.getSandboxEnvironment(environmentId)
       setEnv(loaded)
       setError(null)
-      // A gone sandbox has no files to list.
-      if (loaded.sandbox?.state === 'gone') return
+      // A gone sandbox has no files to list, and one still being set up has no workspace yet.
+      if (loaded.sandbox?.state === 'gone' || isSettingUp(loaded)) return
       void loadFiles()
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
@@ -97,6 +101,18 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   useEffect(() => {
     void load()
   }, [load])
+  // While the sandbox is being set up, refresh until it settles; then list its files.
+  const settingUp = env !== null && isSettingUp(env)
+  useEffect(() => {
+    if (!settingUp) return
+    const timer = setInterval(() => {
+      api.getSandboxEnvironment(environmentId).then((loaded) => {
+        setEnv(loaded)
+        if (!isSettingUp(loaded) && loaded.sandbox?.state !== 'failed' && loaded.status !== 'failed') void loadFiles()
+      }, () => undefined)
+    }, SETTLING_POLL_MS)
+    return () => clearInterval(timer)
+  }, [settingUp, environmentId, loadFiles])
   // The places give the place's name and whether it can reset; the page works without them.
   useEffect(() => {
     void (async () => {
@@ -227,7 +243,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             <HStack gap={2} vAlign="center" wrap="wrap" role="group" aria-label="Environment actions">
               {state === 'stopped' && <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} />}
               {state === 'running' && <Button label="Stop" size="sm" isLoading={acting === 'stop'} isDisabled={acting !== null} onClick={() => void act('stop')} />}
-              {state !== undefined && state !== 'gone' && canReset && <Button label="Reset" size="sm" isDisabled={acting !== null} onClick={() => setConfirmReset(true)} />}
+              {state !== undefined && state !== 'gone' && !settingUp && canReset && <Button label="Reset" size="sm" isDisabled={acting !== null} onClick={() => setConfirmReset(true)} />}
               {env.session_id && <Button label="Open its chat" size="sm" variant="ghost" onClick={() => router.push(`/c/${encodeURIComponent(env.session_id!)}`)} />}
               {state !== 'gone' && <StackItem size="fill">{null}</StackItem>}
               {state !== 'gone' && <Button label="Delete environment" size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} />}
@@ -249,7 +265,9 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
               </HStack>
             }
           />
-        ) : (
+        ) : settingUp ? (
+          <Banner status="info" title="Setting up this sandbox. Its terminal and files appear when it is ready." />
+        ) : env?.status === 'failed' && env.provider === 'sandbox' && state === 'failed' ? null : (
         <VStack gap={5}>
         {env?.provider === 'sandbox' && (
           <VStack gap={2}>
