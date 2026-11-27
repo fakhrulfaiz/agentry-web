@@ -42,6 +42,21 @@ afterEach(() => {
 })
 
 describe('EnvironmentDetail', () => {
+  it('shows a sandbox that is still being set up without actions, then refreshes until it is ready', async () => {
+    const setting = { ...base, status: 'pending', sandbox: { state: 'provisioning' } }
+    apiMock.getSandboxEnvironment.mockResolvedValue(setting)
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByRole('heading', { name: 'Data box' })).toBeInTheDocument()
+    expect(screen.getByText('Setting up')).toBeInTheDocument()
+    expect(screen.getByText(/terminal and files appear when it is ready/)).toBeInTheDocument()
+    for (const name of ['Start', 'Stop', 'Reset', 'New chat here']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    expect(apiMock.listEnvironmentFiles).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Delete environment' })).toBeInTheDocument()
+    apiMock.getSandboxEnvironment.mockResolvedValue(running)
+    expect(await screen.findByRole('button', { name: 'Stop' }, { timeout: 6000 })).toBeInTheDocument()
+    await waitFor(() => expect(apiMock.listEnvironmentFiles).toHaveBeenCalled())
+  }, 10000)
+
   it('stops a running sandbox, then offers Start', async () => {
     apiMock.stopSandboxEnvironment.mockResolvedValue(stopped)
     const user = userEvent.setup()

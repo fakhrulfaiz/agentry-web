@@ -63,34 +63,6 @@ const providerIcon = (name: string) => (name === 'local' ? ServerIcon : CubeTran
 const settling = (env: SandboxEnvironment) => env.status === 'pending' || env.sandbox?.state === 'provisioning' || env.sandbox?.state === 'deleting'
 
 type NewEnvironmentInput = { templateId?: string; provider?: string; name?: string; place?: string }
-interface PendingEnvironment { key: number; name: string; provider: string; error?: string }
-
-/** An environment still being created (or refused): a card in the grid, so the dialog never has to wait. */
-function PendingEnvironmentCard({ item, onDismiss }: { item: PendingEnvironment; onDismiss(): void }) {
-  return (
-    <div data-testid="environment-pending">
-      <EntityCard
-        title={item.name || 'New environment'}
-        leading={<IconTile icon={providerIcon(item.provider)} hue={item.error ? 'red' : 'slate'} />}
-        trailing={
-          item.error
-            ? <HStack gap={2} vAlign="center"><StatusDot variant="error" label="Failed" /><Text type="supporting" color="secondary">Failed</Text></HStack>
-            : <HStack gap={2} vAlign="center"><Spinner size="sm" /><Text type="supporting" color="secondary">Setting up…</Text></HStack>
-        }
-        footer={<Meta icon={providerIcon(item.provider)}>{providerTitle(item.provider)}</Meta>}
-      >
-        {item.error ? (
-          <VStack gap={2} hAlign="start">
-            <Text type="supporting" color="secondary">{item.error}</Text>
-            <Button label="Dismiss" size="sm" variant="ghost" onClick={onDismiss} />
-          </VStack>
-        ) : (
-          <Text type="supporting" color="secondary">{item.provider === 'sandbox' ? 'Starting the sandbox and installing its software. This can take a few minutes.' : 'Preparing the folder.'}</Text>
-        )}
-      </EntityCard>
-    </div>
-  )
-}
 
 function NewEnvironmentDialog({
   isOpen, onClose, templates, providers, onCreate,
@@ -113,7 +85,7 @@ function NewEnvironmentDialog({
   const fitting = templates.filter((t) => t.provider === provider)
   const chosen = fitting.find((t) => t.id === templateId)
 
-  // Setting up a sandbox can take minutes (image, packages, setup commands): the page shows it as a card instead of holding the dialog open.
+  // Setting up a sandbox can take minutes: the server answers at once with a record that is still setting up, and the list shows it.
   function create() {
     onCreate({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
     onClose()
@@ -211,24 +183,16 @@ export function SandboxesPage() {
   const [runtimes, setRuntimes] = useCachedState<SandboxRuntimes>('sandboxes.runtimes')
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
-  const [pending, setPending] = useState<PendingEnvironment[]>([])
-  const nextKey = useRef(0)
-  const dismiss = (key: number) => setPending((cur) => cur.filter((p) => p.key !== key))
   const startCreate = (input: NewEnvironmentInput) => {
-    const key = ++nextKey.current
-    setPending((cur) => [...cur, { key, name: input.name ?? '', provider: input.provider ?? 'local' }])
-    const fail = (message: string) => setPending((cur) => cur.map((p) => (p.key === key ? { ...p, error: message } : p)))
     api.createSandboxEnvironment(input).then(
       async (created) => {
         const list = await api.listSandboxEnvironments().catch(() => null)
         if (list) setEnvironments(list.data)
-        // A refused sandbox is saved as failed and listed with its reason; if it is not listed, keep the reason on this card.
-        if (created.status === 'failed' && created.error && !list?.data.some((e) => e.id === created.id)) fail(created.error)
-        else dismiss(key)
+        else setEnvironments((cur) => [created, ...(cur ?? [])])
       },
       (err: unknown) => {
         if (isSignedOut(err)) return goToLogin()
-        fail(err instanceof ApiError ? err.message : 'Could not create the environment.')
+        setError(err instanceof ApiError ? err.message : 'Could not create the environment.')
       },
     )
   }
@@ -338,7 +302,7 @@ export function SandboxesPage() {
         {loading ? (
           <Skeleton height={160} />
         ) : view === 'environments' ? (
-          environments.length === 0 && pending.length === 0 ? (
+          environments.length === 0 ? (
             <EmptyState
               icon={<Icon icon={CircleStackIcon} size="lg" color="secondary" />}
               title="No environments yet."
@@ -347,7 +311,6 @@ export function SandboxesPage() {
             />
           ) : (
             <CardGrid label="Environments">
-              {pending.map((p) => <PendingEnvironmentCard key={`pending-${String(p.key)}`} item={p} onDismiss={() => dismiss(p.key)} />)}
               {environments.map((env) => {
                 const look = environmentLook(env)
                 const from = templateName(env.template_id)
@@ -361,6 +324,7 @@ export function SandboxesPage() {
                   { type: 'divider' as const },
                   { label: 'Delete', variant: 'destructive' as const, onClick: () => setDeletingEnv(env) },
                 ]
+                const setting = env.status === 'pending' || env.sandbox?.state === 'provisioning'
                 return (
                   <EntityCard
                     key={env.id}
@@ -369,8 +333,8 @@ export function SandboxesPage() {
                     leading={<IconTile icon={providerIcon(env.provider)} hue={look.variant === 'success' ? (env.provider === 'local' ? 'teal' : 'blue') : look.variant === 'error' ? 'red' : 'slate'} />}
                     trailing={
                       <HStack gap={2} vAlign="center">
-                        {busy ? <Spinner size="sm" /> : <StatusDot variant={look.variant} label={look.text} />}
-                        <Text type="supporting" color="secondary">{look.text}</Text>
+                        {busy || setting ? <Spinner size="sm" /> : <StatusDot variant={look.variant} label={look.text} />}
+                        <Text type="supporting" color="secondary">{setting ? 'Setting up…' : look.text}</Text>
                         <MoreMenu label={`More options for ${environmentName(env)}`} size="sm" alignment="end" isDisabled={busy} items={menu} />
                       </HStack>
                     }
@@ -385,7 +349,9 @@ export function SandboxesPage() {
                   >
                     {env.error
                       ? <Text type="supporting" color="secondary" maxLines={2}>{env.error}</Text>
-                      : !env.name && <Text type="supporting" color="secondary">{shortId(env.id)}</Text>}
+                      : setting
+                        ? <Text type="supporting" color="secondary">{env.provider === 'sandbox' ? 'Starting the sandbox and installing its software. This can take a few minutes.' : 'Preparing the folder.'}</Text>
+                        : !env.name && <Text type="supporting" color="secondary">{shortId(env.id)}</Text>}
                   </EntityCard>
                 )
               })}
