@@ -148,6 +148,7 @@ function resource(s: MockSession, withApprovals: boolean): OAIAgentSession {
     vault_ids: [],
     agent: s.agent,
     environment: { type: 'local' },
+    project_id: null,
     required_actions: withApprovals && s.pending ? [s.pending.action] : [],
     usage: null,
   }

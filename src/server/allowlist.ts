@@ -2,9 +2,9 @@
 export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 
 /** Names under `/agents/` that are routes, never an agent id. */
-const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files'])
+const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files', 'projects'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'project' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -18,6 +18,7 @@ const FILE = { id: 'file' } as const
 const TEMPLATE = { id: 'template' } as const
 const ENVIRONMENT = { id: 'environment' } as const
 const SKILL = { id: 'skill' } as const
+const PROJECT = { id: 'project' } as const
 const TERMINAL = { id: 'terminal' } as const
 const TURN = { id: 'turn' } as const
 /** A file's position in a turn's changes. */
@@ -65,6 +66,10 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL, 'resize'] },
   { methods: ['GET', 'POST'], segments: ['agents'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', AGENT] },
+  { methods: ['GET', 'POST'], segments: ['agents', 'projects'] },
+  { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'projects', PROJECT] },
+  { methods: ['POST'], segments: ['agents', 'projects', PROJECT, 'archive'] },
+  { methods: ['POST'], segments: ['agents', 'projects', PROJECT, 'unarchive'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'sessions'] },
   { methods: ['GET', 'POST', 'DELETE'], segments: ['agents', 'sessions', SESSION] },
   { methods: ['POST'], segments: ['agents', 'sessions', SESSION, 'events'] },
