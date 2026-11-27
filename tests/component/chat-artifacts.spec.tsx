@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import '../helpers/dom'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionDeliverableEntry } from '@/api/types'
@@ -12,7 +12,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
   api: apiMock,
 }))
 
-const { SessionArtifacts } = await import('@/ui/chat/SessionArtifacts')
+const { SessionArtifacts, useSessionDeliverables } = await import('@/ui/chat/SessionArtifacts')
 
 const entry = (path: string): SessionDeliverableEntry => ({ path, turn_id: 'turn_1', created_at: 1_762_765_200 })
 
@@ -67,5 +67,31 @@ describe('SessionArtifacts', () => {
     render(<SessionArtifacts sessionId="sesn_1" enabled />)
     await waitFor(() => expect(apiMock.listSessionDeliverables).toHaveBeenCalled())
     expect(screen.queryByRole('list', { name: 'Files in this chat' })).not.toBeInTheDocument()
+  })
+})
+
+describe('useSessionDeliverables', () => {
+  it('groups files by the turn that delivered them, and files a delivery without a turn under none', async () => {
+    apiMock.listSessionDeliverables.mockResolvedValue({
+      object: 'list',
+      data: [
+        { path: 'recordings/pizza.webm', turn_id: 'turn_78', created_at: 10 },
+        { path: 'recordings/pizza.mp4', turn_id: 'turn_78', created_at: 10 },
+        { path: 'report.md', turn_id: 'turn_252', created_at: 20 },
+        { path: 'old.txt', created_at: 5 } as unknown as SessionDeliverableEntry,
+      ],
+    })
+    const { result } = renderHook(() => useSessionDeliverables('sesn_1', true))
+    await waitFor(() => expect(result.current.all).toHaveLength(4))
+    expect(result.current.byTurn.get('turn_78')?.map((f) => f.name)).toEqual(['pizza.webm', 'pizza.mp4'])
+    expect(result.current.byTurn.get('turn_252')?.map((f) => f.name)).toEqual(['report.md'])
+    expect(result.current.byTurn.get('')?.map((f) => f.name)).toEqual(['old.txt'])
+  })
+
+  it('shows nothing while disabled', () => {
+    apiMock.listSessionDeliverables.mockResolvedValue({ object: 'list', data: [entry('a.md')] })
+    const { result } = renderHook(() => useSessionDeliverables('sesn_1', false))
+    expect(result.current.all).toEqual([])
+    expect(apiMock.listSessionDeliverables).not.toHaveBeenCalled()
   })
 })

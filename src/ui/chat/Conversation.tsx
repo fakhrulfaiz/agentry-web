@@ -60,7 +60,7 @@ import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
-import { SessionArtifacts } from './SessionArtifacts'
+import { DeliveredFiles, useSessionDeliverables } from './SessionArtifacts'
 import { SessionFilesContext } from './session-files'
 import { PanelRightIcon } from '@/ui/icons/PanelRightIcon'
 import { SubagentActions, SubagentItems } from './SubagentCard'
@@ -422,6 +422,10 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const retries = retryTexts(state.items)
   const entries = groupTurns(split.items, state.turnOf, state.turns)
   const changesAt = changesPlacement(entries, state.turnOf, state.turns)
+  // Delivered files sit after the turn whose `present` call delivered them; any whose turn is not shown go last.
+  const deliverables = useSessionDeliverables(sessionId ?? null, ready, !running)
+  const placedTurns = new Set([...changesAt.values()].map((c) => c.turnId))
+  const unplacedFiles = [...deliverables.byTurn].filter(([turnId]) => !placedTurns.has(turnId)).flatMap(([, files]) => files)
   // A chat with nothing in it yet has no trajectory to switch to (unknown while its history loads).
   const blank = loaded && state.items.length === 0 && state.turns.length === 0
   const shown: View = blank ? 'chat' : view
@@ -476,7 +480,10 @@ export function Conversation({ sessionId }: { sessionId: string }) {
               <ChatMessageList isStreaming={streaming}>
                 {entries.map((entry, entryIndex) => {
                   const changes = changesAt.get(entryIndex)
-                  const card = changes && sessionId && ready ? <ChangesCard key={`changes-${changes.turnId}`} sessionId={sessionId} turnId={changes.turnId} completed={changes.completed} /> : null
+                  const turnFiles = changes ? deliverables.byTurn.get(changes.turnId) : undefined
+                  const files = turnFiles ? <DeliveredFiles key={`files-${changes!.turnId}`} files={turnFiles} label="Files from this reply" /> : null
+                  const changesCard = changes && sessionId && ready ? <ChangesCard key={`changes-${changes.turnId}`} sessionId={sessionId} turnId={changes.turnId} completed={changes.completed} /> : null
+                  const card = files || changesCard ? [files, changesCard].filter(Boolean) : null
                   const row = (view: MessageView) => {
                     const retryText = retries.get(view.id)
                     return (
@@ -490,7 +497,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                       />
                     )
                   }
-                  if (entry.type === 'view') return card ? [row(entry.view), card] : row(entry.view)
+                  if (entry.type === 'view') return card ? [row(entry.view), ...card] : row(entry.view)
                   const group = (
                     <TurnGroup
                       key={`group-${entry.turnId}`}
@@ -508,12 +515,11 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                       {entry.views.map(row)}
                     </TurnGroup>
                   )
-                  return card ? [group, card] : group
+                  return card ? [group, ...card] : group
                 })}
                 {waiting && <Thinking label={waitingLabel(loading, state.status, firstSend, ready, sent)} />}
-                {/* The files the agent created, as a card at the end of the chat (claude.ai's
-                    artifacts), not pinned to the composer. */}
-                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}
+                {/* Delivered files whose turn is not in the list (an older backend without turn ids). */}
+                <DeliveredFiles files={unplacedFiles} />
               </ChatMessageList>
               </SubagentActions.Provider>
             </SubagentItems.Provider>
