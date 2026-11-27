@@ -5,7 +5,8 @@
  * `AGENTRY_WEB_AUTH=apikey AGENTRY_API_URL=http://localhost:4010`.
  *
  * In-memory implementation of the routes the web app's allow-list forwards
- * (`/v1/agents`, `/v1/agents/tools`, `/v1/agents/{id}`, sessions create/list/
+ * (`/v1/agents`, `/v1/agents/tools`, `/v1/agents/{id}`, `/v1/agents/projects`
+ * create/list/get/update/archive/unarchive/delete, sessions create/list/
  * get/update/delete, events post, items, turns, subagents with their items and turns) plus the SSE stream
  * `GET /v1/agents/sessions/{id}/events?stream=true`. Wire shapes follow the
  * backend's `src/history/projector.ts` (frame order, deterministic `evt_<session>_<n>`
@@ -53,7 +54,7 @@
  * Test hooks (no auth):
  *   - `POST /__mock/drop`  destroys every open SSE connection (the client must reconnect
  *                          with `Last-Event-ID`). Answers `{ dropped: n }`.
- *   - `POST /__mock/reset` forgets every session and drops streams.
+ *   - `POST /__mock/reset` forgets every session and Project and drops streams.
  *   - `GET /health`.
  */
 import { randomUUID } from 'node:crypto'
@@ -63,6 +64,8 @@ import type {
   OAIAgent,
   OAIAgentSession,
   OAIApprovalAction,
+  OAIEnvironmentConfig,
+  OAIProject,
   OAISessionEvent,
   OAIFileContentPart,
   OAIMessageItem,
@@ -93,6 +96,8 @@ interface MockSession {
   error: string | null
   metadata: Record<string, string>
   agent: OAIAgent
+  environment: OAIEnvironmentConfig
+  projectId: string | null
   frames: Frame[]
   items: StoredSessionItem[]
   turns: OAITurn[]
@@ -121,7 +126,9 @@ class HttpError extends Error {
 
 const now = () => Math.floor(Date.now() / 1000)
 const sessions = new Map<string, MockSession>()
+const projects = new Map<string, OAIProject>()
 let counter = 0
+let projectCounter = 0
 
 function agentConfig(id: string, model: string, name: string | null = null): OAIAgent {
   const at = now()
@@ -147,8 +154,8 @@ function resource(s: MockSession, withApprovals: boolean): OAIAgentSession {
     metadata: s.metadata,
     vault_ids: [],
     agent: s.agent,
-    environment: { type: 'local' },
-    project_id: null,
+    environment: s.environment,
+    project_id: s.projectId,
     required_actions: withApprovals && s.pending ? [s.pending.action] : [],
     usage: null,
   }
@@ -530,6 +537,16 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 function list<T extends { id: string }>(rows: T[], url: URL): { object: 'list'; data: T[]; first_id: string | null; last_id: string | null; has_more: boolean } {
   const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit') ?? 20) || 20))
   const after = url.searchParams.get('after')
+  // Sessions filter before paging, as Agentry does: an empty `project_id` means Unfiled.
+  const projectId = url.searchParams.get('project_id')
+  const metadata = [...url.searchParams.entries()].filter(([key]) => key.startsWith('metadata[') && key.endsWith(']'))
+  if (projectId !== null || metadata.length > 0) {
+    rows = rows.filter((row) => {
+      const r = row as T & { project_id?: string | null; metadata?: Record<string, string> }
+      if (projectId !== null && (projectId ? r.project_id !== projectId : r.project_id)) return false
+      return metadata.every(([key, value]) => r.metadata?.[key.slice(9, -1)] === value)
+    })
+  }
   if (url.searchParams.get('order') === 'desc') rows = rows.slice().reverse()
   const start = after ? rows.findIndex((r) => r.id === after) + 1 : 0
   const data = rows.slice(start, start + limit)
@@ -642,9 +659,13 @@ function openStream(req: IncomingMessage, res: ServerResponse, s: MockSession): 
 }
 
 function createSession(body: Record<string, unknown>): MockSession {
+  const project = typeof body.project_id === 'string' ? projects.get(body.project_id) : undefined
+  if (typeof body.project_id === 'string' && !project) throw new HttpError(404, 'resource_not_found', `No project found with id '${body.project_id}'`)
+  if (project?.status === 'archived') throw new HttpError(409, 'project_archived', 'The project is archived')
   const agentBody = (body.agent ?? {}) as { model?: unknown }
-  const saved = typeof body.agent_id === 'string' ? SAVED_AGENTS.find((a) => a.id === body.agent_id) : undefined
-  if (typeof body.agent_id === 'string' && !saved) throw new HttpError(404, 'resource_not_found', `No agent found with id '${body.agent_id}'`)
+  const agentId = typeof body.agent_id === 'string' ? body.agent_id : project?.agent_id
+  const saved = typeof agentId === 'string' ? SAVED_AGENTS.find((a) => a.id === agentId) : undefined
+  if (typeof agentId === 'string' && !saved) throw new HttpError(404, 'resource_not_found', `No agent found with id '${agentId}'`)
   const model = typeof agentBody.model === 'string' && agentBody.model ? agentBody.model : saved?.model
   if (!model) throw new HttpError(400, 'invalid_request_error', 'agent.model is required when agent_id is omitted')
   counter += 1
@@ -658,6 +679,8 @@ function createSession(body: Record<string, unknown>): MockSession {
     error: null,
     metadata: (body.metadata as Record<string, string> | undefined) ?? {},
     agent: { ...(saved ?? agentConfig(`agent_${id}`, model)), model },
+    environment: (body.environment as OAIEnvironmentConfig | undefined) ?? project?.environment ?? { type: 'local' },
+    projectId: project?.id ?? null,
     frames: [],
     items: [],
     turns: [],
@@ -800,6 +823,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       for (const client of s.clients) client.destroy()
     }
     sessions.clear()
+    projects.clear()
     files.clear()
     installedSkills.clear()
     return send(res, 200, { ok: true })
@@ -880,6 +904,72 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return send(res, 200, { object: 'list', data: id ? MOCK_COMMANDS : [] })
   }
   if (parts.length === 2 && b === 'tools' && method === 'GET') return send(res, 200, { object: 'list', data: [], first_id: null, last_id: null, has_more: false })
+  if (b === 'projects') {
+    if (parts.length === 2) {
+      if (method === 'GET') {
+        const status = url.searchParams.get('status') ?? 'active'
+        const rows = [...projects.values()].filter((p) => status === 'all' || p.status === status)
+        return send(res, 200, list(rows, url))
+      }
+      if (method === 'POST') {
+        const body = await readJson(req)
+        const name = typeof body.name === 'string' ? body.name.trim() : ''
+        if (!name) throw new HttpError(400, 'invalid_request_error', 'name is required')
+        const at = now()
+        const project: OAIProject = {
+          id: `proj_mock${++projectCounter}`,
+          object: 'project',
+          name,
+          status: 'active',
+          pinned: body.pinned === true,
+          agent_id: typeof body.agent_id === 'string' && body.agent_id ? body.agent_id : null,
+          environment: (body.environment as OAIEnvironmentConfig | null) ?? null,
+          archived_at: null,
+          created_at: at,
+          updated_at: at,
+        }
+        projects.set(project.id, project)
+        return send(res, 201, project)
+      }
+    }
+    const project = c ? projects.get(c) : undefined
+    if (!project) throw new HttpError(404, 'resource_not_found', `No project found with id '${String(c)}'`)
+    if (parts.length === 3) {
+      if (method === 'GET') return send(res, 200, project)
+      if (method === 'POST') {
+        const body = await readJson(req)
+        if (typeof body.name === 'string') {
+          const name = body.name.trim()
+          if (!name) throw new HttpError(400, 'invalid_request_error', 'name is required')
+          project.name = name
+        }
+        if ('agent_id' in body) {
+          if (body.agent_id !== null && typeof body.agent_id !== 'string') throw new HttpError(400, 'invalid_request_error', 'agent_id must be a string or null')
+          project.agent_id = body.agent_id as string | null
+        }
+        if ('environment' in body) {
+          if (body.environment !== null && typeof body.environment !== 'object') throw new HttpError(400, 'invalid_request_error', 'environment must be an object or null')
+          project.environment = body.environment as OAIEnvironmentConfig | null
+        }
+        if (typeof body.pinned === 'boolean') project.pinned = body.pinned
+        project.updated_at = now()
+        return send(res, 200, project)
+      }
+      if (method === 'DELETE') {
+        if ([...sessions.values()].some((s) => s.projectId === project.id)) {
+          throw new HttpError(409, 'project_has_sessions', 'Move the project chats to Unfiled before deleting it')
+        }
+        projects.delete(project.id)
+        return send(res, 200, { id: project.id, object: 'project.deleted', deleted: true })
+      }
+    }
+    if (parts.length === 4 && method === 'POST' && (d === 'archive' || d === 'unarchive')) {
+      project.status = d === 'archive' ? 'archived' : 'active'
+      project.archived_at = d === 'archive' ? now() : null
+      project.updated_at = now()
+      return send(res, 200, project)
+    }
+  }
   if (parts.length === 2 && b === 'sessions') {
     if (method === 'GET') {
       const rows = [...sessions.values()].reverse().map((s) => resource(s, true))
@@ -899,6 +989,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (method === 'POST') {
         const body = await readJson(req)
         if (body.metadata && typeof body.metadata === 'object') s.metadata = body.metadata as Record<string, string>
+        if ('project_id' in body) {
+          const next = body.project_id
+          if (next !== null && typeof next !== 'string') throw new HttpError(400, 'invalid_request_error', 'project_id must be a string or null')
+          const target = typeof next === 'string' ? projects.get(next) : undefined
+          if (typeof next === 'string' && !target) throw new HttpError(404, 'resource_not_found', `No project found with id '${next}'`)
+          if (target?.status === 'archived') throw new HttpError(409, 'project_archived', 'The project is archived')
+          s.projectId = target?.id ?? null
+        }
         const model = (body.agent as { model?: unknown } | undefined)?.model
         if (typeof model === 'string' && model) s.agent = { ...s.agent, model }
         return send(res, 200, resource(s, true))

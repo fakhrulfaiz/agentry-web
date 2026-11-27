@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAIAgentSession, OAIListResponse, OAIProject } from '@/api/types'
 import { groupSessions } from '@/ui/shell/group'
+import { bridgeFetch, startMockApi, type MockApi } from '../helpers/mock-api-flow'
 
 const nav = vi.hoisted(() => ({ pathname: '/', push: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -13,6 +14,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: nav.push, refresh: vi.fn(), replace: vi.fn() }),
 }))
 
+const real = vi.hoisted(() => ({ api: null as typeof import('@/api/client').api | null }))
 const apiMock = vi.hoisted(() => ({
   listSessions: vi.fn(),
   listProjects: vi.fn(),
@@ -30,10 +32,11 @@ const apiMock = vi.hoisted(() => ({
   setStarred: vi.fn(),
   logout: vi.fn(),
 }))
-vi.mock('@/api/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api/client')>()),
-  api: apiMock,
-}))
+vi.mock('@/api/client', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/api/client')>()
+  real.api = original.api
+  return { ...original, api: apiMock }
+})
 
 const { Sidebar, SIDEBAR_COLLAPSED_KEY } = await import('@/ui/shell/Sidebar')
 const { Shell } = await import('@/ui/shell/Shell')
@@ -535,6 +538,71 @@ describe('Sidebar', () => {
     expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
     expect(screen.queryByText('No chats match.')).not.toBeInTheDocument()
   })
+})
+
+describe('Sidebar with the mock API', () => {
+  let mock: MockApi
+
+  beforeEach(async () => {
+    mock = await startMockApi()
+    await mock.reset()
+    vi.stubGlobal('fetch', bridgeFetch(mock.base))
+    apiMock.listProjects.mockImplementation((q: Parameters<NonNullable<typeof real.api>['listProjects']>[0]) => real.api!.listProjects(q))
+    apiMock.listSessions.mockImplementation((q: Parameters<NonNullable<typeof real.api>['listSessions']>[0]) => real.api!.listSessions(q))
+  }, 20_000)
+
+  afterEach(async () => {
+    vi.unstubAllGlobals()
+    if (mock) await mock.stop()
+  })
+
+  it('shows a one-off chat under recent but not in the Project-filtered list', async () => {
+    const project = await real.api!.createProject({ name: 'Website work' })
+    const filed = await real.api!.createSession({ text: 'Website chat', model: 'mock-model', projectId: project.id })
+    const oneOff = await real.api!.createSession({ text: 'One-off chat', model: 'mock-model' })
+    const user = userEvent.setup()
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'One-off chat' })
+    expect(within(group('Today')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Website chat' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    expect(await within(group('Website work')).findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
+    expect(within(group('Website work')).queryByRole('link', { name: 'One-off chat' })).not.toBeInTheDocument()
+
+    const filtered = await real.api!.listSessions({ projectId: project.id })
+    expect(filtered.data.map((s) => s.id)).toEqual([filed.id])
+    expect(filtered.data.map((s) => s.id)).not.toContain(oneOff.id)
+  }, 20_000)
+
+  it('creates, edits, archives and deletes Projects, and moves chats in and out', async () => {
+    const created = await real.api!.createProject({
+      name: 'Website work',
+      pinned: true,
+      agent_id: 'agent_writer',
+      environment: { type: 'sandbox', environment_id: 'env_1' },
+    })
+    expect(await real.api!.getProject(created.id)).toEqual(created)
+    const renamed = await real.api!.updateProject(created.id, { name: 'Launch work', pinned: false })
+    expect(renamed).toMatchObject({ name: 'Launch work', pinned: false })
+    expect((await real.api!.listProjects({ status: 'active' })).data.map((p) => p.name)).toEqual(['Launch work'])
+
+    const filed = await real.api!.createSession({ text: 'Filed chat', model: 'mock-model', projectId: created.id })
+    expect(filed).toMatchObject({ project_id: created.id, agent: { id: 'agent_writer' }, environment: { type: 'sandbox', environment_id: 'env_1' } })
+    expect((await real.api!.listSessions({ projectId: created.id })).data.map((s) => s.id)).toEqual([filed.id])
+    await real.api!.setSessionProject(filed.id, null)
+    expect((await real.api!.getSession(filed.id)).project_id).toBeNull()
+    await real.api!.setSessionProject(filed.id, created.id)
+
+    expect((await real.api!.archiveProject(created.id)).status).toBe('archived')
+    expect((await real.api!.listProjects({ status: 'active' })).data).toEqual([])
+    expect((await real.api!.listProjects({ status: 'archived' })).data.map((p) => p.id)).toEqual([created.id])
+    expect((await real.api!.unarchiveProject(created.id)).status).toBe('active')
+    await expect(real.api!.deleteProject(created.id)).rejects.toMatchObject({ status: 409, code: 'project_has_sessions' })
+    await real.api!.setSessionProject(filed.id, null)
+    expect(await real.api!.deleteProject(created.id)).toEqual({ id: created.id, object: 'project.deleted', deleted: true })
+    await expect(real.api!.getProject(created.id)).rejects.toMatchObject({ status: 404 })
+  }, 20_000)
 })
 
 describe('Shell', () => {

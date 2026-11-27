@@ -5,9 +5,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OAIAgent, OAIProject, SandboxEnvironment } from '@/api/types'
+import { bridgeFetch, startMockApi, type MockApi } from '../helpers/mock-api-flow'
 
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), query: '' }))
 const pendingFirst = vi.hoisted(() => ({ setPendingFirst: vi.fn() }))
+const real = vi.hoisted(() => ({ api: null as typeof import('@/api/client').api | null }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: nav.push, replace: nav.replace, refresh: vi.fn() }),
   useSearchParams: () => new URLSearchParams(nav.query),
@@ -15,7 +17,11 @@ vi.mock('next/navigation', () => ({
 }))
 
 const apiMock = vi.hoisted(() => ({ models: vi.fn(), createSession: vi.fn(), listSkills: vi.fn(), listCommands: vi.fn(), listAgents: vi.fn(), listSandboxEnvironments: vi.fn(), listSandboxProviders: vi.fn(), listSandboxTemplates: vi.fn(), getProject: vi.fn() }))
-vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
+vi.mock('@/api/client', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/api/client')>()
+  real.api = original.api
+  return { ...original, api: apiMock }
+})
 vi.mock('@/chat/pending-first', () => ({ setPendingFirst: pendingFirst.setPendingFirst }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
 vi.mock('@/ui/shell/TopBar', () => ({ TopBar: () => null }))
@@ -259,4 +265,47 @@ describe('New chat project preset', () => {
     expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
     expect(nav.replace).not.toHaveBeenCalled()
   })
+})
+
+/** The whole first-send path against the real mock API, not a stand-in client. */
+describe('New chat project flow against the mock API', () => {
+  let mock: MockApi
+
+  beforeEach(async () => {
+    mock = await startMockApi()
+    await mock.reset()
+    vi.stubGlobal('fetch', bridgeFetch(mock.base))
+    nav.query = ''
+    apiMock.createSession.mockReset()
+    apiMock.listAgents.mockImplementation(() => real.api!.listAgents())
+    apiMock.getProject.mockImplementation((id: string) => real.api!.getProject(id))
+    apiMock.createSession.mockImplementation(async (params: Parameters<NonNullable<typeof real.api>['createSession']>[0]) => {
+      const session = await real.api!.createSession(params)
+      createdSessionId = session.id
+      return session
+    })
+  }, 20_000)
+
+  afterEach(async () => {
+    vi.unstubAllGlobals()
+    if (mock) await mock.stop()
+  })
+
+  let createdSessionId = ''
+
+  it('files a chat started from ?project= under that Project in the API', async () => {
+    const created = await real.api!.createProject({ name: 'Website work', pinned: true, agent_id: 'agent_writer' })
+    createdSessionId = ''
+    nav.query = `project=${encodeURIComponent(created.id)}`
+    const user = userEvent.setup()
+    render(<NewChat />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent('Writer'))
+    await user.type(input(), 'Website chat{Enter}')
+    await waitFor(() => expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'Website chat', model: 'm1', agentId: 'agent_writer', projectId: created.id }))
+    await waitFor(() => expect(createdSessionId).toBeTruthy())
+
+    const filtered = await real.api!.listSessions({ projectId: created.id })
+    expect(filtered.data.map((s) => s.id)).toEqual([createdSessionId])
+    expect(filtered.data[0]).toMatchObject({ project_id: created.id, metadata: { title: 'Website chat' } })
+  }, 20_000)
 })
