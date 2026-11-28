@@ -26,6 +26,8 @@ function rect(width: number, height: number) {
   }
 }
 
+const input = () => screen.getByTestId('browser-input')
+
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Browser viewport', () => {
@@ -98,15 +100,25 @@ describe('Browser viewport', () => {
     expect(send).toHaveBeenLastCalledWith({ type: 'resize', width: 640, height: 400 })
   })
 
+  it('focuses an editable input while in control, so real IME events can fire', () => {
+    render(<BrowserViewport {...base} inControl send={() => {}} />)
+    expect(input()).toHaveFocus()
+    expect(input()).toHaveAttribute('aria-label', expect.stringContaining('browser'))
+    const img = screen.getByTestId('browser-frame')
+    rect(640, 400)(img)
+    input().blur()
+    fireEvent.pointerDown(img, { clientX: 420, clientY: 250, button: 0, buttons: 1, detail: 1 })
+    expect(input()).toHaveFocus()
+  })
+
   it('lets Escape leave the frame and sends typed keys', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
-    const img = screen.getByTestId('browser-frame')
-    img.focus()
-    fireEvent.keyDown(img, { key: 'Escape', code: 'Escape', keyCode: 27 })
+    const field = input()
+    fireEvent.keyDown(field, { key: 'Escape', code: 'Escape', keyCode: 27 })
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'key', key: 'Escape' }))
-    expect(img).not.toHaveFocus()
-    fireEvent.keyDown(img, { key: 'h', code: 'KeyH', keyCode: 72 })
+    expect(field).not.toHaveFocus()
+    fireEvent.keyDown(field, { key: 'h', code: 'KeyH', keyCode: 72 })
     expect(send).toHaveBeenCalledWith({ type: 'key', action: 'down', key: 'h', code: 'KeyH', key_code: 72, text: 'h' })
   })
 
@@ -128,60 +140,75 @@ describe('Browser viewport', () => {
   it('sends the committed IME string once and does not type the composition keystrokes', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
-    const img = screen.getByTestId('browser-frame')
-    fireEvent.compositionStart(img, { data: 'に' })
-    fireEvent.keyDown(img, { key: 'Process', code: 'Process', keyCode: 229 })
-    fireEvent.compositionEnd(img, { data: '日' })
+    const field = input()
+    fireEvent.compositionStart(field, { data: 'に' })
+    fireEvent.compositionUpdate(field, { data: '日本' })
+    fireEvent.keyDown(field, { key: 'Process', code: 'Process', keyCode: 229 })
+    fireEvent.compositionEnd(field, { data: '日' })
     expect(send).toHaveBeenCalledWith({ type: 'text', text: '日' })
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: expect.anything() }))
     send.mockClear()
-    fireEvent.keyDown(img, { key: 'a', code: 'KeyA', keyCode: 65 })
+    fireEvent.keyDown(field, { key: 'a', code: 'KeyA', keyCode: 65 })
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: 'a' }))
   })
 
   it('does not send text for a cancelled composition', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
-    const img = screen.getByTestId('browser-frame')
-    fireEvent.compositionStart(img, { data: 'に' })
-    fireEvent.compositionEnd(img, { data: '' })
+    const field = input()
+    fireEvent.compositionStart(field, { data: 'に' })
+    fireEvent.compositionEnd(field, { data: '' })
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'text' }))
-    fireEvent.keyDown(img, { key: 'a', code: 'KeyA', keyCode: 65 })
+    fireEvent.keyDown(field, { key: 'a', code: 'KeyA', keyCode: 65 })
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: 'a' }))
   })
 
-  it('stops suppressing typed text when the frame loses focus mid-composition', () => {
+  it('suppresses text on keys that arrive before compositionstart or after compositionend', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
-    const img = screen.getByTestId('browser-frame')
-    fireEvent.compositionStart(img, { data: 'に' })
-    fireEvent.blur(img)
-    fireEvent.keyDown(img, { key: 'a', code: 'KeyA', keyCode: 65 })
+    const field = input()
+    expect(fireEvent.keyDown(field, { key: 'Process', code: 'Process', keyCode: 229 })).toBe(true)
+    fireEvent.compositionStart(field, { data: 'に' })
+    fireEvent.compositionEnd(field, { data: '日' })
+    expect(fireEvent.keyDown(field, { key: 'a', code: 'KeyA', keyCode: 65, isComposing: true })).toBe(true)
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: expect.anything() }))
+  })
+
+  it('stops suppressing typed text when the input loses focus mid-composition', () => {
+    const send = vi.fn<(event: BrowserInputEvent) => void>()
+    render(<BrowserViewport {...base} inControl send={send} />)
+    const field = input()
+    fireEvent.compositionStart(field, { data: 'に' })
+    fireEvent.blur(field)
+    fireEvent.keyDown(field, { key: 'a', code: 'KeyA', keyCode: 65 })
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: 'a' }))
   })
 
-  it('scrolls the page on a touch drag without sending mouse moves or a click', () => {
+  it('scrolls the page on a touch drag without ever sending a remote mouse press or click', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
     const img = screen.getByTestId('browser-frame')
     rect(640, 400)(img)
     fireEvent.pointerDown(img, { pointerType: 'touch', clientX: 420, clientY: 250, button: 0, buttons: 1, detail: 1 })
+    fireEvent.pointerMove(img, { pointerType: 'touch', clientX: 424, clientY: 252, button: 0, buttons: 1, detail: 0 })
+    expect(send).not.toHaveBeenCalled()
     fireEvent.pointerMove(img, { pointerType: 'touch', clientX: 320, clientY: 200, button: 0, buttons: 1, detail: 0 })
     fireEvent.pointerUp(img, { pointerType: 'touch', clientX: 320, clientY: 200, button: 0, buttons: 0, detail: 1 })
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'down' }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'wheel', delta_y: expect.any(Number) }))
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'up', click_count: 0 }))
-    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'move' }))
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse' }))
   })
 
-  it('keeps a touch tap as a click and a mouse pointer unchanged', () => {
+  it('keeps a tap with a little finger jitter as a click and a mouse pointer unchanged', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
     const img = screen.getByTestId('browser-frame')
     rect(640, 400)(img)
     fireEvent.pointerDown(img, { pointerType: 'touch', clientX: 420, clientY: 250, button: 0, buttons: 1, detail: 1 })
-    fireEvent.pointerUp(img, { pointerType: 'touch', clientX: 420, clientY: 250, button: 0, buttons: 0, detail: 1 })
+    fireEvent.pointerMove(img, { pointerType: 'touch', clientX: 424, clientY: 252, button: 0, buttons: 1, detail: 0 })
+    fireEvent.pointerUp(img, { pointerType: 'touch', clientX: 427, clientY: 253, button: 0, buttons: 0, detail: 1 })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'down', x: 640, y: 400 }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'up', click_count: 1 }))
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'wheel' }))
     send.mockClear()
     fireEvent.pointerMove(img, { pointerType: 'mouse', clientX: 420, clientY: 250, button: 0, buttons: 0, detail: 0 })
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'mouse', action: 'move' }))

@@ -62,22 +62,22 @@ describe('Browser tab take-over', () => {
     await user.click(screen.getByRole('button', { name: 'Take control' }))
     expect(calls.take).toHaveBeenCalledWith('s1', false)
     expect(screen.getByText('You have control')).toBeInTheDocument()
-    const app = screen.getByRole('application')
-    expect(app).toHaveFocus()
+    const field = screen.getByRole('textbox', { name: "Type into the agent's browser" })
+    expect(field).toHaveFocus()
 
-    fireEvent.pointerDown(app, { clientX: 420, clientY: 230, button: 0, buttons: 1, detail: 1 })
+    fireEvent.pointerDown(frame, { clientX: 420, clientY: 230, button: 0, buttons: 1, detail: 1 })
     expect(calls.input).toHaveBeenLastCalledWith('s1', 'bctl_1', [
       { type: 'resize', width: 640, height: 360 },
       { type: 'mouse', action: 'down', x: 640, y: 360, button: 'left', buttons: 1, click_count: 1 },
     ])
-    fireEvent.keyDown(app, { key: 'h', code: 'KeyH', keyCode: 72 })
+    fireEvent.keyDown(field, { key: 'h', code: 'KeyH', keyCode: 72 })
     expect(calls.input).toHaveBeenLastCalledWith('s1', 'bctl_1', [{ type: 'key', action: 'down', key: 'h', code: 'KeyH', key_code: 72, text: 'h' }])
 
     // Esc is not sent: it leaves the frame.
     const sent = calls.input.mock.calls.length
-    fireEvent.keyDown(app, { key: 'Escape', code: 'Escape', keyCode: 27 })
+    fireEvent.keyDown(field, { key: 'Escape', code: 'Escape', keyCode: 27 })
     expect(calls.input.mock.calls.length).toBe(sent)
-    expect(app).not.toHaveFocus()
+    expect(field).not.toHaveFocus()
 
     await user.click(screen.getByRole('button', { name: 'Hand back' }))
     expect(calls.release).toHaveBeenCalledWith('s1', 'bctl_1')

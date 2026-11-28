@@ -69,6 +69,11 @@ export function modifiersOf(e: { altKey: boolean; ctrlKey: boolean; metaKey: boo
 
 const BUTTON = ['left', 'middle', 'right'] as const
 
+/** Some IMEs send a key before `compositionstart` or after `compositionend`; its text must not be typed twice. */
+export function isComposingKey(e: { isComposing?: boolean; keyCode?: number }): boolean {
+  return e.isComposing === true || e.keyCode === 229
+}
+
 /** A key press or release as an input event. A key that types (one character, Enter) carries its text, unless it belongs to an IME composition. */
 export function keyEvent(e: { key: string; code: string; keyCode: number; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }, action: 'down' | 'up', composing = false): BrowserInputEvent {
   const modifiers = modifiersOf(e)

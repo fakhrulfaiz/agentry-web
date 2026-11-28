@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coalesce, composedTextEvent, keyEvent, modifiersOf, mouseEvent, toFramePoint, toPagePoint, wheelFromTouch, type FrameBox } from '@/chat/browser-input'
+import { coalesce, composedTextEvent, isComposingKey, keyEvent, modifiersOf, mouseEvent, toFramePoint, toPagePoint, wheelFromTouch, type FrameBox } from '@/chat/browser-input'
 
 const box: FrameBox = { left: 100, top: 50, width: 640, height: 360, pageWidth: 1280, pageHeight: 720 }
 const noMods = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
@@ -62,6 +62,12 @@ describe('browser take-over input', () => {
       { type: 'mouse', action: 'down', x: 2, y: 2 },
       { type: 'mouse', action: 'move', x: 3, y: 3 },
     ])
+  })
+
+  it('recognises composition keys that arrive around the composition events', () => {
+    expect(isComposingKey({ isComposing: true, keyCode: 65 })).toBe(true)
+    expect(isComposingKey({ keyCode: 229 })).toBe(true)
+    expect(isComposingKey({ isComposing: false, keyCode: 65 })).toBe(false)
   })
 
   it('omits typed text from keys pressed during IME composition', () => {

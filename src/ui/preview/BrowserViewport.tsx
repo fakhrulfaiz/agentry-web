@@ -10,8 +10,8 @@ import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
 import { colorVars, radiusVars, spacingVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react'
-import { composedTextEvent, keyEvent, mouseEvent, wheelFromTouch, type BrowserInputEvent, type FrameBox } from '@/chat/browser-input'
+import { useEffect, useRef, type ClipboardEvent, type CompositionEvent, type KeyboardEvent, type PointerEvent } from 'react'
+import { composedTextEvent, isComposingKey, keyEvent, mouseEvent, wheelFromTouch, type BrowserInputEvent, type FrameBox } from '@/chat/browser-input'
 import type { LiveFocus, LiveFrame, LivePointer } from '@/chat/use-browser-live'
 import { BrowserCursor } from './BrowserCursor'
 
@@ -27,6 +27,8 @@ export interface BrowserViewportProps {
 
 /** Smallest and largest page width sent with a resize (the API's limits). */
 const PAGE_WIDTH = { min: 320, max: 1920 }
+/** Finger jitter below this is still a tap; above it the touch drags the page. */
+const TOUCH_SLOP = 8
 
 const styles = stylex.create({
   fill: { flexGrow: 1, minBlockSize: 0 },
@@ -44,6 +46,22 @@ const styles = stylex.create({
     borderStyle: 'solid',
     borderColor: colorVars['--color-border'],
     borderRadius: radiusVars['--radius-container'],
+    outlineStyle: { default: 'none', ':focus-within': 'solid' },
+    outlineWidth: 2,
+    outlineOffset: 2,
+    outlineColor: colorVars['--color-accent'],
+  },
+  // Real IMEs only compose on an editable, focused element. Keep one in the DOM without showing it.
+  inputAnchor: {
+    position: 'absolute',
+    inlineSize: 1,
+    blockSize: 1,
+    padding: 0,
+    borderWidth: 0,
+    overflow: 'hidden',
+    clipPath: 'inset(50%)',
+    whiteSpace: 'nowrap',
+    opacity: 0,
   },
   frame: {
     position: 'absolute',
@@ -57,10 +75,6 @@ const styles = stylex.create({
     cursor: 'default',
     touchAction: 'none',
     userSelect: 'none',
-    outlineStyle: { default: 'none', ':focus': 'solid' },
-    outlineWidth: 2,
-    outlineOffset: 2,
-    outlineColor: colorVars['--color-accent'],
   },
 })
 
@@ -80,20 +94,23 @@ function frameBox(img: HTMLImageElement, frame: LiveFrame | null): FrameBox {
 export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer: agentPointer, focus: agentFocus }: BrowserViewportProps) {
   const ref = useRef<HTMLImageElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
-  // A new SSE frame arrives often; the control effect must not re-run (and re-focus the image) for it.
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  // A new SSE frame arrives often; the control effect must not re-run (and re-focus the input) for it.
   const frameRef = useRef(frame)
   frameRef.current = frame
-  // IME composition and the last point of a one-finger drag are transient input state, not render state.
+  // IME composition and the transient points of a one-finger drag are input state, not render state.
   const composing = useRef(false)
+  const touchOrigin = useRef<{ clientX: number; clientY: number } | null>(null)
+  // The last point a wheel was sent from; the origin is kept separately so a jittery tap still clicks.
   const touchFrom = useRef<{ clientX: number; clientY: number } | null>(null)
-  // A drag must end without a click even though its last point equals the pointer-up point.
   const touchMoved = useRef(false)
   const src = frame?.src ?? screenshotUrl
   useEffect(() => {
     const img = ref.current
-    if (!inControl || !img || !frameRef.current) return
+    const input = inputRef.current
+    if (!inControl || !img || !input || !frameRef.current) return
     let lastWidth = 0
-    img.focus()
+    input.focus()
     // The wheel needs a non-passive listener so the panel does not scroll too.
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
@@ -104,8 +121,13 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
     }
     img.addEventListener('wheel', onWheel, { passive: false })
     // Losing focus mid-composition must not swallow the next typed key.
-    const onBlur = () => { composing.current = false; touchFrom.current = null; touchMoved.current = false }
-    img.addEventListener('blur', onBlur)
+    const onBlur = () => {
+      composing.current = false
+      touchOrigin.current = null
+      touchFrom.current = null
+      touchMoved.current = false
+    }
+    input.addEventListener('blur', onBlur)
     // The viewport's own ratio, not the screenshot's, decides the page size while in control.
     const fit = () => {
       const r = viewportRef.current?.getBoundingClientRect()
@@ -120,8 +142,9 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
     if (viewportRef.current) observer?.observe(viewportRef.current)
     return () => {
       img.removeEventListener('wheel', onWheel)
-      img.removeEventListener('blur', onBlur)
+      input.removeEventListener('blur', onBlur)
       composing.current = false
+      touchOrigin.current = null
       touchFrom.current = null
       touchMoved.current = false
       observer?.disconnect()
@@ -132,22 +155,22 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
     if (!inControl || !ref.current) return
     if (action === 'down') {
       e.preventDefault()
-      ref.current.focus()
+      inputRef.current?.focus()
       ref.current.setPointerCapture?.(e.pointerId)
     }
     const box = frameBox(ref.current, frame)
     if (e.pointerType === 'touch') {
       if (action === 'down') {
+        touchOrigin.current = { clientX: e.clientX, clientY: e.clientY }
         touchFrom.current = { clientX: e.clientX, clientY: e.clientY }
         touchMoved.current = false
-        const down = mouseEvent(e, 'down', box)
-        if (down) send(down)
         return
       }
-      const from = touchFrom.current
+      const origin = touchOrigin.current
+      if (!origin) return
       if (action === 'move') {
-        if (!from) return
-        const wheel = wheelFromTouch(from, e, box)
+        if (!touchMoved.current && Math.hypot(e.clientX - origin.clientX, e.clientY - origin.clientY) <= TOUCH_SLOP) return
+        const wheel = wheelFromTouch(touchFrom.current ?? origin, e, box)
         if (wheel) {
           send(wheel)
           touchMoved.current = true
@@ -155,65 +178,88 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
         touchFrom.current = { clientX: e.clientX, clientY: e.clientY }
         return
       }
+      touchOrigin.current = null
       touchFrom.current = null
-      const up = mouseEvent(e, 'up', box)
-      if (!up || up.type !== 'mouse') return
-      const dragged = touchMoved.current
+      if (touchMoved.current) {
+        // A drag sends no mouse press or release: the backend would turn a down/up pair into a click.
+        touchMoved.current = false
+        return
+      }
       touchMoved.current = false
-      send(dragged ? { ...up, click_count: 0 } : up)
+      const at = {
+        clientX: origin.clientX, clientY: origin.clientY, button: e.button, buttons: e.buttons, detail: e.detail,
+        altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey,
+      }
+      const down = mouseEvent(at, 'down', box)
+      const up = mouseEvent(e, 'up', box)
+      if (down) send(down)
+      if (up) send(up)
       return
     }
     const m = mouseEvent(e, action, box)
     if (m) send(m)
   }
-  const key = (action: 'down' | 'up') => (e: KeyboardEvent<HTMLImageElement>) => {
+  const key = (action: 'down' | 'up') => (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!inControl) return
     // Esc is never sent: it leaves the frame, so keyboard users are not trapped.
     if (e.key === 'Escape') {
-      if (action === 'down') ref.current?.blur()
+      if (action === 'down') e.currentTarget.blur()
       return
     }
-    e.preventDefault()
-    send(keyEvent(e, action, composing.current))
+    const composingKey = isComposingKey({ isComposing: e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode })
+    const composingNow = composing.current || composingKey
+    // Let the browser run its IME: cancelling a composing keydown can stop composition altogether.
+    if (!composingNow) e.preventDefault()
+    send(keyEvent(e, action, composingNow))
   }
 
   return (
     <VStack ref={viewportRef} data-testid="browser-viewport" xstyle={styles.viewport}>
       {src ? (
-          // eslint-disable-next-line @next/next/no-img-element -- streamed frames / BFF bytes; next/image does not apply
+        <>
+          {inControl && (
+            <textarea
+              ref={inputRef}
+              data-testid="browser-input"
+              aria-label="Type into the agent's browser"
+              autoComplete="off"
+              spellCheck={false}
+              {...stylex.props(styles.inputAnchor)}
+              onCompositionStart={() => { composing.current = true }}
+              onCompositionUpdate={() => { composing.current = true }}
+              onCompositionEnd={(e: CompositionEvent<HTMLTextAreaElement>) => {
+                composing.current = false
+                e.currentTarget.value = ''
+                const text = composedTextEvent(e.data)
+                if (text) send(text)
+              }}
+              onKeyDown={key('down')}
+              onKeyUp={key('up')}
+              onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
+                const text = e.clipboardData.getData('text')
+                e.preventDefault()
+                if (text) send({ type: 'text', text: text.slice(0, 2000) })
+              }}
+            />
+          )}
+          {/* eslint-disable-next-line @next/next/no-img-element -- streamed frames / BFF bytes; next/image does not apply */}
           <img
             ref={ref}
             src={src}
             alt={!frame ? 'Latest screenshot of the agent\'s browser' : inControl ? 'The agent\'s browser. You have control: click, scroll and type here. Esc leaves.' : 'Live view of the agent\'s browser'}
             draggable={false}
             {...(inControl ? {
-              tabIndex: 0,
-              role: 'application',
-              'aria-roledescription': 'remote browser',
               onPointerDown: pointer('down'),
               onPointerMove: pointer('move'),
               onPointerUp: pointer('up'),
-              onPointerCancel: () => { touchFrom.current = null; touchMoved.current = false },
+              onPointerCancel: () => { touchOrigin.current = null; touchFrom.current = null; touchMoved.current = false },
               onContextMenu: (e: { preventDefault: () => void }) => { e.preventDefault() },
-              onCompositionStart: () => { composing.current = true },
-              onCompositionUpdate: () => { composing.current = true },
-              onCompositionEnd: (e: { data: string }) => {
-                composing.current = false
-                const text = composedTextEvent(e.data)
-                if (text) send(text)
-              },
-              onKeyDown: key('down'),
-              onKeyUp: key('up'),
-              onPaste: (e: { preventDefault: () => void; clipboardData: DataTransfer }) => {
-                const text = e.clipboardData.getData('text')
-                e.preventDefault()
-                if (text) send({ type: 'text', text: text.slice(0, 2000) })
-              },
             } : {})}
             {...stylex.props(styles.frame, inControl && styles.controlled)}
             data-testid="browser-frame"
             data-fit="contain"
           />
+        </>
       ) : (
         <Center padding={0} xstyle={styles.fill}>
           <Text type="supporting" color="secondary">No screenshot yet. The agent mostly reads pages as text; it takes a screenshot when the layout matters or you ask for one.</Text>
