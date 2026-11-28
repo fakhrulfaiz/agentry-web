@@ -23,11 +23,11 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, PlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
 import type { OAIAgentSession, OAIProject } from '@/api/types'
 import { AgentryMark } from '@/ui/brand/Wordmark'
@@ -44,6 +44,10 @@ const styles = stylex.create({
   // A row's menu takes no space until the row is under the pointer or focused, so titles use the full width.
   rowActions: { display: 'flex', width: 0, overflow: 'hidden', opacity: 0 },
   rowActionsShown: { width: 'auto', overflow: 'visible', opacity: 1 },
+  // A project's caret and folder, side by side in the row's icon slot.
+  projectIcon: { display: 'inline-flex', alignItems: 'center', gap: 2 },
+  // A project's chats sit under it, indented like a tree.
+  projectChats: { paddingInlineStart: 12 },
 })
 
 /** How long a row's menu stays after the pointer or focus leaves, so crossing the gap to it does not hide it. */
@@ -51,8 +55,17 @@ const ROW_LEAVE_MS = 100
 
 type RowMenuItems = React.ComponentProps<typeof MoreMenu>['items']
 
-/** A chat row whose menu appears on hover or focus (and while it is open). */
-function ChatRow({ label, href, isSelected, items }: { label: string; href: string; isSelected: boolean; items: RowMenuItems }) {
+/** A sidebar row (a chat or a project) whose actions appear on hover or focus (and while its menu is open). */
+function HoverRow({ label, href, onClick, icon, isSelected = false, items, extra }: {
+  label: string
+  href?: string
+  onClick?: () => void
+  icon?: React.ReactNode
+  isSelected?: boolean
+  items: RowMenuItems
+  /** Quiet actions before the ⋯ menu, shown with it (e.g. a project's "New chat here"). */
+  extra?: React.ReactNode
+}) {
   const [hot, setHot] = useState(false)
   const [open, setOpen] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -69,12 +82,15 @@ function ChatRow({ label, href, isSelected, items }: { label: string; href: stri
   return (
     <SideNavItem
       label={label}
-      href={href}
+      {...(href ? { href } : {})}
+      {...(onClick ? { onClick } : {})}
+      {...(icon ? { icon } : {})}
       isSelected={isSelected}
       size="sm"
       {...hover}
       actions={
         <span {...hover} {...stylex.props(styles.rowActions, (hot || open) && styles.rowActionsShown)}>
+          {extra}
           <MoreMenu label={`Options for ${label}`} size="sm" items={items} onOpenChange={setOpen} />
         </span>
       }
@@ -390,7 +406,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
 
   const rows = (list: Session[]) =>
     list.map((s) => (
-      <ChatRow
+      <HoverRow
         key={s.id}
         label={sessionTitle(s)}
         href={`/c/${encodeURIComponent(s.id)}`}
@@ -424,38 +440,45 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     const chats = (loaded ?? []).filter(matches)
     const error = projectLoadErrors[project.id]
     return (
-      <SideNavItem
-        key={project.id}
-        label={project.name}
-        icon={FolderIcon}
-        size="sm"
-        collapsible={{ isCollapsed: !isExpanded, onCollapsedChange: () => toggleProject(project.id) }}
-        actions={
-          <MoreMenu
-            label={`Options for ${project.name}`}
-            size="sm"
-            items={[
-              { label: 'New chat here', onClick: () => router.push(`/?project=${encodeURIComponent(project.id)}`) },
-              { label: 'Rename', onClick: () => setProjectDialog({ isOpen: true, project }) },
-              { label: project.pinned ? 'Unpin' : 'Pin', onClick: () => changeProject('pin', () => api.updateProject(project.id, { pinned: !project.pinned })) },
-              { label: 'Archive', onClick: () => changeProject('archive', () => api.archiveProject(project.id)) },
-              { label: 'Delete', variant: 'destructive', onClick: () => setDeletingProject(project) },
-            ]}
-          />
-        }
-      >
-        <SideNavItem label="New chat here" href={`/?project=${encodeURIComponent(project.id)}`} icon={PencilSquareIcon} size="sm" />
-        {rows(chats)}
-        {error && (
-          <VStack padding={2} gap={1} hAlign="start">
-            <Text type="supporting">{error}</Text>
-            <Button label="Retry" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id)} />
+      <Fragment key={project.id}>
+        <HoverRow
+          label={project.name}
+          onClick={() => toggleProject(project.id)}
+          icon={
+            <span {...stylex.props(styles.projectIcon)}>
+              <Icon icon={isExpanded ? ChevronDownIcon : ChevronRightIcon} size="xsm" color="secondary" />
+              <Icon icon={FolderIcon} size="sm" />
+            </span>
+          }
+          extra={<IconButton label={`New chat in ${project.name}`} tooltip="New chat here" size="sm" variant="ghost" icon={<Icon icon={PlusIcon} size="sm" />} onClick={() => router.push(`/?project=${encodeURIComponent(project.id)}`)} />}
+          items={[
+            { label: 'New chat here', onClick: () => router.push(`/?project=${encodeURIComponent(project.id)}`) },
+            { label: 'Rename', onClick: () => setProjectDialog({ isOpen: true, project }) },
+            { label: project.pinned ? 'Unpin' : 'Pin', onClick: () => changeProject('pin', () => api.updateProject(project.id, { pinned: !project.pinned })) },
+            { label: 'Archive', onClick: () => changeProject('archive', () => api.archiveProject(project.id)) },
+            { label: 'Delete', variant: 'destructive', onClick: () => setDeletingProject(project) },
+          ]}
+        />
+        {isExpanded && (
+          <VStack role="group" aria-label={project.name} xstyle={styles.projectChats}>
+            {rows(chats)}
+            {loaded && chats.length === 0 && !error && (
+              <VStack paddingInline={2} paddingBlock={1}>
+                <Text type="supporting" color="secondary">No chats yet.</Text>
+              </VStack>
+            )}
+            {error && (
+              <VStack padding={2} gap={1} hAlign="start">
+                <Text type="supporting">{error}</Text>
+                <Button label="Retry" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id)} />
+              </VStack>
+            )}
+            {projectHasMore[project.id] && (
+              <Button label="More" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id, projectCursors[project.id] ?? undefined)} />
+            )}
           </VStack>
         )}
-        {projectHasMore[project.id] && (
-          <Button label="More" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id, projectCursors[project.id] ?? undefined)} />
-        )}
-      </SideNavItem>
+      </Fragment>
     )
   }
 

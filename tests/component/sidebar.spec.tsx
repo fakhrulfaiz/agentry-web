@@ -435,7 +435,8 @@ describe('Sidebar', () => {
     before(active, star)
     before(star, recents)
     await userEvent.setup().click(pinned)
-    expect(await within(group('Pinned work')).findByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p_pin')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'New chat in Pinned work' }))
+    expect(nav.push).toHaveBeenCalledWith('/?project=p_pin')
     expect(apiMock.listProjects).toHaveBeenCalledWith({ status: 'active' })
   })
 
@@ -615,7 +616,8 @@ describe('Sidebar', () => {
     render(<Sidebar identity={IDENTITY} />)
     await waitFor(() => expect(projectRow('Website work')).toBeInTheDocument())
     await user.click(projectRow('Website work'))
-    expect(within(group('Website work')).getByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p1')
+    await user.click(screen.getByRole('button', { name: 'New chat in Website work' }))
+    expect(nav.push).toHaveBeenCalledWith('/?project=p1')
 
     await user.click(screen.getByRole('button', { name: 'Options for Website work' }))
     expect(await screen.findByRole('menuitem', { name: 'New chat here' })).toBeInTheDocument()

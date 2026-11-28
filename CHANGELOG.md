@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-28: Projects in the sidebar read like a file tree: a small ›/⌄ caret on the left opens a project (click anywhere on the row), its chats sit indented under it, and "New chat here" (+) and the ⋯ menu show only on hover, like chat rows. The separate "New chat here" line is gone.
 - 2026-11-28: A more compact sidebar, like claude.ai's: smaller rows for the page links, projects and chats; a line above Workspace; and the Projects and Recents headers fold their section when clicked anywhere on the row ("Recents ⌄"), remembered in this browser.
 - 2026-11-28: Chat headers now identify the current environment: `Server` for local and legacy chats, or the sandbox name with its live state (for example, `Data box · Running`) with a status dot. The chip reads the sandbox once when the chat opens and refreshes on window focus or tab visibility, with no polling; a removed sandbox reads `Removed sandbox`, and other errors fall back to a neutral label. No API change.
 - 2026-11-28: The bundled agent starters are gone: no Starters tab on the Agents page and no "Start from" menu in the agent form. New agents start empty or come from Import (a GitHub/gist link or pasted text); the empty state offers Import. Old `/agents/new?starter=…` and `/agents?starter=…` links just open a new, empty agent.
