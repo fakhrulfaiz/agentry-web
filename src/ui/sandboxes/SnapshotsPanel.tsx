@@ -152,7 +152,7 @@ function UploadDialog({ isOpen, onClose, onUploaded }: { isOpen: boolean; onClos
   )
 }
 
-function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: EnvironmentSnapshot | null; onClose(): void; onCreated(): void }) {
+export function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: EnvironmentSnapshot | null; onClose(): void; onCreated(): void }) {
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -165,7 +165,7 @@ function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: Environment
     if (!snapshot || creating) return
     setCreating(true)
     try {
-      await api.createSandboxEnvironment({ provider: 'sandbox', snapshotId: snapshot.id, ...(name.trim() ? { name: name.trim() } : {}) })
+      await api.createSandboxEnvironment({ provider: 'sandbox', snapshotId: snapshot.id, ...(snapshot.level !== 'workspace' ? { place: snapshot.place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
       onClose()
       onCreated()
     } catch (err) {
@@ -193,10 +193,11 @@ function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: Environment
   )
 }
 
-function SnapshotList({ label, snaps, onRestore, onNewFrom, onDelete }: {
+export function SnapshotList({ label, snaps, onRestore, onNewFrom, onDelete }: {
   label: string
   snaps: readonly EnvironmentSnapshot[]
-  onRestore(snap: EnvironmentSnapshot): void
+  /** Omit where there is no environment to restore into. */
+  onRestore?(snap: EnvironmentSnapshot): void
   onNewFrom(snap: EnvironmentSnapshot): void
   onDelete(snap: EnvironmentSnapshot): void
 }) {
@@ -205,7 +206,7 @@ function SnapshotList({ label, snaps, onRestore, onNewFrom, onDelete }: {
       {snaps.map((snap) => {
         const items = snap.state === 'ready'
           ? [
-              { label: 'Restore', onClick: () => onRestore(snap) },
+              ...(onRestore ? [{ label: 'Restore', onClick: () => onRestore(snap) }] : []),
               { label: 'New environment from this snapshot', onClick: () => onNewFrom(snap) },
               { type: 'divider' as const },
               { label: 'Delete', variant: 'destructive' as const, onClick: () => onDelete(snap) },

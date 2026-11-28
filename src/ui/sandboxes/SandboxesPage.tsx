@@ -36,7 +36,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTemplate } from '@/api/types'
+import type { EnvironmentSnapshot, SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { IconTile } from '@/ui/shared/IconTile'
@@ -49,6 +49,9 @@ import { groupEnvironments, summarize } from './overview'
 import { useEnvironmentChats } from './use-environment-chats'
 import { DeleteEnvironmentDialog } from './DeleteEnvironmentDialog'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
+import { NewFromDialog, SnapshotList } from './SnapshotsPanel'
+import { levelShort, snapshotSource } from './snapshots'
+import { ago } from './overview'
 import { useCachedState } from '@/ui/page-cache'
 
 const COLUMN_WIDTH = 1000
@@ -63,15 +66,16 @@ function Meta({ icon, children }: { icon: typeof FolderOpenIcon; children: strin
 const providerIcon = (name: string) => (name === 'local' ? ServerIcon : CubeTransparentIcon)
 const settling = (env: SandboxEnvironment) => env.status === 'pending' || env.sandbox?.state === 'provisioning' || env.sandbox?.state === 'deleting'
 
-type NewEnvironmentInput = { templateId?: string; provider?: string; name?: string; place?: string }
+type NewEnvironmentInput = { templateId?: string; provider?: string; name?: string; place?: string; snapshotId?: string }
 
 function NewEnvironmentDialog({
-  isOpen, onClose, templates, providers, onCreate,
-}: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreate(input: NewEnvironmentInput): void }) {
+  isOpen, onClose, templates, providers, snapshots, environments, onCreate,
+}: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; snapshots: EnvironmentSnapshot[]; environments: SandboxEnvironment[]; onCreate(input: NewEnvironmentInput): void }) {
   const [name, setName] = useState('')
   const [provider, setProvider] = useState('')
   const [place, setPlace] = useState('')
   const [templateId, setTemplateId] = useState('')
+  const [snapshotId, setSnapshotId] = useState('')
 
   useEffect(() => {
     if (!isOpen) return
@@ -80,15 +84,20 @@ function NewEnvironmentDialog({
     setProvider(first)
     setPlace(defaultPlace(providers.find((p) => p.name === first)))
     setTemplateId('')
+    setSnapshotId('')
   }, [isOpen, providers])
 
   // Only templates made for the chosen place can start here.
   const fitting = templates.filter((t) => t.provider === provider)
   const chosen = fitting.find((t) => t.id === templateId)
+  const names = new Map(environments.map((e) => [e.id, environmentName(e)]))
+  const snapshot = snapshots.find((x) => x.id === snapshotId)
+  // A disk or running-state snapshot only starts where it was taken.
+  const locked = snapshot !== undefined && snapshot.level !== 'workspace'
 
   // Setting up a sandbox can take minutes: the server answers at once with a record that is still setting up, and the list shows it.
   function create() {
-    onCreate({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
+    onCreate({ ...(snapshot ? { snapshotId: snapshot.id } : templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && (locked ? snapshot.place : place) ? { place: locked ? snapshot.place : place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
     onClose()
   }
 
@@ -104,8 +113,8 @@ function NewEnvironmentDialog({
                 providers={providers}
                 value={provider}
                 place={place}
-                onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
-                onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
+                onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId(''); setSnapshotId('') }}
+                onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId(''); setSnapshotId('') }}
               />}
               <Selector
                 label="Template"
@@ -113,8 +122,18 @@ function NewEnvironmentDialog({
                 options={[{ value: '', label: 'Start from nothing' }, ...fitting.map((t) => ({ value: t.id, label: t.name || 'Untitled template', description: templateSummary(t) }))]}
                 value={templateId}
                 onChange={setTemplateId}
-                isDisabled={fitting.length === 0}
+                isDisabled={fitting.length === 0 || snapshot !== undefined}
               />
+              {provider === 'sandbox' && snapshots.length > 0 && (
+                <Selector
+                  label="Start from a snapshot"
+                  isOptional
+                  description={locked ? 'It starts on the place that saved it, with the snapshot instead of a template.' : 'Begin with the files of a saved snapshot instead of a template.'}
+                  options={[{ value: '', label: 'No snapshot' }, ...snapshots.map((x) => ({ value: x.id, label: x.name, description: `${levelShort[x.level]} · ${snapshotSource(x, names)} · ${ago(x.created_at)}` }))]}
+                  value={snapshotId}
+                  onChange={setSnapshotId}
+                />
+              )}
               {chosen && chosen.unsupported_fields.length > 0 && (
                 <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
               )}
@@ -182,6 +201,9 @@ export function SandboxesPage() {
   const [templates, setTemplates] = useCachedState<SandboxTemplate[]>('sandboxes.templates')
   const [providers, setProviders] = useCachedState<SandboxProvider[]>('sandboxes.providers')
   const [runtimes, setRuntimes] = useCachedState<SandboxRuntimes>('sandboxes.runtimes')
+  const [snapshots, setSnapshots] = useState<EnvironmentSnapshot[]>([])
+  const [snapNewFrom, setSnapNewFrom] = useState<EnvironmentSnapshot | null>(null)
+  const [snapDeleting, setSnapDeleting] = useState<EnvironmentSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
   const startCreate = (input: NewEnvironmentInput) => {
@@ -244,6 +266,7 @@ export function SandboxesPage() {
       setError(null)
       // The runtimes are informative; an older backend without the endpoint just shows less.
       api.listSandboxRuntimes().then(setRuntimes, () => undefined)
+      api.listAllEnvironmentSnapshots().then((page) => setSnapshots(page.data), () => undefined)
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
       setError(err instanceof ApiError ? err.message : 'Could not load sandboxes.')
@@ -267,6 +290,7 @@ export function SandboxesPage() {
   }, [anySettling])
 
   const groups = groupEnvironments(environments ?? [])
+  const orphans = snapshots.filter((x) => x.environment_id === null || !(environments ?? []).some((e) => e.id === x.environment_id))
   const places = (providers ?? []).flatMap((p) => p.places ?? [])
   const chatsByEnv = useEnvironmentChats()
   // Coming back to the tab shows the machines' current state.
@@ -284,6 +308,19 @@ export function SandboxesPage() {
   }, [])
 
   const loading = environments === null || templates === null || providers === null
+
+  async function removeSnapshot() {
+    const snap = snapDeleting
+    if (!snap) return
+    setSnapDeleting(null)
+    try {
+      await api.deleteEnvironmentSnapshot(snap.id)
+      setSnapshots((cur) => cur.filter((x) => x.id !== snap.id))
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(err instanceof ApiError ? err.message : 'Could not delete the snapshot.')
+    }
+  }
 
   async function removeTemplate() {
     if (!removing) return
@@ -349,6 +386,15 @@ export function SandboxesPage() {
                   </Section>
                 ),
               )}
+              {orphans.length > 0 && (
+                <VStack gap={2} role="group" aria-label="Saved snapshots">
+                  <HStack gap={2} vAlign="center">
+                    <Text type="label" weight="medium">Saved snapshots</Text>
+                    <Text type="supporting" color="secondary">{orphans.length}</Text>
+                  </HStack>
+                  <SnapshotList label="Saved snapshots" snaps={orphans} onNewFrom={setSnapNewFrom} onDelete={setSnapDeleting} />
+                </VStack>
+              )}
             </VStack>
           )
         ) : view === 'templates' ? (
@@ -402,7 +448,16 @@ export function SandboxesPage() {
         )}
       </VStack>
 
-      <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreate={startCreate} />
+      <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} snapshots={snapshots.filter((x) => x.state === 'ready')} environments={environments ?? []} onCreate={startCreate} />
+      <NewFromDialog snapshot={snapNewFrom} onClose={() => setSnapNewFrom(null)} onCreated={() => void load()} />
+      <AlertDialog
+        isOpen={snapDeleting !== null}
+        onOpenChange={(open: boolean) => !open && setSnapDeleting(null)}
+        title={`Delete ${snapDeleting?.name ?? 'this snapshot'}?`}
+        description="This cannot be undone."
+        actionLabel="Delete snapshot"
+        onAction={() => void removeSnapshot()}
+      />
       <RenameEnvironmentDialog environment={renaming} onClose={() => setRenaming(null)} onRenamed={replaceEnvironment} />
       <DeleteEnvironmentDialog
         environmentId={deletingEnv?.id ?? ''}

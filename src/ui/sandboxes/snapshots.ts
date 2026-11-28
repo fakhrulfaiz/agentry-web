@@ -25,3 +25,7 @@ export const restoreWarning = (level: SnapshotLevel): string =>
 
 /** True while any snapshot is still being written (the list polls). */
 export const anySaving = (snaps: readonly EnvironmentSnapshot[]): boolean => snaps.some((s) => s.state === 'saving')
+
+/** Where a snapshot came from, in plain words (the API does not tell an upload from one whose sandbox was deleted). */
+export const snapshotSource = (snap: EnvironmentSnapshot, names: ReadonlyMap<string, string>): string =>
+  (snap.environment_id !== null && names.get(snap.environment_id)) || 'Deleted sandbox or upload'

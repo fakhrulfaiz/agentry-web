@@ -21,6 +21,8 @@ const apiMock = vi.hoisted(() => ({
   stopSandboxEnvironment: vi.fn(),
   deleteSandboxEnvironment: vi.fn(),
   listEnvironmentSnapshots: vi.fn(),
+  listAllEnvironmentSnapshots: vi.fn(),
+  snapshotDownloadUrl: vi.fn(() => '/dl'),
   createSandboxTemplate: vi.fn(),
   updateSandboxTemplate: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
@@ -43,6 +45,7 @@ beforeEach(() => {
   apiMock.listSessions.mockResolvedValue({ object: 'list', data: [], has_more: false, first_id: null, last_id: null })
   apiMock.listSandboxEnvironments.mockResolvedValue(page([env]))
   apiMock.listEnvironmentSnapshots.mockResolvedValue(page([]))
+  apiMock.listAllEnvironmentSnapshots.mockResolvedValue(page([]))
   apiMock.listSandboxTemplates.mockResolvedValue(page([template]))
   apiMock.listSandboxProviders.mockResolvedValue(page([provider]))
   apiMock.listSandboxRuntimes.mockResolvedValue({ object: 'sandbox.runtimes', available: true, node: '24.21.0', python: '3.12.14', pnpm: '11.28.5', python_packages: { pandas: '3.0.1' } })
@@ -53,6 +56,17 @@ afterEach(() => {
 })
 
 describe('SandboxesPage', () => {
+  it('lists snapshots without an environment under Saved snapshots', async () => {
+    apiMock.listAllEnvironmentSnapshots.mockResolvedValue(page([
+      { id: 'snap_1', object: 'snapshot', environment_id: null, place: 'service', level: 'workspace', name: 'Old work', state: 'ready', size_bytes: 10, error: null, created_at: 1_700_000_000, expires_at: null },
+      { id: 'snap_2', object: 'snapshot', environment_id: 'env_abc', place: 'service', level: 'workspace', name: 'Kept', state: 'ready', size_bytes: 10, error: null, created_at: 1_700_000_000, expires_at: null },
+    ]))
+    render(<SandboxesPage />)
+    expect(await screen.findByText('Old work')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Saved snapshots' })).toBeInTheDocument()
+    expect(screen.queryByText('Kept')).not.toBeInTheDocument()
+  })
+
   it('lists environments with status, provider and template, then switches to templates and providers', async () => {
     const user = userEvent.setup()
     render(<SandboxesPage />)
