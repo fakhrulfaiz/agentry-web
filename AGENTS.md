@@ -110,6 +110,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: Projects live check through the UI (user).
 
 **P2 (valuable, bigger)**
+- [ ] Publish a sandbox app (share publicly), on top of the port preview: a Publish switch in the Preview tab gives one port a stable public address (per-app subdomain, wildcard DNS on the deployment), no expiry until Unpublish, visitors never use the owner's credential, a clear "this is public" warning, keep the sandbox awake while published, rate limits, WebSocket support. Today's preview links are for the owner's testing only (≤1 h, carry the owner's credential). M–L.
 - [x] DONE 2026-11-28: e2e mock streams reasoning and tool items as item frames (`saveItem` in `mock/agentry-mock.ts`), like the API since 2026-11-26; the live thought count is strict again. User messages are still saved only.
 - [x] DONE 2026-11-28 (live check below): sandbox port preview (plan `2026-11-28-port-preview.md`; Docker places, HTTP only, no WebSocket, absolute-path apps need a base path). Follow-ups: per-port subdomain origin, WebSocket/HMR, E2B per-port hosts, auto-open when the agent mentions localhost.
 - [ ] F3 workspace panel remainder: live file tree, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
