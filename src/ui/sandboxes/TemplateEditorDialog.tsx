@@ -25,9 +25,9 @@ import { CheckCircleIcon, ExclamationCircleIcon, MinusCircleIcon, XMarkIcon } fr
 import * as stylex from '@stylexjs/stylex'
 import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { SandboxProvider } from '@/api/types'
+import type { SandboxProvider, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
-import { BROWSER_SANDBOX_IMAGE, fieldWords, formatBytes, providerTitle, splitList, templateBody, toBase64, type TemplateForm } from './format'
+import { BROWSER_SANDBOX_IMAGE, fieldWords, formatBytes, formFromTemplate, providerTitle, splitList, templateBody, templateUpdateBody, toBase64, type TemplateForm } from './format'
 import { defaultPlace, richestProvider, RunsOnPicker } from './RunsOnPicker'
 
 const MAX_STARTER_FILE = 1024 * 1024
@@ -126,7 +126,17 @@ function summary(f: TemplateForm, files: number, fields: string[], image?: strin
   return out
 }
 
-export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: { isOpen: boolean; onClose(): void; providers: SandboxProvider[]; onCreated(): void }) {
+export type TemplateEditorMode = 'create' | 'edit' | 'duplicate'
+const WORDS: Record<TemplateEditorMode, { title: string; save: string }> = {
+  create: { title: 'New template', save: 'Create template' },
+  edit: { title: 'Edit template', save: 'Save changes' },
+  duplicate: { title: 'Duplicate template', save: 'Create copy' },
+}
+
+/** Create a template, or edit or duplicate `template` (a duplicate saves as a new template named "<name> copy"). */
+export function TemplateEditorDialog({
+  isOpen, onClose, providers, onSaved, mode = 'create', template,
+}: { isOpen: boolean; onClose(): void; providers: SandboxProvider[]; onSaved(): void; mode?: TemplateEditorMode; template?: SandboxTemplate | null }) {
   const [form, setForm] = useState<TemplateForm>(EMPTY)
   const [starters, setStarters] = useState<File[]>([])
   const [section, setSection] = useState<Section>('software')
@@ -137,13 +147,23 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
   // Each opening starts clean, on the provider that applies the most settings.
   useEffect(() => {
     if (!isOpen) return
-    const provider = richestProvider(providers)
-    setForm({ ...EMPTY, provider, place: defaultPlace(providers.find((p) => p.name === provider)) })
+    if (template && mode !== 'create') {
+      const base = formFromTemplate(template)
+      // Built-in templates name no place; a copy starts on the provider's default one.
+      const place = base.place || (mode === 'duplicate' ? defaultPlace(providers.find((p) => p.name === base.provider)) : '')
+      setForm(mode === 'duplicate' ? { ...base, place, name: `${template.name || 'Untitled template'} copy` } : base)
+    } else {
+      const provider = richestProvider(providers)
+      setForm({ ...EMPTY, provider, place: defaultPlace(providers.find((p) => p.name === provider)) })
+    }
     setStarters([])
     setSection('software')
     setError(null)
-  }, [isOpen, providers])
+  }, [isOpen, providers, template, mode])
 
+  const words = WORDS[mode]
+  // The API does not send setup commands, variables or starter file contents back.
+  const keepsHidden = mode !== 'create' && template !== null && template !== undefined && template.setup_commands === undefined
   const target = providers.find((p) => p.name === form.provider)
   const fields = target?.capabilities.templateFields ?? []
   const has = (f: string) => fields.includes(f)
@@ -168,13 +188,15 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
     setBusy(true)
     setError(null)
     try {
-      await api.createSandboxTemplate({
-        ...built.body,
+      const params = {
+        ...(mode === 'edit' && template ? templateUpdateBody(form, fields, built.body, template) : built.body),
         ...(starters.length > 0 && has('files')
           ? { files: await Promise.all(starters.map(async (f) => ({ type: 'inline' as const, path: `/workspace/${f.name}`, data: await toBase64(f) }))) }
           : {}),
-      })
-      onCreated()
+      }
+      if (mode === 'edit' && template) await api.updateSandboxTemplate(template.id, params)
+      else await api.createSandboxTemplate(params)
+      onSaved()
       onClose()
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
@@ -185,12 +207,16 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
   }
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} width="min(1040px, 96vw)" maxHeight="94dvh" padding={0} purpose="form" aria-label="New template">
+    <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} width="min(1040px, 96vw)" maxHeight="94dvh" padding={0} purpose="form" aria-label={words.title}>
       <div {...stylex.props(ui.shell)}>
         <header {...stylex.props(ui.header)}>
           <div {...stylex.props(ui.titles)}>
-            <Heading level={2} maxLines={1}>{form.name.trim() || 'New template'}</Heading>
-            <Text type="supporting" color="secondary" maxLines={1}>A setup new environments start from. Editing it later leaves existing environments as they are.</Text>
+            <Heading level={2} maxLines={1}>{mode === 'create' ? form.name.trim() || words.title : words.title}</Heading>
+            <Text type="supporting" color="secondary" maxLines={2}>
+              {mode === 'edit'
+                ? 'Changes apply to new environments only. Environments already made from this template keep the setup they were created with.'
+                : 'A setup new environments start from. Editing it later leaves existing environments as they are.'}
+            </Text>
           </div>
           <IconButton label="Close" icon={<Icon icon={XMarkIcon} />} variant="ghost" size="sm" onClick={onClose} />
         </header>
@@ -208,7 +234,7 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
             <VStack gap={2}>
               <Text weight="medium">What it sets up</Text>
               <VStack gap={1.5} role="list" aria-label="What it sets up">
-                {summary(form, starters.length, fields, defaultImage?.name).map((line) => (
+                {summary(form, starters.length || (mode === 'edit' ? template?.files.length ?? 0 : 0), fields, defaultImage?.name).map((line) => (
                   <HStack key={line.text} gap={2} vAlign="center" role="listitem">
                     <Icon icon={line.set ? CheckCircleIcon : MinusCircleIcon} size="sm" color={line.set ? 'success' : 'secondary'} />
                     <Text type="supporting" color={line.set ? 'primary' : 'secondary'}>{line.text}</Text>
@@ -274,19 +300,19 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
                         label="Starter files"
                         isOptional
                         isMultiple
-                        description={`Copied into the workspace. Up to ${MAX_STARTER_FILES} files of ${formatBytes(MAX_STARTER_FILE)} each.`}
+                        description={`Copied into the workspace. Up to ${MAX_STARTER_FILES} files of ${formatBytes(MAX_STARTER_FILE)} each.${template && template.files.length > 0 ? (mode === 'edit' ? ` It keeps ${template.files.length} saved ${template.files.length === 1 ? 'file' : 'files'}; choosing files here replaces them.` : ' The saved starter files are not copied; choose them again.') : ''}`}
                         value={starters}
                         onChange={pick}
                       />
                     )}
                     {has('setup_commands') && (
-                      <TextArea label="Setup commands" isOptional description="One per line, run in order in the workspace as the agent user. Setup stops at the first command that fails." rows={6} placeholder={'git clone https://github.com/you/project .\npnpm install'} value={form.setup} onChange={set('setup')} />
+                      <TextArea label="Setup commands" isOptional description={`One per line, run in order in the workspace as the agent user. Setup stops at the first command that fails.${keepsHidden ? (mode === 'edit' ? ' The saved commands are not shown; leave this empty to keep them, or type to replace them all.' : ' The saved commands cannot be read back, so they are not copied.') : ''}`} rows={6} placeholder={'git clone https://github.com/you/project .\npnpm install'} value={form.setup} onChange={set('setup')} />
                     )}
                   </>
                 )}
 
                 {current?.value === 'variables' && has('env') && (
-                  <TextArea label="Environment variables" isOptional description="One NAME=value per line. Lines starting with # are ignored." rows={8} placeholder={'TZ=Asia/Kuala_Lumpur\nPIP_INDEX_URL=https://pypi.org/simple'} value={form.env} onChange={set('env')} />
+                  <TextArea label="Environment variables" isOptional description={`One NAME=value per line. Lines starting with # are ignored.${keepsHidden ? (mode === 'edit' ? ' The saved variables are not shown; leave this empty to keep them, or type to replace them all.' : ' The saved variables cannot be read back, so they are not copied.') : ''}`} rows={8} placeholder={'TZ=Asia/Kuala_Lumpur\nPIP_INDEX_URL=https://pypi.org/simple'} value={form.env} onChange={set('env')} />
                 )}
 
                 {current?.value === 'limits' && (
@@ -338,7 +364,7 @@ export function TemplateEditorDialog({ isOpen, onClose, providers, onCreated }: 
             )}
           </div>
           <Button label="Cancel" variant="ghost" onClick={onClose} />
-          <Button label="Save template" variant="primary" isLoading={busy} onClick={() => void save()} />
+          <Button label={words.save} variant="primary" isLoading={busy} onClick={() => void save()} />
         </div>
       </div>
     </Dialog>

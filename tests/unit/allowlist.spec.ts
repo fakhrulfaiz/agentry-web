@@ -32,6 +32,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/environments/runtimes'],
     ['GET', '/agents/environments/templates'],
     ['POST', '/agents/environments/templates'],
+    ['POST', '/agents/environments/templates/tpl_1'],
     ['DELETE', '/agents/environments/templates/tpl_1'],
     ['GET', '/agents/environments'],
     ['POST', '/agents/environments'],

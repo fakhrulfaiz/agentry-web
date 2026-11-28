@@ -227,6 +227,44 @@ export function templateBody(form: TemplateForm, fields: string[]): { body: Omit
   return { body }
 }
 
+/**
+ * The editor form for an existing template (edit or duplicate). The API never returns setup commands,
+ * variables or starter file contents, so those start empty unless the response happens to carry them.
+ */
+export function formFromTemplate(t: SandboxTemplate): TemplateForm {
+  const gb = t.resources?.memory_mb !== undefined ? String(Math.round((t.resources.memory_mb / 1024) * 1000) / 1000) : ''
+  return {
+    name: t.name ?? '',
+    provider: t.provider,
+    image: t.image ?? '',
+    system: t.packages.system.join(', '),
+    python: t.packages.python.join(', '),
+    npm: t.packages.npm.join(', '),
+    setup: (t.setup_commands ?? []).map((c) => c.command).join('\n'),
+    env: Object.entries(t.env ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+    network: t.network.access !== 'disabled',
+    cpus: t.resources?.cpus !== undefined ? String(t.resources.cpus) : '',
+    memoryGb: gb,
+    place: t.place ?? '',
+    gpus: t.gpus === undefined ? '' : String(t.gpus),
+  }
+}
+
+/**
+ * The update body: the create body plus the fields a create leaves out when they are empty or default, sent
+ * explicitly so that clearing the image, emptying a package list or turning the internet back on takes
+ * effect (an update replaces the fields it carries and keeps the rest). Setup commands, variables and
+ * starter files are only sent when filled in, so leaving them empty keeps what is stored.
+ */
+export function templateUpdateBody(form: TemplateForm, fields: string[], body: Omit<CreateTemplateParams, 'files'>, original: SandboxTemplate): Omit<CreateTemplateParams, 'files'> {
+  const has = (f: string) => fields.includes(f)
+  const out = { ...body }
+  if (has('image') && out.image === undefined) out.image = ''
+  if (has('packages') && out.packages === undefined) out.packages = { system: [], python: [], npm: [] }
+  if (has('network') && form.network && original.network.access === 'disabled') out.network = { access: 'enabled' }
+  return out
+}
+
 /** Environment-menu values that ask for a fresh sandbox for the chat: `new:` (empty) or `new:<template id>`. */
 export const NEW_SANDBOX = 'new:'
 

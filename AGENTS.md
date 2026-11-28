@@ -101,7 +101,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: compact live steps while a turn runs (default; "Always show steps" keeps full detail). Not yet looked at in a live chat.
 - [x] DONE 2026-11-28: open the chat stream in parallel with the history load (read only after items + snapshot).
 - [x] DONE 2026-11-28: Sandboxes redesign (sections, status line, icon actions incl. New chat here, refresh on focus, detail page with Files tree / Terminal / Chats tabs and About panel).
-- [ ] Sandboxes: edit and duplicate templates (API `POST /agents/environments/templates/{id}` exists). S–M.
+- [x] DONE 2026-11-28: Sandboxes templates: Edit and Duplicate (icon actions, one editor dialog for new/edit/duplicate; the API does not return setup commands, variables or file contents, so Edit keeps them when left empty and Duplicate does not copy them).
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [ ] Finish sandbox snapshots (`agentry-sandbox` branch `feat/snapshots`, WIP, unmerged). M.
 - [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.

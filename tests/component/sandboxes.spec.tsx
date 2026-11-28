@@ -21,6 +21,7 @@ const apiMock = vi.hoisted(() => ({
   stopSandboxEnvironment: vi.fn(),
   deleteSandboxEnvironment: vi.fn(),
   createSandboxTemplate: vi.fn(),
+  updateSandboxTemplate: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
   listSessions: vi.fn(),
 }))
@@ -207,7 +208,7 @@ describe('SandboxesPage', () => {
     await user.click(screen.getByRole('switch', { name: /Internet access/ }))
     await user.type(screen.getByRole('textbox', { name: /CPU cores/ }), '2')
     expect(screen.getByText('Internet off')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save template' }))
+    await user.click(screen.getByRole('button', { name: 'Create template' }))
     await waitFor(() => expect(apiMock.createSandboxTemplate).toHaveBeenCalledWith({
       name: 'Data work', provider: 'sandbox', packages: { system: [], python: ['polars', 'rich'], npm: [] }, network: { access: 'disabled' }, resources: { cpus: 2 },
     }))
@@ -235,8 +236,68 @@ describe('SandboxesPage', () => {
     render(<SandboxesPage />)
     await user.click(await screen.findByRole('button', { name: 'Templates' }))
     expect(await screen.findByText('Built in')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Delete Offline' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Delete Python data' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Offline' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More options for Offline' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Duplicate Offline' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Python data' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More options for Python data' }))
+    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  describe('edit and duplicate', () => {
+    const sandbox = { object: 'sandbox.provider', name: 'sandbox', default: false, available: true, capabilities: { templateFields: ['image', 'packages', 'setup_commands', 'env', 'network', 'files', 'resources'], files: true, exec: true } }
+    const custom = {
+      ...template, id: 'tpl_sbx', name: 'Data work', provider: 'sandbox', unsupported_fields: [], network: { access: 'enabled', allowed_domains: [] },
+      packages: { npm: [], python: ['polars'], system: [] }, resources: { cpus: 2, memory_mb: 4096 },
+    }
+    beforeEach(() => {
+      apiMock.listSandboxProviders.mockResolvedValue(page([provider, sandbox]))
+      apiMock.listSandboxTemplates.mockResolvedValue(page([custom]))
+    })
+
+    it('Edit pre-fills the template and sends an update that clears nothing else', async () => {
+      apiMock.updateSandboxTemplate.mockResolvedValue(custom)
+      const user = userEvent.setup()
+      render(<SandboxesPage />)
+      await user.click(await screen.findByRole('button', { name: 'Templates' }))
+      await user.click(screen.getByRole('button', { name: 'Edit Data work' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByRole('textbox', { name: /^Name/ })).toHaveValue('Data work')
+      expect(within(dialog).getByRole('textbox', { name: /Python packages/ })).toHaveValue('polars')
+      expect(within(dialog).getByText(/Changes apply to new environments only/)).toBeInTheDocument()
+      await user.type(within(dialog).getByRole('textbox', { name: /npm packages/ }), 'tsx')
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+      await waitFor(() => expect(apiMock.updateSandboxTemplate).toHaveBeenCalledWith('tpl_sbx', {
+        name: 'Data work', provider: 'sandbox', image: '', packages: { system: [], python: ['polars'], npm: ['tsx'] }, resources: { cpus: 2, memory_mb: 4096 },
+      }))
+      expect(apiMock.createSandboxTemplate).not.toHaveBeenCalled()
+    })
+
+    it('clicking a custom template row opens Edit', async () => {
+      const user = userEvent.setup()
+      render(<SandboxesPage />)
+      await user.click(await screen.findByRole('button', { name: 'Templates' }))
+      await user.click(screen.getByRole('link', { name: 'Data work' }))
+      expect(await screen.findByRole('button', { name: 'Save changes' })).toBeInTheDocument()
+    })
+
+    it('Duplicate pre-fills a built-in template as "<name> copy" and creates a new one', async () => {
+      const builtIn = { ...custom, id: 'tpl_builtin_x', name: 'Data science', built_in: true }
+      apiMock.listSandboxTemplates.mockResolvedValue(page([builtIn]))
+      apiMock.createSandboxTemplate.mockResolvedValue(custom)
+      const user = userEvent.setup()
+      render(<SandboxesPage />)
+      await user.click(await screen.findByRole('button', { name: 'Templates' }))
+      await user.click(screen.getByRole('button', { name: 'Duplicate Data science' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByRole('textbox', { name: /^Name/ })).toHaveValue('Data science copy')
+      expect(within(dialog).getByText('Duplicate template')).toBeInTheDocument()
+      await user.click(within(dialog).getByRole('button', { name: 'Create copy' }))
+      await waitFor(() => expect(apiMock.createSandboxTemplate).toHaveBeenCalledWith({
+        name: 'Data science copy', provider: 'sandbox', packages: { system: [], python: ['polars'], npm: [] }, resources: { cpus: 2, memory_mb: 4096 },
+      }))
+      expect(apiMock.updateSandboxTemplate).not.toHaveBeenCalled()
+    })
   })
 
   it('on this server the template editor offers only starter files', async () => {

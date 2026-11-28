@@ -14,6 +14,7 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
+import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { Layout, LayoutContent, LayoutFooter, StackItem } from '@astryxdesign/core/Layout'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
@@ -29,9 +30,9 @@ import {
   DocumentDuplicateIcon,
   ExclamationTriangleIcon,
   FolderOpenIcon,
+  PencilIcon,
   ServerIcon,
   Square3Stack3DIcon,
-  TrashIcon,
 } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
@@ -197,6 +198,7 @@ export function SandboxesPage() {
   }
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)
   const [viewing, setViewing] = useState<SandboxTemplate | null>(null)
+  const [editing, setEditing] = useState<{ mode: 'edit' | 'duplicate'; template: SandboxTemplate } | null>(null)
   const [renaming, setRenaming] = useState<SandboxEnvironment | null>(null)
   const [deletingEnv, setDeletingEnv] = useState<SandboxEnvironment | null>(null)
   const [acting, setActing] = useState<string | null>(null)
@@ -363,9 +365,17 @@ export function SandboxesPage() {
                   key={tpl.id}
                   title={tpl.name || 'Untitled template'}
                   href={`#${tpl.id}`}
-                  onClick={(event) => { event.preventDefault(); setViewing(tpl) }}
+                  onClick={(event) => { event.preventDefault(); if (tpl.built_in) setViewing(tpl); else setEditing({ mode: 'edit', template: tpl }) }}
                   leading={<IconTile icon={Square3Stack3DIcon} hue="violet" />}
-                  trailing={tpl.built_in ? <Text type="supporting" color="secondary">Built in</Text> : <IconButton label={`Delete ${tpl.name || 'template'}`} size="sm" variant="ghost" icon={<Icon icon={TrashIcon} />} onClick={() => setRemoving(tpl)} />}
+                  trailing={
+                    <HStack gap={1} vAlign="center">
+                      {!tpl.built_in && <IconButton label={`Edit ${tpl.name || 'template'}`} tooltip="Edit" size="sm" variant="ghost" icon={<Icon icon={PencilIcon} />} onClick={() => setEditing({ mode: 'edit', template: tpl })} />}
+                      <IconButton label={`Duplicate ${tpl.name || 'template'}`} tooltip="Duplicate" size="sm" variant="ghost" icon={<Icon icon={DocumentDuplicateIcon} />} onClick={() => setEditing({ mode: 'duplicate', template: tpl })} />
+                      {tpl.built_in ? <Text type="supporting" color="secondary">Built in</Text> : (
+                        <MoreMenu label={`More options for ${tpl.name || 'template'}`} size="sm" alignment="end" items={[{ label: 'Delete', variant: 'destructive' as const, onClick: () => setRemoving(tpl) }]} />
+                      )}
+                    </HStack>
+                  }
                   footer={
                     <>
                       <Meta icon={providerIcon(tpl.provider)}>{providerTitle(tpl.provider)}</Meta>
@@ -402,7 +412,8 @@ export function SandboxesPage() {
         onAction={() => void removeEnvironment()}
       />
       <TemplateDetailsDialog template={viewing} onClose={() => setViewing(null)} />
-      <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onCreated={() => void load()} />
+      <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onSaved={() => void load()} />
+      <TemplateEditorDialog isOpen={editing !== null} onClose={() => setEditing(null)} providers={providers ?? []} mode={editing?.mode} template={editing?.template} onSaved={() => void load()} />
       <AlertDialog
         isOpen={removing !== null}
         onOpenChange={(open: boolean) => !open && setRemoving(null)}

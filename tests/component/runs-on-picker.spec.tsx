@@ -53,7 +53,7 @@ describe('RunsOnPicker places', () => {
 })
 
 describe('template editor', () => {
-  const open = () => render(<TemplateEditorDialog isOpen onClose={() => {}} providers={[sandbox()]} onCreated={() => {}} />)
+  const open = () => render(<TemplateEditorDialog isOpen onClose={() => {}} providers={[sandbox()]} onSaved={() => {}} />)
 
   it('offers the browser image as a preset', async () => {
     const user = userEvent.setup()
@@ -85,7 +85,7 @@ describe('template editor', () => {
     await user.click(await screen.findByRole('tab', { name: /Internet and limits/ }))
     await user.click(screen.getByRole('combobox', { name: /GPUs/ }))
     await user.click(screen.getByRole('option', { name: '2' }))
-    await user.click(screen.getByRole('button', { name: 'Save template' }))
+    await user.click(screen.getByRole('button', { name: 'Create template' }))
     expect(apiMock.createSandboxTemplate).toHaveBeenCalledWith({ name: 'Train', provider: 'sandbox', place: 'gpu-box', gpus: 2 })
   })
 })

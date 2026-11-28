@@ -480,6 +480,10 @@ export const api = {
   createSandboxTemplate(params: CreateTemplateParams): Promise<SandboxTemplate> {
     return request('POST', `${AGENTRY}/agents/environments/templates`, params)
   },
+  /** Replaces the fields it carries on a custom template and keeps the rest (built-in templates answer 400). */
+  updateSandboxTemplate(id: string, params: Partial<CreateTemplateParams>): Promise<SandboxTemplate> {
+    return request('POST', `${AGENTRY}/agents/environments/templates/${seg(id)}`, params)
+  },
   async deleteSandboxTemplate(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/templates/${seg(id)}`)
   },
