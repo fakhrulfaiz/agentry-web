@@ -27,10 +27,9 @@ afterEach(() => {
 })
 
 describe('editorTargetOf', () => {
-  it('reads new, starter and agent from the URL', () => {
+  it('reads new and agent from the URL', () => {
     expect(editorTargetOf(new URLSearchParams(''))).toBeNull()
     expect(editorTargetOf(new URLSearchParams('new=1'))).toEqual({ kind: 'new' })
-    expect(editorTargetOf(new URLSearchParams('starter=planner'))).toEqual({ kind: 'new', starterId: 'planner' })
     expect(editorTargetOf(new URLSearchParams('agent=agent_1'))).toEqual({ kind: 'edit', agentId: 'agent_1' })
   })
 })

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OAIAgent } from '@/api/types'
-import { agentToForm, emptyForm, formToParams, toolMask } from '@/agents/form'
-import { STARTERS } from '@/agents/starters'
+import { agentToForm, emptyForm, formToParams } from '@/agents/form'
 
 const agent = (over: Partial<OAIAgent> = {}): OAIAgent => ({
   id: 'agent_1', object: 'agent', created_at: 1, updated_at: 1, name: 'Reviewer', instructions: 'Review.', model: 'm1',
@@ -41,20 +40,6 @@ describe('skills, apps and sending', () => {
     expect(params).toMatchObject({ apps: { gmail: 'all' }, skills: { builtin: ['create-agent'], library: ['skill_x'] }, send_policy: 'auto' })
     expect(params.metadata).toEqual({ icon: expect.any(String), color: expect.any(String) })
     expect(formToParams({ ...emptyForm('m1'), name: 'B' })).toMatchObject({ apps: null, skills: null, send_policy: 'ask' })
-  })
-})
-
-describe('starters', () => {
-  const catalog = ['read_file', 'grep', 'glob', 'write_file', 'shell', 'web_fetch']
-  it('maps presets to catalog names and drops what the catalog lacks', () => {
-    expect(toolMask('all', catalog)).toBeNull()
-    expect(toolMask('read-only', catalog)).toEqual(['read_file', 'grep', 'glob', 'web_fetch'])
-    expect(toolMask('edit', catalog)).toEqual(expect.arrayContaining(['read_file', 'write_file', 'shell']))
-    expect(toolMask('read-only', ['unknown'])).toEqual([])
-  })
-  it('has unique ids and non-empty prompts', () => {
-    expect(new Set(STARTERS.map((s) => s.id)).size).toBe(STARTERS.length)
-    for (const s of STARTERS) expect(s.instructions.length).toBeGreaterThan(40)
   })
 })
 

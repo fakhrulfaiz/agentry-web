@@ -2,13 +2,12 @@
 
 /**
  * The Agents page: Yours (a dense table of the user's saved agents, or the empty
- * state) and Starters (agents to start from, which open the form prefilled).
+ * state), with Import (from a link or pasted text) and New agent.
  */
 import { avatarOf } from '@/agents/avatar'
 import { AgentAvatar } from './AgentAvatar'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
-import { ClickableCard } from '@astryxdesign/core/ClickableCard'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
@@ -17,7 +16,6 @@ import { StackItem } from '@astryxdesign/core/Layout'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
-import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import { ArrowDownTrayIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, PuzzlePieceIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
@@ -27,7 +25,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent } from '@/api/types'
 import { agentToForm } from '@/agents/form'
-import { STARTERS } from '@/agents/starters'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { AgentEditorDialog, editorTargetOf } from './AgentEditorDialog'
@@ -40,21 +37,6 @@ const COLUMN_WIDTH = 880
 
 /** One-line summary: the first line of the instructions. */
 const summary = (agent: OAIAgent): string => (agent.instructions ?? '').split('\n').find((l) => l.trim())?.trim() ?? ''
-
-function Starters({ onPick }: { onPick(id: string): void }) {
-  return (
-    <VStack gap={3}>
-      {STARTERS.map((starter) => (
-        <ClickableCard key={starter.id} label={starter.name} onClick={() => onPick(starter.id)} width="100%" padding={4}>
-          <VStack gap={1}>
-            <Text weight="medium">{starter.name}</Text>
-            <Text type="supporting" color="secondary">{starter.summary}</Text>
-          </VStack>
-        </ClickableCard>
-      ))}
-    </VStack>
-  )
-}
 
 /**
  * The editor is opened and closed by changing the URL in place: no server
@@ -88,7 +70,6 @@ export function AgentsPage() {
   }
   const [agents, setAgents] = useCachedState<OAIAgent[]>('agents')
   const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<'yours' | 'starters'>('yours')
   const [query, setQuery] = useState('')
   const [importing, setImporting] = useState(false)
 
@@ -110,35 +91,27 @@ export function AgentsPage() {
     const q = query.trim().toLowerCase()
     return (agents ?? []).filter((a) => !q || `${a.name ?? ''} ${a.instructions ?? ''}`.toLowerCase().includes(q))
   }, [agents, query])
-  const pick = (id: string) => go(`/agents?starter=${encodeURIComponent(id)}`)
 
   return (
     <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
       <VStack gap={4}>
         <Heading level={1} type="display-2">Agents</Heading>
         <HStack gap={3} vAlign="center">
-          <StackItem size="fill">
-            <HStack gap={1} vAlign="center" role="group" aria-label="Agents view">
-              <ToggleButton label="Yours" size="sm" isPressed={view === 'yours'} onPressedChange={() => setView('yours')} />
-              <ToggleButton label="Starters" size="sm" isPressed={view === 'starters'} onPressedChange={() => setView('starters')} />
-            </HStack>
-          </StackItem>
+          <StackItem size="fill" />
           <IconButton label="Import an agent" tooltip="Import from a link or pasted text" variant="ghost" size="sm" icon={<Icon icon={ArrowDownTrayIcon} size="sm" />} onClick={() => setImporting(true)} />
           <Button label="New agent" variant="primary" onClick={() => go('/agents?new=1')} />
         </HStack>
         {error !== null && (
           <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />
         )}
-        {view === 'starters' ? (
-          <Starters onPick={pick} />
-        ) : agents === null ? (
+        {agents === null ? (
           <Skeleton height={160} />
         ) : agents.length === 0 ? (
           <EmptyState
             icon={<Icon icon={UserGroupIcon} size="lg" color="secondary" />}
             title="No agents yet."
-            description="An agent is a saved setup: instructions, a model and the tools it may use. Create one, or start from a starter."
-            actions={<Button label="Browse starters" onClick={() => setView('starters')} />}
+            description="An agent is a saved setup: instructions, a model and the tools it may use. Create one, or import one from a link or pasted text."
+            actions={<Button label="Import an agent" onClick={() => setImporting(true)} />}
           />
         ) : (
           <VStack gap={3}>

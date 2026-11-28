@@ -113,27 +113,14 @@ describe('AgentForm', () => {
     })
     expect(nav.push).toHaveBeenCalledWith('/agents')
   })
-  it('opens a starter prefilled and refuses to save without a name', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: null })))
-    render(<AgentForm starterId="planner" />)
-    await waitFor(() => expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('Planner'))
-    await userEvent.clear(screen.getByRole('textbox', { name: /Name/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
-    expect(await screen.findByText('Give the agent a name.')).toBeInTheDocument()
-    expect(apiMock.createAgent).not.toHaveBeenCalled()
-  })
-
-  it('says what is missing before saving, and Start from fills the form', async () => {
+  it('says what is missing before saving', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     const checks = await screen.findByRole('list', { name: 'Before you save' })
     expect(within(checks).getByText('Name needed')).toBeInTheDocument()
     expect(within(checks).getByText('Add instructions')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Start from' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Planner/ }))
-    expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('Planner')
+    await userEvent.type(screen.getByRole('textbox', { name: /Name/ }), 'Planner')
     expect(within(checks).queryByText('Name needed')).toBeNull()
-    expect(screen.getByRole('tab', { name: /^Tools/ })).toHaveTextContent(/\d/)
   })
 
   it('tool search narrows the list and Select all ticks only the matches', async () => {

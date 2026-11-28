@@ -11,7 +11,6 @@ import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Link } from '@astryxdesign/core/Link'
 import { Button } from '@astryxdesign/core/Button'
-import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
 import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
@@ -35,8 +34,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { HostToolInfo } from '@/api/types'
 import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
-import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, toolMask, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
-import { STARTERS, type Starter } from '@/agents/starters'
+import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
 import { applyDraft, pendingDraft, type PendingDraft } from '@/agents/draft'
 import { goToLogin } from '@/chat/use-conversation'
 import { HUES, tint } from '@/ui/brand/palette'
@@ -79,7 +77,6 @@ const ui = stylex.create({
     transitionDuration: { default: '240ms', '@media (prefers-reduced-motion: reduce)': '0s' },
   },
   titles: { flexGrow: 1, flexBasis: 0, minInlineSize: 0 },
-  starter: { order: { default: 4, [WIDE]: 0 }, flexBasis: { default: '100%', [WIDE]: 'auto' } },
   body: {
     flexGrow: 1,
     minBlockSize: 0,
@@ -158,14 +155,8 @@ export function tabNote(section: Section, form: FormState): string {
   }
 }
 
-function applyStarter(base: FormState, starter: Starter, toolNames: string[]): FormState {
-  const names = toolMask(starter.tools, toolNames)
-  return { ...base, name: starter.name, icon: starter.icon, color: starter.color, instructions: starter.instructions, subagents: starter.subagents ?? false, allTools: names === null, tools: names ?? [] }
-}
-
-export function AgentForm({ agentId, starterId, fromDraft = false, onClose, onSaved }: {
+export function AgentForm({ agentId, fromDraft = false, onClose, onSaved }: {
   agentId?: string
-  starterId?: string | null
   /** Start from the held draft (an import or a chat's subagent); nothing is saved until Save. */
   fromDraft?: boolean
   /** Close without saving. Defaults to going back to the Agents page. */
@@ -201,8 +192,6 @@ export function AgentForm({ agentId, starterId, fromDraft = false, onClose, onSa
         if (!alive) return
         const defaultModel = modelList[0] ?? ''
         let base = agent ? agentToForm(agent, defaultModel) : emptyForm(defaultModel)
-        const starter = !agentId ? STARTERS.find((s) => s.id === starterId) : undefined
-        if (starter) base = applyStarter(base, starter, toolList.map((t) => t.name))
         const held = !agentId && fromDraft ? pendingDraft() : null
         if (held) base = applyDraft(base, held.draft, toolList.map((t) => t.name), modelList)
         setDraftInfo(held)
@@ -219,7 +208,7 @@ export function AgentForm({ agentId, starterId, fromDraft = false, onClose, onSa
     return () => {
       alive = false
     }
-  }, [agentId, starterId, fromDraft])
+  }, [agentId, fromDraft])
 
   const set = (patch: Partial<FormState>) => {
     setSaved(false)
@@ -303,21 +292,6 @@ export function AgentForm({ agentId, starterId, fromDraft = false, onClose, onSa
             {agentId ? 'Changes apply to new chats with this agent.' : 'Not saved yet. Click the avatar to change it.'}
           </Text>
         </div>
-        {!agentId && form && (
-          <div {...stylex.props(ui.starter)}>
-          <DropdownMenu
-            button={{ label: 'Start from', size: 'sm', variant: 'secondary' }}
-            menuWidth={320}
-            alignment="end"
-            items={STARTERS.map((s) => ({
-              id: s.id,
-              label: s.name,
-              description: s.summary,
-              onClick: () => setForm((cur) => (cur ? applyStarter(cur, s, tools.map((t) => t.name)) : cur)),
-            }))}
-          />
-          </div>
-        )}
         <IconButton label="Close" icon={<Icon icon={XMarkIcon} />} variant="ghost" size="sm" onClick={close} />
       </header>
 

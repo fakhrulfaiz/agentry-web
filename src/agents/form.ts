@@ -92,16 +92,3 @@ export function formToParams(form: AgentForm, catalog: string[] = []): CreateAge
     browser: form.browser === 'on' ? true : form.browser === 'off' ? false : null,
   }
 }
-
-export type ToolPreset = 'read-only' | 'edit' | 'all'
-
-const READ = /(^|[_.-])(read|grep|glob|find|search|list|ls|view|fetch|cat)([_.-]|$)/i
-const WRITE = /(write|edit|patch|apply|create|shell|bash|exec|run|delete|remove|move)/i
-
-/** Tool names a starter's preset allows, matched by name pattern against the Host catalog; `null` means no mask. The form shows the result so the user can adjust it before saving. */
-export function toolMask(preset: ToolPreset, catalog: string[]): string[] | null {
-  if (preset === 'all' || catalog.length === 0) return null
-  const read = catalog.filter((t) => READ.test(t) && !WRITE.test(t))
-  if (preset === 'read-only') return read
-  return [...new Set([...read, ...catalog.filter((t) => WRITE.test(t))])]
-}
