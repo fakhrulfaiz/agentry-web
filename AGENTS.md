@@ -100,11 +100,12 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 **P1 (largest user-facing wins)**
 - [x] DONE 2026-11-28: compact live steps while a turn runs (default; "Always show steps" keeps full detail). Not yet looked at in a live chat.
 - [x] DONE 2026-11-28: open the chat stream in parallel with the history load (read only after items + snapshot).
-- [ ] Sandboxes page: edit and duplicate templates (API `POST /agents/environments/templates/{id}` exists), "New chat here" in the card menu, refresh card states on focus. M.
+- [x] DONE 2026-11-28: Sandboxes redesign (sections, status line, icon actions incl. New chat here, refresh on focus, detail page with Files tree / Terminal / Chats tabs and About panel).
+- [ ] Sandboxes: edit and duplicate templates (API `POST /agents/environments/templates/{id}` exists). S–M.
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [ ] Finish sandbox snapshots (`agentry-sandbox` branch `feat/snapshots`, WIP, unmerged). M.
 - [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.
-- [ ] Projects sidebar (built 2026-11-27 by an OpenCode session, merged to `develop` 2026-11-28; spec `docs/superpowers/specs/2026-11-27-projects-sidebar-design.md`, review log in `docs/superpowers/reviews/`): live check owed (create a project, start a chat from it, move a chat); "New project"/"Archived" sidebar links are centred and unstyled next to the nav items. S.
+- [ ] Projects: live check through the UI (create a project with a folder via the Finder picker, start a chat, move a chat). Sidebar Workspace header, view options and project folders DONE 2026-11-28. S.
 
 **P2 (valuable, bigger)**
 - [ ] F3 workspace panel remainder: live file tree, sandbox port preview, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
