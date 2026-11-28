@@ -74,8 +74,9 @@ Generic, reused pieces. New generic UI goes in `src/ui/shared/` with a one-line 
 
 - `src/ui/shared/IconTile.tsx`: coloured icon tile (agents, environments, cards).
 - `src/ui/shared/FolderPicker.tsx`: Finder-style column folder browser (breadcrumb, lazy columns, new folder); takes any `listFolders(path)` loader (2026-11-28, used by the project dialog).
+- `src/ui/shared/DefinitionRow.tsx`: label/value rows for About panels; `src/ui/shared/CopyButton.tsx`: copy-to-clipboard icon button (2026-11-28, Sandboxes detail).
 - `src/ui/cards/EntityCard.tsx`: `EntityCard`, `CardGrid`, `Fact` for card grids (Agents, Sandboxes).
-- `src/ui/preview/FileTree.tsx` + `src/preview/tree.ts`: keyboard-accessible file tree built from flat paths.
+- `src/ui/preview/FileTree.tsx` + `src/preview/tree.ts`: keyboard-accessible file tree built from flat paths (`buildTree` takes a path filter; `FileTree` takes `renderEnd`, `emptyText`, `expandTop`).
 - `src/ui/preview/renderers/index.tsx`: `RendererBody` previews a file by type (text, code, CSV, images, PDF, Office as PDF, video with cursor track).
 - `src/ui/chat/Markdown.tsx`: Markdown with streaming support and Connect links.
 - `src/ui/chat/Notice.tsx`, `ConnectionPill.tsx`: inline notices with retry; live/reconnecting pill.
