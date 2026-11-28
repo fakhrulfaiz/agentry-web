@@ -4,6 +4,8 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-28
+
 - 2026-11-28: Hover backgrounds are back across the app (sidebar links and chats, menus, rows). Our own StyleX classes shared atomic class names with astryx's prebuilt CSS; our unlayered copy of e.g. `background-color: transparent` beat astryx's layered `:hover` rule. Our classes now use their own prefix (`classNamePrefix: 'a'` in `next.config.ts` and `postcss.config.mjs`, which must match).
 - 2026-11-28: Chats inside a Project in the sidebar truncate long titles and show their ⋯ menu on hover like other chats (a long title used to run past the sidebar), and they are indented less.
 - 2026-11-28: Edit and Duplicate for sandbox templates (Sandboxes, Templates tab). Each template card has small icon actions (Edit, Duplicate, and a ⋯ menu with Delete; built-in templates offer only Duplicate); clicking a custom template opens Edit, a built-in one opens its details. The template editor is one dialog for New template, Edit template ("Save changes", `POST agents/environments/templates/{id}` via `api.updateSandboxTemplate`; changes apply to new environments only) and Duplicate template ("<name> copy", "Create copy"). The API never returns setup commands, variables or starter file contents, so Edit keeps them when left empty (typing replaces them) and Duplicate does not copy them; the fields say so.
@@ -21,8 +23,6 @@ All notable changes to Agentry Web are recorded here.
 - 2026-11-28: Opening a chat is faster: the stream request (`Last-Event-ID: 0`) now starts together with the history read, so its round trip overlaps it. Its events are still read only after the saved items and the session snapshot, so ordering is unchanged; a 401 while loading items signs out and drops the early request (`src/chat/use-conversation.ts`).
 - 2026-11-28: "Recent files" on the new-chat page shows each file once. A file delivered more than once (a new version) used to show once per delivery; now only its newest delivery is listed (`RecentFiles`).
 - 2026-11-28: The New/Edit agent form has no empty gap under Instructions on wide screens: the instructions box grows to fill the profile column (still 16 rows on narrow screens).
-
-## 0.4.0 — 2026-11-28
 
 - 2026-11-27: Delivered file cards now sit under the reply that made them. They used to collect at the very end of the chat, so after a later turn they looked like part of the newest reply. Each delivery's `turn_id` (from `GET /agents/sessions/{id}/deliverables`) now places its cards right after that turn, before its "files changed" card (`useSessionDeliverables`, `DeliveredFiles` in `src/ui/chat/SessionArtifacts.tsx`); a delivery without a turn id still shows at the end. Checked in a live chat.
 - 2026-11-27: The agent's cursor in the Browser tab now actually shows on clicks that open a new page. The live view cleared the arrow whenever a frame from a different URL arrived, and after a link click the new page's first frame comes a moment later, so the arrow vanished almost at once and looked missing. A new page now clears only the focus outline; the arrow stays on the spot clicked and hides 3 s after the last pointer event as before. Checked in a live chat through the running web app.
