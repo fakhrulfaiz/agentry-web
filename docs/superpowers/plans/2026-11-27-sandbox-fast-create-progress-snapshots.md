@@ -120,3 +120,12 @@ Order of work: API provider + routes + OpenAPI (one agent), then web client/type
 - SSH-machine native workspace snapshot kept on the machine (plan Task 3.6): not built; machines use the generic snapshot kept on the service host. Needs a fake-machine `tar` command.
 - Postgres store path for snapshots is untested here (no database in the test run).
 - Object storage for the snapshot folder (single host only today).
+
+## Snapshot download and upload (files-only), queued 2026-11-28
+
+User asked to download snapshots and load them on another machine. Scope now: **workspace-level ("Files only") snapshots only**. Disk/E2B/memory snapshots are not downloadable (disk: later as "Copy to another location", sending it machine to machine).
+
+- **Service (`~/code/agentry-sandbox`):** `GET /v1/snapshots/{id}/download` streams a workspace snapshot as `application/gzip` (`<name or id>.tar.gz`, `Content-Length` when known, `Content-Disposition: attachment`); 400 for non-workspace levels, 409 while not `ready`. `POST /v1/snapshots/import` (body: the `.tar.gz`, query `name`) stores it as a new `ready` workspace snapshot owned by the caller with no source sandbox; size limit `AGENTRY_SANDBOX_SNAPSHOT_IMPORT_MAX_MB` (default 2048), reject archives with absolute paths, `..`, symlinks/hardlinks pointing outside, or device files (validate while extracting into a temp dir, or list first). OpenAPI + tests.
+- **API:** `GET /agents/environments/snapshots/{id}/content` (streams through, keeps headers, supports `Range` only if cheap) and `POST /agents/environments/snapshots/import?name=` (streams the body through, owner-scoped). OpenAPI, http-api, changes doc, tests.
+- **Web:** allow-list (download GET; import POST with CSRF, raw body, large); client `snapshotDownloadUrl(id)` and `importSnapshot(file, name)`. In the Snapshots tab: a ⬇ icon on each "Files only" row (a plain link to the BFF route, so the browser downloads it); an ⬆ icon in the tab toolbar "Upload snapshot" (file picker for `.tar.gz`/`.tgz`/`.tar`, optional name, progress) that adds a snapshot you can Restore here or start a New environment from. Imported snapshots have no source environment, so they also need to appear somewhere reachable from the Sandboxes list: add an "Uploaded and orphaned snapshots" view only if the snapshots plan does not already provide one; otherwise reuse it.
+- Tests in all three; live check: download a snapshot of Test sandbox, check it is a valid tar.gz listing workspace files, upload it back as a new snapshot, delete both.

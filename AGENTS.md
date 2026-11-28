@@ -104,7 +104,8 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: Sandboxes templates: Edit and Duplicate (icon actions, one editor dialog for new/edit/duplicate; the API does not return setup commands, variables or file contents, so Edit keeps them when left empty and Duplicate does not copy them).
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [x] DONE 2026-11-28: sandbox snapshots in the service (workspace on every place, Docker disk, E2B disk/memory against the fake only, MCP tools), merged to agentry-sandbox `develop`, release 0.3.0.
-- [ ] Snapshots in the API and web (save, list, restore, new environment from a snapshot on the environment page): plan in `docs/superpowers/plans/2026-11-27-sandbox-fast-create-progress-snapshots.md` § "Snapshots: API and web (next)"; one open question (keep snapshots when an environment is deleted; recommended yes). M.
+- [ ] Snapshots in the API and web (save, list, restore, new environment from a snapshot on the environment page): plan in `docs/superpowers/plans/2026-11-27-sandbox-fast-create-progress-snapshots.md` § "Snapshots: API and web (next)"; decided: snapshots are kept on environment delete unless the delete dialog's "Also delete its N snapshots" is ticked. M.
+- [ ] Snapshot download and upload for "Files only" snapshots (queued after the snapshots UI; plan § "Snapshot download and upload" in `2026-11-27-sandbox-fast-create-progress-snapshots.md`). Later: copy a disk snapshot to another location. M.
 - [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.
 - [x] DONE 2026-11-28: Projects live check through the UI (user).
 
