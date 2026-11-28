@@ -52,6 +52,8 @@ function session(id: string, title: string, createdAt = NOW_S, extra: Record<str
 }
 const starred = (id: string, title: string, createdAt = NOW_S) => session(id, title, createdAt, { starred: 'true' })
 const group = (name: string) => screen.getByRole('group', { name })
+/** A Project's folder row in the sidebar; clicking it shows or hides its chats. */
+const projectRow = (name: string) => screen.getByRole('button', { name })
 
 function page<T extends { id: string }>(data: T[], hasMore = false): OAIListResponse<T> {
   return { object: 'list', data, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null, has_more: hasMore }
@@ -374,14 +376,15 @@ describe('Sidebar', () => {
     render(<Sidebar identity={IDENTITY} />)
     await screen.findByRole('link', { name: 'One-off chat' })
 
-    const pinned = group('Pinned work')
-    const active = group('Other work')
+    const pinned = projectRow('Pinned work')
+    const active = projectRow('Other work')
     const star = group('Starred')
     const today = group('Today')
     before(pinned, active)
     before(active, star)
     before(star, today)
-    expect(within(pinned).getByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p_pin')
+    await userEvent.setup().click(pinned)
+    expect(await within(group('Pinned work')).findByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p_pin')
     expect(apiMock.listProjects).toHaveBeenCalledWith({ status: 'active' })
   })
 
@@ -396,7 +399,7 @@ describe('Sidebar', () => {
     // The client turns `{ projectId }` into the `project_id` query checked in the API client tests.
     expect(apiMock.listSessions).not.toHaveBeenCalledWith({ projectId: 'p1' })
 
-    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    await user.click(projectRow('Website work'))
     expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
     expect(apiMock.listSessions).toHaveBeenCalledWith({ projectId: 'p1' })
     expect(apiMock.listSessions).toHaveBeenCalledTimes(3) // global page, starred page, filtered page
@@ -429,7 +432,7 @@ describe('Sidebar', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }))
     expect(apiMock.setSessionProject).toHaveBeenCalledWith('s1', 'p1')
 
-    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    await user.click(projectRow('Website work'))
     expect(await within(group('Website work')).findByRole('link', { name: 'Launch notes' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Options for Launch notes' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Unfiled' }))
@@ -450,15 +453,16 @@ describe('Sidebar', () => {
     })
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await waitFor(() => expect(group('Active work')).toBeInTheDocument())
-    expect(screen.queryByRole('group', { name: 'Archived work' })).not.toBeInTheDocument()
+    await waitFor(() => expect(projectRow('Active work')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Archived work' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Archived' }))
+    await user.click(screen.getByRole('button', { name: 'Project options' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Archived projects' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Archived work')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Unarchive' }))
     expect(apiMock.unarchiveProject).toHaveBeenCalledWith('p1')
-    await waitFor(() => expect(group('Archived work')).toBeInTheDocument())
+    await waitFor(() => expect(projectRow('Archived work')).toBeInTheDocument())
   })
 
   it('asks before deleting a project and keeps it when cancelled or refused with 409', async () => {
@@ -466,7 +470,7 @@ describe('Sidebar', () => {
     apiMock.listSessions.mockResolvedValue(page([]))
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
+    await waitFor(() => expect(projectRow('Website work')).toBeInTheDocument())
     const openDelete = async () => {
       await user.click(screen.getByRole('button', { name: 'Options for Website work' }))
       await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
@@ -479,13 +483,13 @@ describe('Sidebar', () => {
     await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(apiMock.deleteProject).not.toHaveBeenCalled()
-    expect(group('Website work')).toBeInTheDocument()
+    expect(projectRow('Website work')).toBeInTheDocument()
 
     apiMock.deleteProject.mockRejectedValueOnce(new ApiError(409, 'project_has_sessions', 'Project has sessions'))
     const refused = await openDelete()
     await user.click(within(refused).getByRole('button', { name: 'Delete' }))
     expect(refused).toHaveTextContent('Project has sessions')
-    expect(group('Website work')).toBeInTheDocument()
+    expect(projectRow('Website work')).toBeInTheDocument()
     await user.click(within(refused).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
 
@@ -495,7 +499,7 @@ describe('Sidebar', () => {
     await user.click(within(accepted).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(apiMock.deleteProject).toHaveBeenCalledTimes(2))
     expect(apiMock.deleteProject).toHaveBeenNthCalledWith(1, 'p1')
-    await waitFor(() => expect(screen.queryByRole('group', { name: 'Website work' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Website work' })).not.toBeInTheDocument())
   })
 
   it('shows a load error and a retry for a project whose chats fail to load', async () => {
@@ -510,8 +514,8 @@ describe('Sidebar', () => {
     })
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    await waitFor(() => expect(projectRow('Website work')).toBeInTheDocument())
+    await user.click(projectRow('Website work'))
 
     const section = group('Website work')
     expect(await within(section).findByText('Could not load chats')).toBeInTheDocument()
@@ -545,7 +549,8 @@ describe('Sidebar', () => {
     apiMock.listSessions.mockResolvedValue(page([]))
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await user.click(await screen.findByRole('button', { name: 'Archived' }))
+    await user.click(await screen.findByRole('button', { name: 'Project options' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Archived projects' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('Old three')).toBeInTheDocument()
@@ -557,7 +562,8 @@ describe('Sidebar', () => {
     apiMock.listSessions.mockResolvedValue(page([]))
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
+    await waitFor(() => expect(projectRow('Website work')).toBeInTheDocument())
+    await user.click(projectRow('Website work'))
     expect(within(group('Website work')).getByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p1')
 
     await user.click(screen.getByRole('button', { name: 'Options for Website work' }))
@@ -616,8 +622,8 @@ describe('Sidebar', () => {
     )
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await waitFor(() => expect(group('Website work')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    await waitFor(() => expect(projectRow('Website work')).toBeInTheDocument())
+    await user.click(projectRow('Website work'))
     expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
 
     const search = screen.getByRole('searchbox', { name: 'Search chats' })
@@ -659,7 +665,7 @@ describe('Sidebar with the mock API', () => {
     expect(within(group('Today')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Website chat' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Show chats in Website work' }))
+    await user.click(projectRow('Website work'))
     expect(await within(group('Website work')).findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
     expect(within(group('Website work')).queryByRole('link', { name: 'One-off chat' })).not.toBeInTheDocument()
 

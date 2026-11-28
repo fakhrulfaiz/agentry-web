@@ -10,6 +10,7 @@
  * into a drawer.
  */
 import { Button } from '@astryxdesign/core/Button'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { MoreMenu } from '@astryxdesign/core/MoreMenu'
@@ -19,7 +20,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ChatBubbleLeftIcon, FolderIcon, PlusIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
@@ -348,54 +349,60 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     if (expanding) void loadProjectSessions(projectId)
   }
 
-  const projectSection = (project: OAIProject) => {
+  // One compact row per Project: a folder that expands to its chats; everything else lives in its menu.
+  const projectItem = (project: OAIProject) => {
     const isExpanded = expanded.has(project.id)
-    const chats = (projectSessions[project.id] ?? []).filter(matches)
+    const loaded = projectSessions[project.id]
+    const chats = (loaded ?? []).filter(matches)
+    const error = projectLoadErrors[project.id]
     return (
-      <SideNavSection
+      <SideNavItem
         key={project.id}
-        title={project.name}
-        endContent={
-          <HStack gap={1}>
-            <Button
-              label={`${isExpanded ? 'Hide' : 'Show'} chats in ${project.name}`}
-              size="sm"
-              variant="ghost"
-              onClick={() => toggleProject(project.id)}
-            />
-            <MoreMenu
-              label={`Options for ${project.name}`}
-              size="sm"
-              items={[
-                { label: 'New chat here', onClick: () => router.push(`/?project=${encodeURIComponent(project.id)}`) },
-                { label: 'Rename', onClick: () => setProjectDialog({ isOpen: true, project }) },
-                { label: project.pinned ? 'Unpin' : 'Pin', onClick: () => changeProject('pin', () => api.updateProject(project.id, { pinned: !project.pinned })) },
-                { label: 'Archive', onClick: () => changeProject('archive', () => api.archiveProject(project.id)) },
-                { label: 'Delete', variant: 'destructive', onClick: () => setDeletingProject(project) },
-              ]}
-            />
-          </HStack>
+        label={project.name}
+        icon={FolderIcon}
+        collapsible={{ isCollapsed: !isExpanded, onCollapsedChange: () => toggleProject(project.id) }}
+        actions={
+          <MoreMenu
+            label={`Options for ${project.name}`}
+            size="sm"
+            items={[
+              { label: 'New chat here', onClick: () => router.push(`/?project=${encodeURIComponent(project.id)}`) },
+              { label: 'Rename', onClick: () => setProjectDialog({ isOpen: true, project }) },
+              { label: project.pinned ? 'Unpin' : 'Pin', onClick: () => changeProject('pin', () => api.updateProject(project.id, { pinned: !project.pinned })) },
+              { label: 'Archive', onClick: () => changeProject('archive', () => api.archiveProject(project.id)) },
+              { label: 'Delete', variant: 'destructive', onClick: () => setDeletingProject(project) },
+            ]}
+          />
         }
       >
         <SideNavItem label="New chat here" href={`/?project=${encodeURIComponent(project.id)}`} icon={PencilSquareIcon} size="sm" />
-        {isExpanded && (
-          <>
-            {rows(chats)}
-            {chats.length === 0 && !projectLoadErrors[project.id] && <Text type="supporting">No chats yet.</Text>}
-            {projectLoadErrors[project.id] && (
-              <VStack padding={2} gap={1} hAlign="start">
-                <Text type="supporting">{projectLoadErrors[project.id]}</Text>
-                <Button label="Retry" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id)} />
-              </VStack>
-            )}
-            {projectHasMore[project.id] && (
-              <Button label="More" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id, projectCursors[project.id] ?? undefined)} />
-            )}
-          </>
+        {rows(chats)}
+        {error && (
+          <VStack padding={2} gap={1} hAlign="start">
+            <Text type="supporting">{error}</Text>
+            <Button label="Retry" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id)} />
+          </VStack>
         )}
-      </SideNavSection>
+        {projectHasMore[project.id] && (
+          <Button label="More" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id, projectCursors[project.id] ?? undefined)} />
+        )}
+      </SideNavItem>
     )
   }
+
+  const projectsSection = (
+    <SideNavSection
+      title="Projects"
+      endContent={
+        <HStack gap={1}>
+          <IconButton label="New project" icon={<Icon icon={PlusIcon} size="sm" />} size="sm" variant="ghost" onClick={() => setProjectDialog({ isOpen: true, project: null })} />
+          <MoreMenu label="Project options" size="sm" items={[{ label: 'Archived projects', onClick: () => setArchivedOpen(true) }]} />
+        </HStack>
+      }
+    >
+      {projectSections.map((section) => projectItem(section.project))}
+    </SideNavSection>
+  )
 
   return (
     <>
@@ -405,8 +412,6 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         topContent={
           <VStack gap={2}>
             <SideNavItem label="New chat" icon={PencilSquareIcon} href="/" isSelected={pathname === '/'} />
-            <Button label="New project" size="sm" variant="ghost" onClick={() => setProjectDialog({ isOpen: true, project: null })} />
-            <Button label="Archived" size="sm" variant="ghost" onClick={() => setArchivedOpen(true)} />
             <SideNavItem
               label="Scheduled"
               icon={ClockIcon}
@@ -458,7 +463,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           <SideNavSection title="Search results">{rows(searchRows)}</SideNavSection>
         ) : (
           <>
-            {projectSections.map((section) => projectSection(section.project))}
+            {projectsSection}
             {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
             {dateSections.map((section) => {
               const chats = section.sessions.filter((s) => !isStarred(s) && matches(s))
