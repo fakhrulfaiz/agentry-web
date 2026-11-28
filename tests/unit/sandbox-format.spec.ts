@@ -105,3 +105,23 @@ describe('place kinds in plain words', () => {
     expect(placeKindTitle('e2b')).toBe('E2B (hosted)')
   })
 })
+
+describe('filterEnvironments', () => {
+  it('matches name, image, place and template, and the section filter', async () => {
+    const { filterEnvironments } = await import('@/ui/sandboxes/overview')
+    const mk = (id: string, extra: Record<string, unknown>) => ({ id, provider: 'sandbox', status: 'connected', ...extra }) as never
+    const envs = [
+      mk('a', { name: 'Alpha', template_id: 't1', sandbox: { state: 'running', place: 'p1', image: 'ghcr.io/x/py:1' } }),
+      mk('b', { name: 'Beta', sandbox: { state: 'stopped', place: 'p2' } }),
+      mk('c', { provider: 'local', name: 'Folder' }),
+    ]
+    const places = [{ id: 'p1', name: 'Docker box', available: true }, { id: 'p2', name: 'Cloud', available: true }] as never
+    const templates = [{ id: 't1', name: 'Data' }]
+    const ids = (o: { query: string; filter: 'all' | 'running' | 'stopped' | 'server' | 'unavailable'; place: string }) => filterEnvironments(envs, o, places, templates).map((e) => e.id)
+    expect(ids({ query: 'py:1', filter: 'all', place: '' })).toEqual(['a'])
+    expect(ids({ query: 'cloud', filter: 'all', place: '' })).toEqual(['b'])
+    expect(ids({ query: 'DATA', filter: 'all', place: '' })).toEqual(['a'])
+    expect(ids({ query: '', filter: 'server', place: '' })).toEqual(['c'])
+    expect(ids({ query: '', filter: 'all', place: 'p2' })).toEqual(['b'])
+  })
+})

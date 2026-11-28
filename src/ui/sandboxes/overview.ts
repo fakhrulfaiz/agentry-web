@@ -120,3 +120,27 @@ export function templateFacts(t: SandboxTemplate | undefined): { cpu: string | n
 }
 
 export const placeKindText = (place: SandboxPlace | undefined): string | null => (place ? placeKindTitle(place.kind) : null)
+
+export type ListFilter = 'all' | 'running' | 'stopped' | 'server' | 'unavailable'
+
+/** Narrows the sandbox list by a search text (name, image, place name, template name) and a section filter; `place` is a place id or ''. */
+export function filterEnvironments(
+  envs: SandboxEnvironment[],
+  opts: { query: string; filter: ListFilter; place: string },
+  places: SandboxPlace[],
+  templates: Pick<SandboxTemplate, 'id' | 'name'>[],
+): SandboxEnvironment[] {
+  const q = opts.query.trim().toLowerCase()
+  const section = opts.filter === 'all' ? null : opts.filter
+  return envs.filter((env) => {
+    if (section) {
+      const g = groupEnvironments([env], places)
+      if (g[section].length === 0) return false
+    }
+    if (opts.place && env.sandbox?.place !== opts.place) return false
+    if (!q) return true
+    const placeName = places.find((p) => p.id === env.sandbox?.place)?.name ?? ''
+    const templateName = templates.find((t) => t.id === env.template_id)?.name ?? ''
+    return [cardName(env), env.sandbox?.image ?? '', placeName, templateName].some((s) => s.toLowerCase().includes(q))
+  })
+}

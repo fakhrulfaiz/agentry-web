@@ -32,6 +32,7 @@ import {
   FolderOpenIcon,
   PencilIcon,
   ServerIcon,
+  MagnifyingGlassIcon,
   Square3Stack3DIcon,
 } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -45,7 +46,7 @@ import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
 import { TemplateDetailsDialog } from './TemplateDetails'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
 import { EnvironmentCard, Section } from './EnvironmentCard'
-import { groupEnvironments, summarize } from './overview'
+import { filterEnvironments, groupEnvironments, summarize, type ListFilter } from './overview'
 import { useEnvironmentChats } from './use-environment-chats'
 import { DeleteEnvironmentDialog } from './DeleteEnvironmentDialog'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
@@ -290,7 +291,14 @@ export function SandboxesPage() {
   }, [anySettling])
 
   const places = (providers ?? []).flatMap((p) => p.places ?? [])
-  const groups = groupEnvironments(environments ?? [], places)
+  const [query, setQuery] = useState('')
+  const [listFilter, setListFilter] = useState<ListFilter>('all')
+  const [placeFilter, setPlaceFilter] = useState('')
+  const shown = filterEnvironments(environments ?? [], { query, filter: listFilter, place: placeFilter }, places, templates ?? [])
+  const groups = groupEnvironments(shown, places)
+  const usedPlaces = places.filter((p) => (environments ?? []).some((e) => e.sandbox?.place === p.id))
+  const filtering = query.trim() !== '' || listFilter !== 'all' || placeFilter !== ''
+  const clearFilters = () => { setQuery(''); setListFilter('all'); setPlaceFilter('') }
   const orphans = snapshots.filter((x) => x.environment_id === null || !(environments ?? []).some((e) => e.id === x.environment_id))
   const chatsByEnv = useEnvironmentChats()
   // Coming back to the tab shows the machines' current state.
@@ -367,7 +375,26 @@ export function SandboxesPage() {
             />
           ) : (
             <VStack gap={5}>
-              {([['Running', groups.running], ['Place unavailable', groups.unavailable], ['Stopped', groups.stopped], ['This server', groups.server]] as const).map(([title, list]) =>
+              <HStack gap={2} vAlign="center" wrap="wrap">
+                <VStack maxWidth={320}>
+                  <TextInput label="Search sandboxes" isLabelHidden type="search" size="sm" placeholder="Search sandboxes" startIcon={MagnifyingGlassIcon} value={query} onChange={setQuery} hasClear />
+                </VStack>
+                <HStack gap={1} vAlign="center" role="group" aria-label="Filter sandboxes">
+                  {([['all', 'All'], ['running', 'Running'], ['stopped', 'Stopped'], ['server', 'This server'], ['unavailable', 'Unavailable']] as const).map(([value, label]) => (
+                    <ToggleButton key={value} label={label} size="sm" isPressed={listFilter === value} onPressedChange={() => setListFilter(value)} />
+                  ))}
+                </HStack>
+                {usedPlaces.length > 1 && (
+                  <Selector label="Place" isLabelHidden size="sm" value={placeFilter} onChange={(v) => setPlaceFilter(v ?? '')} options={[{ value: '', label: 'All places' }, ...usedPlaces.map((p) => ({ value: p.id, label: p.name }))]} />
+                )}
+              </HStack>
+              {filtering && shown.length === 0 && (
+                <HStack gap={2} vAlign="center">
+                  <Text type="supporting">No sandboxes match.</Text>
+                  <Button label="Clear" size="sm" variant="ghost" onClick={clearFilters} />
+                </HStack>
+              )}
+              {([['Running', groups.running], ['Stopped', groups.stopped], ['This server', groups.server], ['Place unavailable', groups.unavailable]] as const).map(([title, list]) =>
                 list.length === 0 ? null : (
                   <Section key={title} title={title} count={list.length}>
                     {list.map((env) => (

@@ -87,6 +87,21 @@ describe('SandboxesPage', () => {
     expect(screen.getByText('Templates can set starter files.')).toBeInTheDocument()
   })
 
+  it('narrows the list by search and offers Clear when nothing matches', async () => {
+    const user = userEvent.setup()
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([env, { ...env, id: 'env_two', name: 'Notebook' }]))
+    render(<SandboxesPage />)
+    expect(await screen.findByText('Server workspace')).toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Search sandboxes' }), 'note')
+    expect(screen.queryByText('Server workspace')).not.toBeInTheDocument()
+    expect(screen.getByText('Notebook')).toBeInTheDocument()
+    await user.clear(screen.getByRole('searchbox', { name: 'Search sandboxes' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search sandboxes' }), 'zzz')
+    expect(screen.getByText('No sandboxes match.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(screen.getByText('Server workspace')).toBeInTheDocument()
+  })
+
   it('shows the empty state and creates an environment', async () => {
     apiMock.listSandboxEnvironments.mockResolvedValue(page([]))
     apiMock.createSandboxEnvironment.mockResolvedValue(env)
@@ -137,7 +152,7 @@ describe('SandboxesPage', () => {
     expect(await screen.findByText('Place unavailable: GPU box (no answer within 5000 ms)')).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Place unavailable' })).toBeInTheDocument()
     for (const name of ['Stop', 'Start', 'New chat here']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
-    expect(screen.queryByText('Running')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Running' })).not.toBeInTheDocument()
   })
 
   it('renames, starts, stops and deletes an environment from its card menu', async () => {
