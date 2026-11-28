@@ -285,7 +285,7 @@ test('the chat title menu stars a chat; it stays under Starred after a reload', 
 
   await page.reload()
   await expect(starred.getByRole('link', { name: 'Keep this chat' })).toBeVisible()
-  await expect(page.getByRole('group', { name: 'Today' })).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'Recents' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Keep this chat', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: 'Unstar' })).toBeVisible()
 })

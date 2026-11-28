@@ -20,7 +20,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, FolderIcon, PlusIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, PlusIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
@@ -78,6 +78,8 @@ function ChatRow({ label, href, isSelected, items }: { label: string; href: stri
 
 export const SIDEBAR_COLLAPSED_KEY = 'agentry.sidebar.collapsed'
 export const PAGE_SIZE = 30
+const RECENTS_HIDDEN_KEY = 'agentry_recents_hidden'
+
 /** Most starred chats the Starred section loads. */
 const STARRED_LIMIT = 100
 
@@ -139,6 +141,20 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [deletingProject, setDeletingProject] = useState<OAIProject | null>(null)
   const [moving, setMoving] = useState<Session | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
+  // Folding Recents away is remembered per browser; storage can be unavailable, so it is best-effort.
+  const [recentsHidden, setRecentsHidden] = useState(false)
+  useEffect(() => {
+    try {
+      setRecentsHidden(window.localStorage.getItem(RECENTS_HIDDEN_KEY) === '1')
+    } catch {}
+  }, [])
+  const toggleRecents = () =>
+    setRecentsHidden((hidden) => {
+      try {
+        window.localStorage.setItem(RECENTS_HIDDEN_KEY, hidden ? '0' : '1')
+      } catch {}
+      return !hidden
+    })
   const loadingRef = useRef(false)
   const sessionsRef = useRef<Session[]>([])
   sessionsRef.current = sessions
@@ -289,13 +305,13 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const sentinel = useRef<HTMLElement | null>(null)
   useEffect(() => {
     const node = sentinel.current
-    if (!node || !hasMore || typeof IntersectionObserver === 'undefined') return
+    if (!node || !hasMore || recentsHidden || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) void load(cursor)
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [cursor, hasMore, load])
+  }, [cursor, hasMore, load, recentsHidden])
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -309,6 +325,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const grouped = groupSessionsForSidebar(projects, visible, new Date())
   const projectSections = grouped.filter((section): section is ProjectSection => section.type === 'project')
   const dateSections = grouped.filter((section): section is DateSection => section.type === 'date')
+  // One flat Recents list (newest first, as the date groups were ordered), without the starred chats shown above it.
+  const recents = dateSections.flatMap((section) => section.sessions).filter((s) => !isStarred(s) && matches(s))
   const loadedProjectRows = Object.values(projectSessions).flat()
 
   // Search is a flat list: partial Project sections would be confusing while filtering.
@@ -465,14 +483,22 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           <>
             {projectsSection}
             {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
-            {dateSections.map((section) => {
-              const chats = section.sessions.filter((s) => !isStarred(s) && matches(s))
-              return chats.length > 0 ? (
-                <SideNavSection key={section.title} title={section.title}>
-                  {rows(chats)}
-                </SideNavSection>
-              ) : null
-            })}
+            {recents.length > 0 && (
+              <SideNavSection
+                title="Recents"
+                endContent={
+                  <IconButton
+                    label={recentsHidden ? 'Show recents' : 'Hide recents'}
+                    icon={<Icon icon={recentsHidden ? ChevronRightIcon : ChevronDownIcon} size="sm" />}
+                    size="sm"
+                    variant="ghost"
+                    onClick={toggleRecents}
+                  />
+                }
+              >
+                {!recentsHidden && rows(recents)}
+              </SideNavSection>
+            )}
           </>
         )}
         {!loading &&

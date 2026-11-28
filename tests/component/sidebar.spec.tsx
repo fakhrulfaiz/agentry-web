@@ -165,17 +165,34 @@ describe('groupSessions', () => {
 })
 
 describe('Sidebar', () => {
-  it('shows sessions under Today / … / Older with links to each chat', async () => {
+  it('shows sessions newest first in one Recents list with links to each chat', async () => {
     apiMock.listSessions.mockResolvedValue(
-      page([session('s1', 'Plan the launch'), session('s2', 'Old notes', NOW_S - 400 * DAY_S)]),
+      page([session('s2', 'Old notes', NOW_S - 400 * DAY_S), session('s1', 'Plan the launch')]),
     )
     render(<Sidebar identity={IDENTITY} />)
     const link = await screen.findByRole('link', { name: 'Plan the launch' })
     expect(link).toHaveAttribute('href', '/c/s1')
-    expect(screen.getByText('Today')).toBeInTheDocument()
-    expect(screen.getByText('Older')).toBeInTheDocument()
-    expect(screen.queryByText('Yesterday')).not.toBeInTheDocument()
+    expect(within(group('Recents')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Plan the launch', 'Old notes'])
+    expect(screen.queryByText('Today')).not.toBeInTheDocument()
+    expect(screen.queryByText('Older')).not.toBeInTheDocument()
     expect(apiMock.listSessions).toHaveBeenCalledWith({ limit: 30 })
+  })
+
+  it('folds Recents away and remembers it', async () => {
+    window.localStorage.removeItem('agentry_recents_hidden')
+    apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch')]))
+    const user = userEvent.setup()
+    const { unmount } = render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Plan the launch' })
+    await user.click(screen.getByRole('button', { name: 'Hide recents' }))
+    expect(screen.queryByRole('link', { name: 'Plan the launch' })).not.toBeInTheDocument()
+    unmount()
+    render(<Sidebar identity={IDENTITY} />)
+    expect(await screen.findByRole('button', { name: 'Show recents' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Plan the launch' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show recents' }))
+    expect(screen.getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+    window.localStorage.removeItem('agentry_recents_hidden')
   })
 
   it('title search filters the loaded rows, and scrolling to the end loads the next page', async () => {
@@ -258,10 +275,9 @@ describe('Sidebar', () => {
     await screen.findByRole('link', { name: 'Plan the launch' })
     const star = group('Starred')
     expect(within(star).getAllByRole('link').map((a) => a.textContent)).toEqual(['Fix the build', 'Old notes'])
-    expect(within(group('Today')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Plan the launch'])
-    expect(screen.queryByRole('group', { name: 'Previous 30 days' })).not.toBeInTheDocument()
-    // Starred comes first.
-    expect(star.compareDocumentPosition(group('Today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(group('Recents')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Plan the launch'])
+        // Starred comes first.
+    expect(star.compareDocumentPosition(group('Recents')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('the Starred section comes from the metadata filter, so a starred chat beyond the loaded pages shows', async () => {
@@ -298,7 +314,7 @@ describe('Sidebar', () => {
     await user.click(screen.getByRole('button', { name: 'Options for Plan the launch' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Unstar' }))
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Starred' })).not.toBeInTheDocument())
-    expect(within(group('Today')).getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+    expect(within(group('Recents')).getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
     expect(apiMock.setStarred).toHaveBeenLastCalledWith('s1', false)
     window.removeEventListener('agentry:sessions-changed', listen)
   })
@@ -313,7 +329,7 @@ describe('Sidebar', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Star' }))
     expect(await screen.findByText('Could not star the chat. Try again.')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Starred' })).not.toBeInTheDocument())
-    expect(within(group('Today')).getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
+    expect(within(group('Recents')).getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
   })
 
   it('applies a change another part of the app broadcasts, without reloading', async () => {
@@ -379,10 +395,10 @@ describe('Sidebar', () => {
     const pinned = projectRow('Pinned work')
     const active = projectRow('Other work')
     const star = group('Starred')
-    const today = group('Today')
+    const recents = group('Recents')
     before(pinned, active)
     before(active, star)
-    before(star, today)
+    before(star, recents)
     await userEvent.setup().click(pinned)
     expect(await within(group('Pinned work')).findByRole('link', { name: 'New chat here' })).toHaveAttribute('href', '/?project=p_pin')
     expect(apiMock.listProjects).toHaveBeenCalledWith({ status: 'active' })
@@ -437,7 +453,7 @@ describe('Sidebar', () => {
     await user.click(screen.getByRole('button', { name: 'Options for Launch notes' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Unfiled' }))
     expect(apiMock.setSessionProject).toHaveBeenLastCalledWith('s1', null)
-    expect(await within(group('Today')).findByRole('link', { name: 'Launch notes' })).toBeInTheDocument()
+    expect(await within(group('Recents')).findByRole('link', { name: 'Launch notes' })).toBeInTheDocument()
     await waitFor(() => expect(within(group('Website work')).queryByRole('link', { name: 'Launch notes' })).not.toBeInTheDocument())
   })
 
@@ -581,7 +597,7 @@ describe('Sidebar', () => {
     )
     render(<Sidebar identity={IDENTITY} />)
     await screen.findByRole('link', { name: 'One-off chat' })
-    expect(within(group('Today')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
+    expect(within(group('Recents')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Filed chat' })).not.toBeInTheDocument()
   })
 
@@ -662,7 +678,7 @@ describe('Sidebar with the mock API', () => {
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
     await screen.findByRole('link', { name: 'One-off chat' })
-    expect(within(group('Today')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
+    expect(within(group('Recents')).getByRole('link', { name: 'One-off chat' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Website chat' })).not.toBeInTheDocument()
 
     await user.click(projectRow('Website work'))
