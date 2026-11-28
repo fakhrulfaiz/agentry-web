@@ -14,3 +14,27 @@
 .astryx-trigger-menu {
   max-width: min(44rem, calc(100vw - 2rem));
 }
+
+/*
+ * Minimal scrollbars everywhere (astryx has no global scrollbar theme): thin, no track, a faint thumb
+ * in the theme's border colour that darkens under the pointer. Colours come from theme tokens.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*:hover {
+  scrollbar-color: var(--color-border-emphasized) transparent;
+}
+
+/*
+ * The main scroll areas keep room for their scrollbar, so content never moves left when a list or
+ * page grows long enough to scroll. Only these, not every element: on clipped (overflow: hidden)
+ * elements such as truncated labels a reserved gutter would show as stray space.
+ */
+.astryx-layout-content,
+.astryx-app-shell-sidenav,
+.astryx-side-nav > div,
+.astryx-chat-layout {
+  scrollbar-gutter: stable;
+}
