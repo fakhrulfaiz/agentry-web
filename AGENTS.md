@@ -83,11 +83,11 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 
 **P1 (largest user-facing wins)**
 - [x] DONE 2026-11-28: compact live steps while a turn runs (default; "Always show steps" keeps full detail). Not yet looked at in a live chat.
-- [ ] Open the chat stream in parallel with the history load. S–M. WIP patch (2 ordering tests still failing) was saved in the session scratchpad as `stream-parallel-wip.patch`; redo from the plan in `src/chat/use-conversation.ts`: start the first `Last-Event-ID: 0` fetch with `loadItems`, read it only after items + snapshot.
+- [x] DONE 2026-11-28: open the chat stream in parallel with the history load (read only after items + snapshot).
 - [ ] Sandboxes page: edit and duplicate templates (API `POST /agents/environments/templates/{id}` exists), "New chat here" in the card menu, refresh card states on focus. M.
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [ ] Finish sandbox snapshots (`agentry-sandbox` branch `feat/snapshots`, WIP, unmerged). M.
-- [ ] Small UI: duplicate recent files on the new-chat page; empty space in the New agent form. S.
+- [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.
 
 **P2 (valuable, bigger)**
 - [ ] F3 workspace panel remainder: live file tree, sandbox port preview, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.

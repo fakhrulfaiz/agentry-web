@@ -336,7 +336,7 @@ describe('useConversation', () => {
     }
   })
 
-  it('applies the snapshot before opening the stream', async () => {
+  it('applies the snapshot before reading the stream (the stream is requested at once)', async () => {
     const approval: OAIRequiredAction = { type: 'approval', id: 'appr_1', kind: 'tool_approval', prompt: 'Approve', options: ['approve', 'deny'] }
     session = sessionResource('requires_action', [approval])
     sessionResponse = () => new Promise((resolve) => setTimeout(() => resolve(Response.json(session)), 1_000))
@@ -344,7 +344,7 @@ describe('useConversation', () => {
 
     const { result, unmount } = renderHook(() => useConversation(SID))
     await flush()
-    expect(streamCalls()).toHaveLength(0)
+    expect(streamCalls()).toHaveLength(1)
     await advance(1_000)
     expect(streamCalls()).toHaveLength(1)
     expect(result.current.state.items.map((v) => v.kind)).toEqual(['action'])
@@ -426,15 +426,17 @@ describe('useConversation', () => {
     const TWO = twoTurns as unknown as { historyThrough: number; frames: Frame[]; items: unknown[] }
     const TURN1_ITEMS = TWO.items.slice(0, 3)
 
-    it('fetches items before opening the stream', async () => {
+    it('requests the stream with the items, but reads it only after them', async () => {
       let release!: () => void
       itemsResponse = () => new Promise<Response>((resolve) => { release = () => resolve(itemsList([])) })
       streams.push(() => streamResponse('', true))
-      const { unmount } = renderHook(() => useConversation(SID))
+      const { result, unmount } = renderHook(() => useConversation(SID))
       await flush()
       expect(itemsCalls()).toHaveLength(1)
       expect(String(itemsCalls()[0][0])).toBe(`/api/agentry/agents/sessions/${SID}/items?limit=100`)
-      expect(streamCalls()).toHaveLength(0)
+      // The round trip overlaps the history read; nothing from the stream is read yet.
+      expect(streamCalls()).toHaveLength(1)
+      expect(lastEventIds()).toEqual(['0'])
       await act(async () => {
         release()
         await vi.advanceTimersByTimeAsync(0)
@@ -593,14 +595,17 @@ describe('useConversation', () => {
       unmount()
     })
 
-    it('a 401 while loading items signs out without opening the stream', async () => {
+    it('a 401 while loading items signs out without reading the stream', async () => {
       itemsResponse = () => Response.json({ error: 'signed_out' }, { status: 401 })
       const onSignedOut = vi.fn()
       const { result, unmount } = renderHook(() => useConversation(SID, { onSignedOut }))
       await flush()
       expect(onSignedOut).toHaveBeenCalled()
       expect(result.current.connection).toBe('closed')
-      expect(streamCalls()).toHaveLength(0)
+      // The early request was made, but never read or retried.
+      expect(streamCalls()).toHaveLength(1)
+      await advance(5_000)
+      expect(streamCalls()).toHaveLength(1)
       unmount()
     })
   })

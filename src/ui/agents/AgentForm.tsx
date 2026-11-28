@@ -117,6 +117,10 @@ const ui = stylex.create({
     borderBlockStartColor: 'var(--color-border)',
   },
   checks: { flexGrow: 1, minInlineSize: 0 },
+  // On wide screens the instructions fill the rest of the profile column instead of leaving a gap under them.
+  // Field = label + control wrapper; the grid's 1fr row stretches the wrapper, the control fills it, the textarea stretches.
+  instructions: { flexGrow: { default: 0, [WIDE]: 1 }, display: 'grid', gridTemplateRows: 'auto 1fr' },
+  instructionsControl: { flexGrow: { default: 0, [WIDE]: 1 }, display: 'flex', alignItems: 'stretch' },
   avatarButton: { padding: 0, borderWidth: 0, backgroundColor: 'transparent', cursor: 'pointer', borderRadius: 14, display: 'block', flexShrink: 0 },
 })
 
@@ -337,6 +341,8 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
               label="Instructions"
               description="What this agent is for and how it should work. It reads this at the start of every chat."
               rows={16}
+              containerXstyle={ui.instructions}
+              controlXstyle={ui.instructionsControl}
               value={form.instructions}
               onChange={(instructions) => set({ instructions })}
               placeholder={'You keep my inbox under control.\nEach morning, sort new mail into Reply, Read later and Ignore, then draft replies for the first group.'}

@@ -4,9 +4,10 @@
  * Live conversation state for one session.
  *
  * Opening (ruling R14): the saved items (`GET .../items`) are folded first, so
- * the whole history shows at once. Only then is the stream requested with
- * `Last-Event-ID: 0`: Agentry replays every wire event (the reducer updates the
- * views the items created, by id) and continues live. Reconnects resume from
+ * the whole history shows at once. The stream (`Last-Event-ID: 0`) is requested
+ * at the same time, so its round trip overlaps the history read, but it is only
+ * read after the items (and the snapshot): Agentry replays every wire event (the
+ * reducer updates the views the items created, by id) and continues live. Reconnects resume from
  * the last seen id and do not reload items. The session resource (`GET /agents/sessions/{id}`) is
  * applied as an id-less status snapshot so pending approvals (ephemeral, never
  * replayed) appear; it is fetched again on every reconnect, because approval
@@ -360,7 +361,20 @@ export function useConversation(
       // No stream event can arrive before the first snapshot, so starting its read now is safe.
       let early: Promise<OAIAgentSession> | undefined = api.getSession(sessionId)
       early.catch(() => {})
-      if (!(await loadItems())) return
+      const connect = () => fetch(streamUrl(sessionId), {
+        headers: { accept: 'text/event-stream', 'last-event-id': lastId },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal,
+      })
+      // The first stream request starts with the history read, so its round trip overlaps it. Its events are
+      // only read (and applied) after the items and the snapshot, as before; the server just buffers them.
+      let firstStream: Promise<Response> | undefined = connect()
+      firstStream.catch(() => {})
+      if (!(await loadItems())) {
+        void firstStream.then((r) => r.body?.cancel(), () => undefined)
+        return
+      }
       setLoaded(true)
       // Not awaited: subagent cards must not hold back the stream.
       void loadSubagents()
@@ -380,12 +394,9 @@ export function useConversation(
         early = undefined
         if (signal.aborted) return
         try {
-          const res = await fetch(streamUrl(sessionId), {
-            headers: { accept: 'text/event-stream', 'last-event-id': lastId },
-            credentials: 'same-origin',
-            cache: 'no-store',
-            signal,
-          })
+          const pending = firstStream
+          firstStream = undefined
+          const res = await (pending ?? connect())
           if (res.status === 401) {
             setConnection('closed')
             onSignedOut()
