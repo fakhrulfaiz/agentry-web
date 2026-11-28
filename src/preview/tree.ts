@@ -16,11 +16,11 @@ function sort(nodes: TreeNode[]): void {
   for (const node of nodes) sort(node.children)
 }
 
-/** Nests `entries` by `/`; hides tooling paths; folders first, then natural name order. */
-export function buildTree(entries: { path: string; size?: number }[]): TreeNode[] {
+/** Nests `entries` by `/`; hides tooling paths unless `keep` says otherwise; folders first, then natural name order. */
+export function buildTree(entries: { path: string; size?: number }[], keep: (path: string) => boolean = isPresentedArtifact): TreeNode[] {
   const roots: TreeNode[] = []
   for (const entry of entries) {
-    if (!isPresentedArtifact(entry.path)) continue
+    if (!keep(entry.path)) continue
     const parts = entry.path.split('/').filter(Boolean)
     let level = roots
     parts.forEach((name, i) => {

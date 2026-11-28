@@ -14,23 +14,36 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { StackItem } from '@astryxdesign/core/Layout'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Link } from '@astryxdesign/core/Link'
+import { MoreMenu } from '@astryxdesign/core/MoreMenu'
+import { Tab, TabList } from '@astryxdesign/core/TabList'
+import { Token } from '@astryxdesign/core/Token'
+import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
+import * as stylex from '@stylexjs/stylex'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ArrowDownTrayIcon, DocumentIcon } from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon, PencilIcon } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { EnvironmentFile, SandboxEnvironment, SandboxPlace } from '@/api/types'
+import type { EnvironmentFile, SandboxEnvironment, SandboxPlace, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { Terminal } from '@/ui/terminal/Terminal'
+import { sessionTitle } from '@/ui/shell/group'
+import { FileTree } from '@/ui/preview/FileTree'
+import { CopyButton } from '@/ui/shared/CopyButton'
+import { DefinitionRow } from '@/ui/shared/DefinitionRow'
+import { buildTree } from '@/preview/tree'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
-import { canChatIn, environmentLook, environmentName, formatBytes, gpuLabel, lastUsed, providerTitle, setupProgressText, shortDate, shortId, toBase64 } from './format'
+import { ago, cardName, statusLine, templateFacts } from './overview'
+import { useEnvironmentChats } from './use-environment-chats'
+import { canChatIn, formatBytes, gpuLabel, providerTitle, setupProgressText, shortDate, shortId, toBase64 } from './format'
 
-const COLUMN_WIDTH = 880
+const COLUMN_WIDTH = 1100
 const WORKSPACE = '/workspace/'
 const MAX_UPLOAD = 5 * 1024 * 1024
 
@@ -49,6 +62,18 @@ const fileHref = (environmentId: string, path: string, download: boolean): strin
   const encoded = relative.split('/').map(encodeURIComponent).join('/')
   return `/api/agentry/agents/environments/${encodeURIComponent(environmentId)}/files/${encoded}${download ? '?download' : ''}`
 }
+
+const layout = stylex.create({
+  columns: {
+    display: 'grid',
+    gap: 24,
+    alignItems: 'start',
+    gridTemplateColumns: { default: 'minmax(0, 1fr)', '@media (min-width: 1024px)': 'minmax(0, 1fr) 300px' },
+  },
+  about: { gridColumn: 1, gridRow: { default: 1, '@media (min-width: 1024px)': 1 }, '@media (min-width: 1024px)': { gridColumn: 2 } },
+  main: { gridColumn: 1, gridRow: { default: 2, '@media (min-width: 1024px)': 1 }, minWidth: 0 },
+  aboutBox: { padding: 16, borderWidth: 1, borderStyle: 'solid', borderColor: colorVars['--color-border'], borderRadius: radiusVars['--radius-container'] },
+})
 
 const SETTLING_POLL_MS = 3000
 /** A sandbox the server is still creating: nothing can start, stop or list files yet. */
@@ -71,6 +96,12 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const [places, setPlaces] = useState<SandboxPlace[]>([])
   const [acting, setActing] = useState<'start' | 'stop' | 'reset' | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const [tab, setTab] = useState<'files' | 'terminal' | 'chats'>('files')
+  const [templates, setTemplates] = useState<SandboxTemplate[]>([])
+  const [showAllSoftware, setShowAllSoftware] = useState(false)
+  const fileInput = useRef<HTMLInputElement | null>(null)
+  const chatsByEnv = useEnvironmentChats()
+  const chats = chatsByEnv?.get(environmentId) ?? []
 
   // The environment and its files load separately: a sandbox lists files slowly, and the header and actions should not wait for it.
   const loadFiles = useCallback(async () => {
@@ -123,6 +154,15 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         setPlaces(page.data.flatMap((p) => p.places ?? []))
       } catch {
         setPlaces([])
+      }
+    })()
+  }, [])
+  useEffect(() => {
+    void (async () => {
+      try {
+        setTemplates((await api.listSandboxTemplates()).data)
+      } catch {
+        setTemplates([])
       }
     })()
   }, [])
@@ -211,115 +251,189 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const isHidden = (path: string) => relative(path).split('/').some((seg) => seg.startsWith('.'))
   const hiddenCount = files?.filter((f) => isHidden(f.path)).length ?? 0
   const shown = files?.filter((f) => showHidden || !isHidden(f.path)) ?? null
-  const look = env ? environmentLook(env) : null
   const state = env?.sandbox?.state
-  const used = lastUsed(env?.sandbox?.last_used_at)
   const notRunning = state === 'stopped'
   const filesProblem = filesError === null ? null : notRunning ? 'not-running' : filesError
+  const line = env ? statusLine(env, places) : null
+  const template = templates.find((t) => t.id === env?.template_id)
+  const facts = templateFacts(template)
+  const image = env?.sandbox?.image ?? template?.image
+  const software = template ? [...template.packages.system, ...template.packages.python, ...template.packages.npm] : []
+  const visibleSoftware = showAllSoftware ? software : software.slice(0, 8)
+  const canChat = env ? canChatIn(env) : false
+  const tabs = [
+    { value: 'files', label: 'Files' },
+    ...(env?.provider === 'sandbox' ? [{ value: 'terminal', label: 'Terminal' }] : []),
+    { value: 'chats', label: 'Chats' },
+  ]
+  const startChat = () => router.push(`/?environment=${encodeURIComponent(environmentId)}`)
+  const menu = [
+    ...(state !== undefined && state !== 'gone' && !settingUp && canReset ? [{ label: 'Reset', onClick: () => setConfirmReset(true) }] : []),
+    { label: 'Rename', onClick: () => setRenaming(true) },
+    ...(state !== 'gone' ? [{ type: 'divider' as const }, { label: 'Delete environment', variant: 'destructive' as const, onClick: () => setConfirmDelete(true) }] : []),
+  ]
+
+  const about = env && (
+    <section aria-label="About" {...stylex.props(layout.aboutBox)}>
+      <VStack gap={3}>
+        <Heading level={2}>About</Heading>
+        <DefinitionRow label="Runs on">{env.provider === 'local' ? 'This server' : placeName || providerTitle(env.provider)}</DefinitionRow>
+        {env.template_id && <DefinitionRow label="Template">{template?.name || 'Deleted template'}</DefinitionRow>}
+        {image && <DefinitionRow label="Image" stacked><Text type="code" color="primary">{image}</Text></DefinitionRow>}
+        {facts.cpu && <DefinitionRow label="CPU">{facts.cpu}</DefinitionRow>}
+        {facts.memory && <DefinitionRow label="Memory">{facts.memory}</DefinitionRow>}
+        {gpuText && <DefinitionRow label="GPUs">{gpuText}</DefinitionRow>}
+        {facts.internet && (
+          <DefinitionRow label="Internet" stacked={template?.network.access === 'restricted'}>
+            {facts.internet.replace('Internet ', '').replace(/^./u, (c) => c.toUpperCase())}
+            {template?.network.access === 'restricted' && template.network.allowed_domains.length > 0 && <Text type="supporting" color="secondary">{template.network.allowed_domains.join(', ')}</Text>}
+          </DefinitionRow>
+        )}
+        {software.length > 0 && (
+          <DefinitionRow label="Software" stacked>
+            <HStack gap={1} wrap="wrap">
+              {visibleSoftware.map((name) => <Token key={name} label={name} size="sm" />)}
+            </HStack>
+            {software.length > 8 && <Button label={showAllSoftware ? 'Show fewer' : `Show all ${software.length}`} size="sm" variant="ghost" onClick={() => setShowAllSoftware((v) => !v)} />}
+          </DefinitionRow>
+        )}
+        <DefinitionRow label="Created">{shortDate(env.created_at)}</DefinitionRow>
+        {env.sandbox?.last_used_at ? <DefinitionRow label="Last used">{ago(env.sandbox.last_used_at)}</DefinitionRow> : null}
+        <DefinitionRow label="Environment ID">
+          <HStack gap={1} vAlign="center" hAlign="end">
+            <Text type="code" color="primary">{shortId(env.id)}</Text>
+            <CopyButton text={env.id} label="Copy environment ID" />
+          </HStack>
+        </DefinitionRow>
+      </VStack>
+    </section>
+  )
+
+  const tree = shown && shown.length > 0 ? buildTree(shown.map((f) => ({ path: relative(f.path), size: f.size_bytes })), () => true) : null
+  const filesPanel = (
+    <VStack gap={3}>
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <StackItem size="fill">
+          {hiddenCount > 0 ? <Button label={showHidden ? 'Hide hidden files' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'file' : 'files'}`} size="sm" variant="ghost" onClick={() => setShowHidden((v) => !v)} /> : null}
+        </StackItem>
+        <input ref={fileInput} type="file" hidden aria-label="Add a file" onChange={(e) => { void upload(e.target.files?.[0] ?? null); e.target.value = '' }} />
+        <Button label="Upload file" size="sm" isLoading={uploading} isDisabled={uploading || (state !== undefined && state !== 'running')} onClick={() => fileInput.current?.click()} />
+      </HStack>
+      {picked && uploading && <Text type="supporting" color="secondary">{`Uploading ${picked.name}`}</Text>}
+      {state !== undefined && state !== 'running' && <Text type="supporting" color="secondary">Uploads need a running environment.</Text>}
+      {filesProblem === 'not-running' && (
+        <Banner status="info" title="Start the environment to see its files." endContent={notRunning ? <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} /> : undefined} />
+      )}
+      {filesProblem === 'unreachable' && <Banner status="warning" title="Couldn't reach the sandbox to list files." endContent={<Button label="Retry" size="sm" onClick={() => void loadFiles()} />} />}
+      {filesProblem === 'other' && <Banner status="warning" title="Couldn't list the files." />}
+      {shown === null ? (
+        <Skeleton height={120} />
+      ) : tree === null ? (
+        <Text type="supporting" color="secondary" role="status">{hiddenCount > 0 ? 'Only hidden files so far.' : 'No files yet. Files the agent writes in /workspace show here.'}</Text>
+      ) : (
+        <FileTree
+          tree={tree}
+          expandTop
+          onOpen={(path) => window.open(fileHref(environmentId, `${WORKSPACE}${path}`, false), '_blank', 'noopener')}
+          renderEnd={(node) => node.kind === 'file' ? (
+            <>
+              {node.size !== undefined && <Text type="supporting" color="secondary">{formatBytes(node.size)}</Text>}
+              <Link href={fileHref(environmentId, `${WORKSPACE}${node.path}`, true)} aria-label={`Download ${node.path}`} onClick={(e) => e.stopPropagation()}><Icon icon={ArrowDownTrayIcon} size="sm" /></Link>
+            </>
+          ) : null}
+        />
+      )}
+      {next !== undefined && <Button label="Show more files" onClick={() => void more()} />}
+    </VStack>
+  )
+
+  const terminalPanel = (
+    <VStack gap={2}>
+      <Terminal environmentId={environmentId} isDisabled={state !== undefined && state !== 'running' && state !== 'stopped'} />
+    </VStack>
+  )
+
+  const chatsPanel = chats.length === 0 ? (
+    <EmptyState title="No chats here yet." description={chatsByEnv ? 'Chats you start in this environment are listed here.' : 'Chats on this environment will show here once they load.'} actions={canChat ? <Button label="New chat here" onClick={startChat} /> : undefined} />
+  ) : (
+    <ul aria-label="Chats" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+      {chats.slice(0, 50).map((chat) => (
+        <li key={chat.id}>
+          <HStack gap={3} vAlign="center" padding={2}>
+            <StackItem size="fill"><Link href={`/c/${encodeURIComponent(chat.id)}`}><Text maxLines={1}>{sessionTitle(chat)}</Text></Link></StackItem>
+            <Text type="supporting" color="secondary">{ago(chat.last_active_at)}</Text>
+          </HStack>
+        </li>
+      ))}
+    </ul>
+  )
+
+  const brokenSetup = env?.status === 'failed' && env.provider === 'sandbox' && state === 'failed'
 
   return (
     <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
       <VStack gap={5}>
         <Link href="/sandboxes">Sandboxes</Link>
-        <VStack gap={3}>
-          <HStack gap={3} vAlign="center" wrap="wrap">
-            <StackItem size="fill">
-              <VStack gap={1}>
-                {env ? <Heading level={1} type="display-2" maxLines={1}>{environmentName(env)}</Heading> : <Skeleton width={280} height={36} />}
-                {env && look && (
-                  <HStack gap={3} vAlign="center" wrap="wrap">
-                    <HStack gap={1.5} vAlign="center"><StatusDot variant={look.variant} label={look.text} /><Text weight="medium">{look.text}</Text></HStack>
-                    <Text type="supporting" color="secondary">{providerTitle(env.provider)}</Text>
-                    {env.sandbox?.place && <Text type="supporting" color="secondary">{`Runs on ${placeName}`}</Text>}
-                    {env.sandbox && gpuText && <Text type="supporting" color="secondary">{gpuText}</Text>}
-                    {env.sandbox?.image && <Text type="supporting" color="secondary">{env.sandbox.image}</Text>}
-                    <Text type="supporting" color="secondary">{used ?? `Created ${shortDate(env.created_at)}`}</Text>
-                    <Text type="supporting" color="secondary">{shortId(env.id)}</Text>
-                  </HStack>
-                )}
-              </VStack>
-            </StackItem>
-            {env && canChatIn(env) && <Button label="New chat here" variant="primary" onClick={() => router.push(`/?environment=${encodeURIComponent(environmentId)}`)} />}
-          </HStack>
+        <HStack gap={3} vAlign="start" wrap="wrap">
+          <StackItem size="fill">
+            <VStack gap={1}>
+              {env ? (
+                <HStack gap={1} vAlign="center">
+                  <Heading level={1} type="display-2" maxLines={1}>{cardName(env)}</Heading>
+                  <IconButton label="Rename" size="sm" variant="ghost" icon={<Icon icon={PencilIcon} />} isDisabled={acting !== null} onClick={() => setRenaming(true)} />
+                </HStack>
+              ) : <Skeleton width={280} height={36} />}
+              {line && (
+                <HStack gap={2} vAlign="center">
+                  <StatusDot variant={line.variant} label={line.text} />
+                  <Text weight="medium" color={line.variant === 'neutral' ? 'secondary' : 'primary'}>{line.text}</Text>
+                </HStack>
+              )}
+            </VStack>
+          </StackItem>
           {env && (
-            <HStack gap={2} vAlign="center" wrap="wrap" role="group" aria-label="Environment actions">
-              {state === 'stopped' && <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} />}
-              {state === 'running' && <Button label="Stop" size="sm" isLoading={acting === 'stop'} isDisabled={acting !== null} onClick={() => void act('stop')} />}
-              {state !== undefined && state !== 'gone' && !settingUp && canReset && <Button label="Reset" size="sm" isDisabled={acting !== null} onClick={() => setConfirmReset(true)} />}
-              <Button label="Rename" size="sm" isDisabled={acting !== null} onClick={() => setRenaming(true)} />
-              {env.session_id && <Button label="Open its chat" size="sm" variant="ghost" onClick={() => router.push(`/c/${encodeURIComponent(env.session_id!)}`)} />}
-              {state !== 'gone' && <StackItem size="fill">{null}</StackItem>}
-              {state !== 'gone' && <Button label="Delete environment" size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} />}
+            <HStack gap={2} vAlign="center" role="group" aria-label="Environment actions">
+              {canChat && <Button label="New chat here" variant="primary" onClick={startChat} />}
+              {state === 'stopped' && <Button label="Start" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} />}
+              {state === 'running' && <Button label="Stop" isLoading={acting === 'stop'} isDisabled={acting !== null} onClick={() => void act('stop')} />}
+              <MoreMenu label="More actions" alignment="end" isDisabled={acting !== null} items={menu} />
             </HStack>
           )}
-        </VStack>
-        {env?.error && <Banner status="error" title={env.error} />}
+        </HStack>
+        {env?.error && state !== 'failed' && <Banner status="error" title={env.error} />}
         {state === 'unknown' && <Banner status="warning" title="Agentry Sandbox is not answering, so this environment's state is unknown." />}
         {error !== null && <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />}
 
-        {state === 'gone' ? (
-          <EmptyState
-            title="This sandbox is gone"
-            description="Its files can't be recovered. Delete this environment, then create a new one from Sandboxes."
-            actions={
-              <HStack gap={2}>
-                <Button label="Delete environment" variant="destructive" onClick={() => setConfirmDelete(true)} />
-                <Button label="Back to sandboxes" onClick={() => router.push('/sandboxes')} />
-              </HStack>
-            }
-          />
-        ) : settingUp ? (
-          <Banner status="info" title="Setting up this sandbox. Its terminal and files appear when it is ready." description={env?.sandbox?.progress ? setupProgressText(env.sandbox.progress) : undefined} />
-        ) : env?.status === 'failed' && env.provider === 'sandbox' && state === 'failed' ? null : (
-        <VStack gap={5}>
-        {env?.provider === 'sandbox' && (
-          <VStack gap={2}>
-            <Heading level={2}>Terminal</Heading>
-            <Terminal environmentId={environmentId} isDisabled={state !== undefined && state !== 'running' && state !== 'stopped'} />
-          </VStack>
-        )}
-        <VStack gap={2}>
-          <HStack gap={3} vAlign="end" wrap="wrap">
-            <StackItem size="fill"><Heading level={2}>Files</Heading></StackItem>
-            {hiddenCount > 0 && (
-              <Button label={showHidden ? 'Hide hidden files' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'file' : 'files'}`} size="sm" variant="ghost" onClick={() => setShowHidden((v) => !v)} />
-            )}
-          </HStack>
-          <FileInput label="Add a file" isLabelHidden description={`Upload into the workspace, up to ${formatBytes(MAX_UPLOAD)}.`} value={picked} onChange={(v) => void upload(Array.isArray(v) ? (v[0] ?? null) : v)} isDisabled={uploading || (state !== undefined && state !== 'running')} />
-          {state !== undefined && state !== 'running' && <Text type="supporting" color="secondary">Uploads need a running environment.</Text>}
-          {filesProblem === 'not-running' && (
-            <Banner status="info" title="Start the environment to see its files." endContent={notRunning ? <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} /> : undefined} />
-          )}
-          {filesProblem === 'unreachable' && <Banner status="warning" title="Couldn't reach the sandbox to list files." endContent={<Button label="Retry" size="sm" onClick={() => void loadFiles()} />} />}
-          {filesProblem === 'other' && <Banner status="warning" title="Couldn't list the files." />}
-          {shown === null ? (
-            <Skeleton height={120} />
-          ) : shown.length === 0 ? (
-            <Text type="supporting" color="secondary" role="status">{hiddenCount > 0 ? 'Only hidden files so far.' : 'No files yet. Files the agent writes appear here.'}</Text>
-          ) : (
-            <ul aria-label="Files" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {shown.map((file) => (
-                <li key={file.path}>
-                  <HStack gap={3} vAlign="center" padding={2}>
-                    <Icon icon={DocumentIcon} size="sm" color="secondary" />
-                    <StackItem size="fill">
-                      <Link href={fileHref(environmentId, file.path, false)} target="_blank">
-                        <Text maxLines={1}>{relative(file.path)}</Text>
-                      </Link>
-                    </StackItem>
-                    <Text type="supporting" color="secondary">{formatBytes(file.size_bytes)}</Text>
-                    <Link href={fileHref(environmentId, file.path, true)} aria-label={`Download ${file.path}`}>
-                      <Icon icon={ArrowDownTrayIcon} size="sm" />
-                    </Link>
+        <div {...stylex.props(layout.columns)}>
+          <aside {...stylex.props(layout.about)}>{about}</aside>
+          <div {...stylex.props(layout.main)}>
+            {state === 'gone' ? (
+              <EmptyState
+                title="This sandbox is gone"
+                description="Its files can't be recovered. Delete this environment, then create a new one from Sandboxes."
+                actions={
+                  <HStack gap={2}>
+                    <Button label="Delete environment" variant="destructive" onClick={() => setConfirmDelete(true)} />
+                    <Button label="Back to sandboxes" onClick={() => router.push('/sandboxes')} />
                   </HStack>
-                </li>
-              ))}
-            </ul>
-          )}
-          {next !== undefined && <Button label="Show more files" onClick={() => void more()} />}
-        </VStack>
-        </VStack>
-        )}
+                }
+              />
+            ) : settingUp ? (
+              <Banner status="info" title="Setting up this sandbox. Its terminal and files appear when it is ready." description={env?.sandbox?.progress ? setupProgressText(env.sandbox.progress) : undefined} />
+            ) : brokenSetup ? null : (
+              <VStack gap={3}>
+                <TabList value={tab} onChange={(v) => setTab(v as typeof tab)} role="tablist" hasDivider aria-label="Environment">
+                  {tabs.map((t) => (
+                    <Tab key={t.value} value={t.value} label={t.label} panelId="environment-panel" endContent={t.value === 'chats' && chats.length > 0 ? <Text type="supporting" color="secondary">{chats.length}</Text> : undefined} />
+                  ))}
+                </TabList>
+                <div role="tabpanel" id="environment-panel" aria-label={tabs.find((t) => t.value === tab)?.label}>
+                  {tab === 'terminal' && env?.provider === 'sandbox' ? terminalPanel : tab === 'chats' ? chatsPanel : filesPanel}
+                </div>
+              </VStack>
+            )}
+          </div>
+        </div>
       </VStack>
       <Dialog isOpen={confirmReset} onOpenChange={(open: boolean) => { setConfirmReset(open); if (!open) setKeepWorkspace(true) }} purpose="form" width={440}>
         <DialogHeader title="Reset this environment?" onOpenChange={(open: boolean) => { setConfirmReset(open); if (!open) setKeepWorkspace(true) }} />

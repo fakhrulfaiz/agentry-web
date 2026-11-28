@@ -22,6 +22,7 @@ const apiMock = vi.hoisted(() => ({
   deleteSandboxEnvironment: vi.fn(),
   createSandboxTemplate: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
+  listSessions: vi.fn(),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
@@ -37,6 +38,7 @@ const template = {
 const provider = { object: 'sandbox.provider', name: 'local', default: true, capabilities: { templateFields: ['files'], files: true, exec: true } }
 
 beforeEach(() => {
+  apiMock.listSessions.mockResolvedValue({ object: 'list', data: [], has_more: false, first_id: null, last_id: null })
   apiMock.listSandboxEnvironments.mockResolvedValue(page([env]))
   apiMock.listSandboxTemplates.mockResolvedValue(page([template]))
   apiMock.listSandboxProviders.mockResolvedValue(page([provider]))
@@ -51,11 +53,11 @@ describe('SandboxesPage', () => {
   it('lists environments with status, provider and template, then switches to templates and providers', async () => {
     const user = userEvent.setup()
     render(<SandboxesPage />)
-    expect(await screen.findByText('Unnamed environment')).toBeInTheDocument()
+    expect(await screen.findByText('Server workspace')).toBeInTheDocument()
     expect(screen.getByText('Ready')).toBeInTheDocument()
     expect(screen.getAllByText('This server').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Python data').length).toBeGreaterThan(0)
-    expect(screen.getByRole('link', { name: 'Unnamed environment' })).toHaveAttribute('href', '/sandboxes/env_abc')
+    expect(screen.getByRole('link', { name: 'Server workspace' })).toHaveAttribute('href', '/sandboxes/env_abc')
 
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     expect(screen.getByText('This server cannot apply internet access and packages')).toBeInTheDocument()
@@ -99,9 +101,8 @@ describe('SandboxesPage', () => {
     const user = userEvent.setup()
     render(<SandboxesPage />)
     expect(await screen.findByText('Data box')).toBeInTheDocument()
-    expect(screen.getByText('Stopped')).toBeInTheDocument()
-    expect(screen.getByText('python:3.13')).toBeInTheDocument()
-    expect(screen.getByText('Used 2 min ago')).toBeInTheDocument()
+    expect(screen.getByText('Stopped, last used 2 min ago')).toBeInTheDocument()
+    expect(screen.getAllByText('python:3.13').length).toBeGreaterThan(0)
     await user.click(screen.getByRole('button', { name: 'Providers' }))
     expect(screen.getAllByText('Agentry Sandbox is not reachable').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
@@ -155,19 +156,18 @@ describe('SandboxesPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     const link = await screen.findByRole('link', { name: 'Data box' })
     expect(link).toHaveAttribute('href', '/sandboxes/env_new')
-    expect(screen.getAllByText('Setting up…').length).toBeGreaterThan(0)
-    expect(screen.getByText(/This can take a few minutes/)).toBeInTheDocument()
+    expect(screen.getAllByText('Setting up').length).toBeGreaterThan(0)
     // The list refreshes on its own until the sandbox is ready.
     apiMock.listSandboxEnvironments.mockResolvedValue(page([env, { ...setting, status: 'connected', sandbox: { state: 'running' } }]))
-    expect(await screen.findByText('Running', undefined, { timeout: 6000 })).toBeInTheDocument()
-    expect(screen.queryByText('Setting up…')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Setting up')).not.toBeInTheDocument(), { timeout: 6000 })
+    expect(screen.getAllByText('Running').length).toBeGreaterThan(1)
   }, 10000)
 
   it('shows the setup stage on a card that is still setting up', async () => {
     const setting = { ...env, id: 'env_new', name: 'Data box', provider: 'sandbox', status: 'pending', template_id: undefined, sandbox: { state: 'provisioning', progress: { stage: 'pulling_image', updated_at: 1 } } }
     apiMock.listSandboxEnvironments.mockResolvedValue(page([env, setting]))
     render(<SandboxesPage />)
-    expect(await screen.findByText('Downloading the image…')).toBeInTheDocument()
+    expect(await screen.findByText('Setting up: Downloading the image')).toBeInTheDocument()
   })
 
   it('shows a failed environment with its reason and deletes it', async () => {
@@ -177,7 +177,7 @@ describe('SandboxesPage', () => {
     const user = userEvent.setup()
     render(<SandboxesPage />)
     expect(await screen.findByText(/limit 5/)).toBeInTheDocument()
-    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText(/^Failed: /)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'More options for Data box' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete environment' }))
@@ -248,5 +248,74 @@ describe('SandboxesPage', () => {
     expect(await screen.findByRole('tab', { name: /Startup/ })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /Software/ })).not.toBeInTheDocument()
     expect(screen.getByText(/This server does not apply image, packages/)).toBeInTheDocument()
+  })
+
+  describe('the rack', () => {
+    const now = Math.floor(Date.now() / 1000)
+    const sbx = (id: string, name: string, sandbox: object, extra: object = {}) => ({ ...env, id, name, provider: 'sandbox', type: 'openai_hosted', template_id: undefined, sandbox, ...extra })
+    const sbxTemplate = { ...template, id: 'tpl_s', name: 'Data science', provider: 'sandbox', unsupported_fields: [], network: { access: 'enabled', allowed_domains: [] }, resources: { cpus: 2, memory_mb: 4096 } }
+
+    it('groups machines into Running, Stopped and This server, with a summary', async () => {
+      apiMock.listSandboxEnvironments.mockResolvedValue(page([
+        sbx('env_a', 'Alpha', { state: 'running', started_at: now - 7300 }),
+        sbx('env_b', 'Beta', { state: 'stopped' }),
+        sbx('env_c', 'Gamma', { state: 'failed' }, { status: 'failed', error: 'no room' }),
+        env,
+      ]))
+      render(<SandboxesPage />)
+      expect(await screen.findByText('1 running, 2 stopped, 1 on this server')).toBeInTheDocument()
+      const running = screen.getByRole('group', { name: 'Running' })
+      const stopped = screen.getByRole('group', { name: 'Stopped' })
+      const server = screen.getByRole('group', { name: 'This server' })
+      expect(within(running).getByText('Alpha')).toBeInTheDocument()
+      expect(within(running).getByText('Running for 2 h')).toBeInTheDocument()
+      expect(within(stopped).getByText('Beta')).toBeInTheDocument()
+      expect(within(stopped).getByText('Failed: no room')).toBeInTheDocument()
+      expect(within(server).getByText('Server workspace')).toBeInTheDocument()
+    })
+
+    it('hides sections that are empty', async () => {
+      apiMock.listSandboxEnvironments.mockResolvedValue(page([sbx('env_a', 'Alpha', { state: 'running' })]))
+      render(<SandboxesPage />)
+      await screen.findByText('Alpha')
+      expect(screen.queryByRole('group', { name: 'Stopped' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'This server' })).not.toBeInTheDocument()
+    })
+
+    it('shows template, facts and the number of chats, and Stop and Start work from the card', async () => {
+      const running = sbx('env_a', 'Alpha', { state: 'running', image: 'ghcr.io/x/agentry-sandbox:1', gpus: 1 }, { template_id: 'tpl_s' })
+      apiMock.listSandboxTemplates.mockResolvedValue(page([sbxTemplate]))
+      apiMock.listSandboxEnvironments.mockResolvedValue(page([running]))
+      apiMock.listSessions.mockResolvedValue({ object: 'list', has_more: false, first_id: null, last_id: null, data: [
+        { id: 's1', environment: { type: 'sandbox', environment_id: 'env_a' }, metadata: {} },
+        { id: 's2', environment: { type: 'sandbox', environment_id: 'env_a' }, metadata: {} },
+        { id: 's3', environment: null, metadata: {} },
+      ] })
+      apiMock.stopSandboxEnvironment.mockResolvedValue({ ...running, sandbox: { state: 'stopped' } })
+      apiMock.startSandboxEnvironment.mockResolvedValue(running)
+      const user = userEvent.setup()
+      render(<SandboxesPage />)
+      expect(await screen.findByText('Data science')).toBeInTheDocument()
+      expect(screen.getByText('agentry-sandbox:1')).toBeInTheDocument()
+      expect(screen.getByText('2 CPU')).toBeInTheDocument()
+      expect(screen.getByText('4 GB')).toBeInTheDocument()
+      expect(screen.getByText('1 GPU')).toBeInTheDocument()
+      expect(screen.getByText('Internet on')).toBeInTheDocument()
+      expect(await screen.findByText('2 chats')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'New chat here' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Stop' }))
+      await waitFor(() => expect(apiMock.stopSandboxEnvironment).toHaveBeenCalledWith('env_a'))
+      await user.click(await screen.findByRole('button', { name: 'Start' }))
+      await waitFor(() => expect(apiMock.startSandboxEnvironment).toHaveBeenCalledWith('env_a'))
+    })
+
+    it('refreshes the states when the window regains focus', async () => {
+      apiMock.listSandboxEnvironments.mockResolvedValue(page([sbx('env_a', 'Alpha', { state: 'running' })]))
+      render(<SandboxesPage />)
+      await screen.findByText('Alpha')
+      apiMock.listSandboxEnvironments.mockResolvedValue(page([sbx('env_a', 'Alpha', { state: 'stopped' })]))
+      window.dispatchEvent(new Event('focus'))
+      expect(await screen.findByRole('group', { name: 'Stopped' })).toBeInTheDocument()
+    })
   })
 })

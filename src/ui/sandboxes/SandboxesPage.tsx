@@ -15,10 +15,8 @@ import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { Layout, LayoutContent, LayoutFooter, StackItem } from '@astryxdesign/core/Layout'
-import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
-import { Spinner } from '@astryxdesign/core/Spinner'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -26,9 +24,7 @@ import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import {
   CircleStackIcon,
-  ClockIcon,
   CommandLineIcon,
-  CubeIcon,
   CubeTransparentIcon,
   DocumentDuplicateIcon,
   ExclamationTriangleIcon,
@@ -43,14 +39,17 @@ import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTempl
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { IconTile } from '@/ui/shared/IconTile'
-import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, setupProgressText, shortDate, shortId, templateSummary } from './format'
+import { environmentName, fieldWords, providerBlurb, providerTitle, templateSummary } from './format'
 import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
 import { TemplateDetailsDialog } from './TemplateDetails'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
+import { EnvironmentCard, Section } from './EnvironmentCard'
+import { groupEnvironments, summarize } from './overview'
+import { useEnvironmentChats } from './use-environment-chats'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
 import { useCachedState } from '@/ui/page-cache'
 
-const COLUMN_WIDTH = 880
+const COLUMN_WIDTH = 1000
 type View = 'environments' | 'templates' | 'providers'
 /** While any environment is changing state, the list refreshes this often. */
 const SETTLING_POLL_MS = 3000
@@ -264,8 +263,24 @@ export function SandboxesPage() {
     return () => clearInterval(timer)
   }, [anySettling])
 
+  const groups = groupEnvironments(environments ?? [])
+  const places = (providers ?? []).flatMap((p) => p.places ?? [])
+  const chatsByEnv = useEnvironmentChats()
+  // Coming back to the tab shows the machines' current state.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return
+      api.listSandboxEnvironments().then((page) => setEnvironments(page.data), () => undefined)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
+
   const loading = environments === null || templates === null || providers === null
-  const templateName = (id?: string) => (id ? templates?.find((t) => t.id === id)?.name || 'Deleted template' : null)
 
   async function removeTemplate() {
     if (!removing) return
@@ -285,6 +300,7 @@ export function SandboxesPage() {
         <VStack gap={1}>
           <Heading level={1} type="display-2">Sandboxes</Heading>
           <Text color="secondary">Where your agents run their commands and keep their files.</Text>
+          {view === 'environments' && environments && environments.length > 0 && <Text type="supporting" color="secondary">{summarize(environments)}</Text>}
         </VStack>
         <HStack gap={3} vAlign="center" wrap="wrap">
           <StackItem size="fill">
@@ -310,52 +326,27 @@ export function SandboxesPage() {
               actions={<Button label="New environment" onClick={() => setDialog('environment')} />}
             />
           ) : (
-            <CardGrid label="Environments">
-              {environments.map((env) => {
-                const look = environmentLook(env)
-                const from = templateName(env.template_id)
-                const used = lastUsed(env.sandbox?.last_used_at)
-                const state = env.sandbox?.state
-                const busy = acting === env.id
-                const menu = [
-                  { label: 'Rename', onClick: () => setRenaming(env) },
-                  ...(state === 'stopped' ? [{ label: 'Start', onClick: () => void lifecycle(env, 'start') }] : []),
-                  ...(state === 'running' ? [{ label: 'Stop', onClick: () => void lifecycle(env, 'stop') }] : []),
-                  { type: 'divider' as const },
-                  { label: 'Delete', variant: 'destructive' as const, onClick: () => setDeletingEnv(env) },
-                ]
-                const setting = env.status === 'pending' || env.sandbox?.state === 'provisioning'
-                return (
-                  <EntityCard
-                    key={env.id}
-                    href={`/sandboxes/${env.id}`}
-                    title={environmentName(env)}
-                    leading={<IconTile icon={providerIcon(env.provider)} hue={look.variant === 'success' ? (env.provider === 'local' ? 'teal' : 'blue') : look.variant === 'error' ? 'red' : 'slate'} />}
-                    trailing={
-                      <HStack gap={2} vAlign="center">
-                        {busy || setting ? <Spinner size="sm" /> : <StatusDot variant={look.variant} label={look.text} />}
-                        <Text type="supporting" color="secondary">{setting ? setupProgressText(env.sandbox?.progress) : look.text}</Text>
-                        <MoreMenu label={`More options for ${environmentName(env)}`} size="sm" alignment="end" isDisabled={busy} items={menu} />
-                      </HStack>
-                    }
-                    footer={
-                      <>
-                        <Meta icon={providerIcon(env.provider)}>{providerTitle(env.provider)}</Meta>
-                        {from && <Meta icon={DocumentDuplicateIcon}>{from}</Meta>}
-                        {env.sandbox?.image && <Meta icon={CubeIcon}>{env.sandbox.image}</Meta>}
-                        {used ? <Meta icon={ClockIcon}>{used}</Meta> : <Meta icon={FolderOpenIcon}>{`Created ${shortDate(env.created_at)}`}</Meta>}
-                      </>
-                    }
-                  >
-                    {env.error
-                      ? <Text type="supporting" color="secondary" maxLines={2}>{env.error}</Text>
-                      : setting
-                        ? <Text type="supporting" color="secondary">{env.provider === 'sandbox' ? 'Starting the sandbox and installing its software. This can take a few minutes.' : 'Preparing the folder.'}</Text>
-                        : !env.name && <Text type="supporting" color="secondary">{shortId(env.id)}</Text>}
-                  </EntityCard>
-                )
-              })}
-            </CardGrid>
+            <VStack gap={5}>
+              {([['Running', groups.running], ['Stopped', groups.stopped], ['This server', groups.server]] as const).map(([title, list]) =>
+                list.length === 0 ? null : (
+                  <Section key={title} title={title} count={list.length}>
+                    {list.map((env) => (
+                      <EnvironmentCard
+                        key={env.id}
+                        env={env}
+                        template={templates.find((t) => t.id === env.template_id)}
+                        places={places}
+                        chats={chatsByEnv ? (chatsByEnv.get(env.id)?.length ?? 0) : null}
+                        busy={acting === env.id}
+                        onRename={() => setRenaming(env)}
+                        onDelete={() => setDeletingEnv(env)}
+                        onLifecycle={(action) => void lifecycle(env, action)}
+                      />
+                    ))}
+                  </Section>
+                ),
+              )}
+            </VStack>
           )
         ) : view === 'templates' ? (
           templates.length === 0 ? (
