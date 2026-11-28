@@ -201,13 +201,13 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
   }
   const key = (action: 'down' | 'up') => (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!inControl) return
-    // Esc is never sent: it leaves the frame, so keyboard users are not trapped.
-    if (e.key === 'Escape') {
+    const composingKey = isComposingKey({ isComposing: e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode })
+    const composingNow = composing.current || composingKey
+    // Escape cancels an IME candidate first; only a plain Escape leaves the frame, so keyboard users are not trapped.
+    if (e.key === 'Escape' && !composingNow) {
       if (action === 'down') e.currentTarget.blur()
       return
     }
-    const composingKey = isComposingKey({ isComposing: e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode })
-    const composingNow = composing.current || composingKey
     // Let the browser run its IME: cancelling a composing keydown can stop composition altogether.
     if (!composingNow) e.preventDefault()
     send(keyEvent(e, action, composingNow))

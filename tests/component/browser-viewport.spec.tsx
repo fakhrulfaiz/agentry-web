@@ -174,6 +174,21 @@ describe('Browser viewport', () => {
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: expect.anything() }))
   })
 
+  it('lets Escape cancel an IME composition instead of leaving control', () => {
+    const send = vi.fn<(event: BrowserInputEvent) => void>()
+    render(<BrowserViewport {...base} inControl send={send} />)
+    const field = input()
+    fireEvent.compositionStart(field, { data: 'に' })
+    fireEvent.keyDown(field, { key: 'Escape', code: 'Escape', keyCode: 229, isComposing: true })
+    expect(field).toHaveFocus()
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'key', text: expect.anything() }))
+    send.mockClear()
+    fireEvent.compositionEnd(field, { data: '' })
+    fireEvent.keyDown(field, { key: 'Escape', code: 'Escape', keyCode: 27 })
+    expect(field).not.toHaveFocus()
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('stops suppressing typed text when the input loses focus mid-composition', () => {
     const send = vi.fn<(event: BrowserInputEvent) => void>()
     render(<BrowserViewport {...base} inControl send={send} />)
