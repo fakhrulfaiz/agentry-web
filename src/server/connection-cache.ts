@@ -1,5 +1,4 @@
 import 'server-only'
-import { createHash } from 'node:crypto'
 import type { ConnectedInventory } from './connector-inventory'
 
 /** Why connection status is unknown: Composio refused the key, or could not be reached. */
@@ -20,7 +19,8 @@ export interface ConnectionSnapshot {
 }
 
 interface Entry {
-  keyHash: string
+  /** Which stored key the entry belongs to (the API's `last4` and `updated_at`). */
+  stamp: string
   inventory: ConnectedInventory | null
   checkedAt: number
   problem?: ConnectionProblem
@@ -29,7 +29,8 @@ interface Entry {
 }
 
 export interface ConnectionCacheOptions {
-  load: (key: string, slugs: string[]) => Promise<LoadResult>
+  /** Reads the accounts with the caller's Agentry credential. */
+  load: (authorization: string, slugs: string[]) => Promise<LoadResult>
   now?: () => number
   /** Answers younger than this are served without checking. */
   freshMs?: number
@@ -45,8 +46,6 @@ export interface ConnectionCacheOptions {
  * failures are remembered briefly (so a refused key does not slow every page),
  * and a failed refresh keeps the last good answer.
  */
-const hashOf = (key: string) => createHash('sha256').update(key).digest('hex')
-
 export function createConnectionCache(options: ConnectionCacheOptions) {
   const { load, now = Date.now, freshMs = 60_000, staleMs = 24 * 3_600_000, failureMs = 60_000 } = options
   const entries = new Map<string, Entry>()
@@ -58,8 +57,8 @@ export function createConnectionCache(options: ConnectionCacheOptions) {
     ...(entry.problem ? { problem: entry.problem } : {}),
   })
 
-  function refresh(owner: string, entry: Entry, key: string, slugs: string[]): Promise<void> {
-    entry.inflight ??= load(key, slugs)
+  function refresh(entry: Entry, authorization: string, slugs: string[]): Promise<void> {
+    entry.inflight ??= load(authorization, slugs)
       .catch((): LoadResult => ({ ok: false, reason: 'unavailable' }))
       .then((result) => {
         const at = now()
@@ -73,28 +72,33 @@ export function createConnectionCache(options: ConnectionCacheOptions) {
   }
 
   return {
-    async get(owner: string, key: string, slugs: string[], opts: { force?: boolean } = {}): Promise<ConnectionSnapshot> {
-      const keyHash = hashOf(key)
+    /**
+     * @param owner - cache slot of the signed-in user.
+     * @param stamp - identifies the stored key; a different stamp starts over.
+     * @param opts - `force` checks now; `authorization` is passed to `load`.
+     */
+    async get(owner: string, stamp: string, slugs: string[], opts: { force?: boolean; authorization?: string } = {}): Promise<ConnectionSnapshot> {
+      const auth = opts.authorization ?? ''
       let entry = entries.get(owner)
-      if (!entry || entry.keyHash !== keyHash) {
-        entry = { keyHash, inventory: null, checkedAt: 0 }
+      if (!entry || entry.stamp !== stamp) {
+        entry = { stamp, inventory: null, checkedAt: 0 }
         entries.set(owner, entry)
       }
       const t = now()
       const recentFailure = entry.failedAt !== undefined && t - entry.failedAt < failureMs
       if (opts.force) {
-        await refresh(owner, entry, key, slugs)
+        await refresh(entry, auth, slugs)
       } else if (entry.inventory !== null && t - entry.checkedAt < staleMs) {
-        if (t - entry.checkedAt >= freshMs && !recentFailure) void refresh(owner, entry, key, slugs)
+        if (t - entry.checkedAt >= freshMs && !recentFailure) void refresh(entry, auth, slugs)
       } else if (!recentFailure) {
-        await refresh(owner, entry, key, slugs)
+        await refresh(entry, auth, slugs)
       }
       return snapshot(entry)
     },
-    /** The owner's snapshot for `key` without checking anything; undefined when never asked with that key. */
-    peek(owner: string, key: string): ConnectionSnapshot | undefined {
+    /** The owner's snapshot for `stamp` without checking anything; undefined when never asked with that stamp. */
+    peek(owner: string, stamp: string): ConnectionSnapshot | undefined {
       const entry = entries.get(owner)
-      return entry && entry.keyHash === hashOf(key) ? snapshot(entry) : undefined
+      return entry && entry.stamp === stamp ? snapshot(entry) : undefined
     },
     forget(owner: string): void {
       entries.delete(owner)

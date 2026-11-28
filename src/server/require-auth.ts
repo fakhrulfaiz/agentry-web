@@ -69,3 +69,15 @@ export async function requirePageSession(): Promise<{ identity: Identity; csrf: 
   if (!identity || !session.csrf) redirect('/login')
   return { identity, csrf: session.csrf }
 }
+
+/**
+ * For pages, which cannot write cookies: the `Authorization` value for Agentry when it can be used
+ * as is (an API key, or a Keycloak token valid for at least 10 more seconds); `undefined` otherwise
+ * (signed out, or a token that needs a refresh, which a route handler does).
+ */
+export async function pageAuthorization(): Promise<string | undefined> {
+  const credential = (await getSession()).credential
+  if (!credential) return undefined
+  if (credential.kind === 'apikey') return `Bearer ${credential.key}`
+  return credential.expiresAt - Date.now() > 10_000 ? `Bearer ${credential.accessToken}` : undefined
+}

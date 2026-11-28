@@ -1,8 +1,6 @@
 import { agentryHeaders, agentryUrl, jsonError } from '@/server/agentry'
 import { allowedPath, ID_SEGMENT } from '@/server/allowlist'
 import { withAgentConnectorNote } from '@/server/agent-connectors'
-import { getKey } from '@/server/connectors-store'
-import { DEFAULT_CONNECTORS_MCP_URL, withConnectorTool } from '@/server/connector-tools'
 import { checkCsrf } from '@/server/csrf'
 import { authFailure, requireCredential } from '@/server/require-auth'
 import { relay, signedOut } from '@/server/upstream'
@@ -12,21 +10,6 @@ export const dynamic = 'force-dynamic'
 
 const PREFIX = '/api/agentry'
 const STATE_CHANGING = new Set(['POST', 'DELETE'])
-
-/** Session create: adds the owner's connector tool to the body when they stored a key; otherwise the bytes pass through. */
-async function withOwnerKey(session: { identity?: { owner: string } }, body: ArrayBuffer): Promise<ArrayBuffer> {
-  const key = await getKey(session.identity?.owner || 'apikey')
-  if (!key) return body
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(new TextDecoder().decode(body))
-  } catch {
-    return body
-  }
-  const url = process.env.AGENTRY_WEB_COMPOSIO_MCP_URL || DEFAULT_CONNECTORS_MCP_URL
-  const next = withConnectorTool(parsed, key, url)
-  return next === parsed ? body : (new TextEncoder().encode(JSON.stringify(next)).buffer as ArrayBuffer)
-}
 
 /** Session create with a saved agent: adds the agent's soft app limit to the instructions. */
 async function withAgentNote(authorization: string, body: ArrayBuffer): Promise<ArrayBuffer> {
@@ -72,7 +55,6 @@ async function handle(req: Request): Promise<Response> {
   let body = req.method === 'GET' ? undefined : await req.arrayBuffer()
   if (body && req.method === 'POST' && path === '/agents/sessions') {
     body = await withAgentNote(auth.authorization, body)
-    body = await withOwnerKey(auth.session, body)
   }
 
   let upstream: Response
