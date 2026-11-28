@@ -88,6 +88,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [ ] Finish sandbox snapshots (`agentry-sandbox` branch `feat/snapshots`, WIP, unmerged). M.
 - [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.
+- [ ] Projects sidebar (built 2026-11-27 by an OpenCode session, merged to `develop` 2026-11-28; spec `docs/superpowers/specs/2026-11-27-projects-sidebar-design.md`, review log in `docs/superpowers/reviews/`): live check owed (create a project, start a chat from it, move a chat); "New project"/"Archived" sidebar links are centred and unstyled next to the nav items. S.
 
 **P2 (valuable, bigger)**
 - [ ] F3 workspace panel remainder: live file tree, sandbox port preview, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
