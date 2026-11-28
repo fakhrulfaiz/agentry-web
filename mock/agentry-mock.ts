@@ -422,8 +422,9 @@ async function script(s: MockSession, turnId: string, text: string, signal: Abor
 
 /**
  * A subagent, as the backend shows one: a child with its own turns and items
- * (each item carries `subagent_id`), never on the parent stream. It outlives
- * the parent turn that started it.
+ * (each item carries `subagent_id`). Its items are not parent frames; like the API
+ * (since 2026-11-26) the parent stream carries live-only `agent.session.subagent.*`
+ * events for it. It outlives the parent turn that started it.
  */
 async function runChild(s: MockSession, childId: string, text: string): Promise<void> {
   const never = new AbortController().signal
@@ -433,9 +434,15 @@ async function runChild(s: MockSession, childId: string, text: string): Promise<
     items: [],
   }
   s.subagents.push(child)
+  const live = (body: Record<string, unknown>) => emitEphemeral(s, body as WireBody)
+  live({ type: 'agent.session.subagent.created', subagent: child.subagent })
   const turn: OAITurn = { ...newTurn(s), id: `turn_${randomUUID().replaceAll('-', '')}`, session_id: childId, subagent_id: childId }
   child.turns.push(turn)
-  const add = (item: OAISessionItem) => child.items.push({ ...item, subagent_id: childId })
+  live({ type: 'agent.session.subagent.updated', subagent: child.subagent, turn })
+  const add = (item: OAISessionItem) => {
+    child.items.push({ ...item, subagent_id: childId })
+    live({ type: item.type === 'function_call' && item.status === 'in_progress' ? 'agent.session.subagent.item.added' : 'agent.session.subagent.item.done', subagent_id: childId, item: { ...item, subagent_id: childId } })
+  }
   add({ id: 'item_msg_1', type: 'message', role: 'user', content: [{ type: 'input_text', text: `Research this: ${text}` }], status: 'completed', turn_id: turn.id })
   await wait(800, never)
   add({ id: 'item_reason_2', type: 'reasoning', summary: [{ type: 'summary_text', text: 'Look for relevant files first.' }], status: 'completed', turn_id: turn.id })
@@ -448,6 +455,8 @@ async function runChild(s: MockSession, childId: string, text: string): Promise<
   turn.status = 'completed'
   turn.completed_at = now()
   child.subagent = { ...child.subagent, status: 'closed', closed_at: now() }
+  live({ type: 'agent.session.subagent.updated', subagent: child.subagent, turn })
+  live({ type: 'agent.session.subagent.closed', subagent: child.subagent })
 }
 
 function newTurn(s: MockSession): OAITurn {
