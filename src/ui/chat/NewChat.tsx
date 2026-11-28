@@ -11,7 +11,7 @@ import * as stylex from '@stylexjs/stylex'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
-import type { OAIAgent, SandboxProvider, SandboxTemplate } from '@/api/types'
+import type { OAIAgent, SandboxEnvironment, SandboxProvider, SandboxTemplate } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
 import { promptText } from '@/connectors/catalog'
@@ -48,10 +48,12 @@ export function NewChat() {
   const prompt = params.get('prompt')
   // `?environment=` (an environment's "New chat here") preselects it in the environment menu.
   const [wantedEnvironment] = useState(() => params.get('environment'))
+  // `?project=` (a Project's "New chat here") files the chat under the Project and inherits its defaults.
+  const [wantedProject] = useState(() => params.get('project'))
   const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : promptText(prompt)))
   useEffect(() => {
-    if (seed !== null || schedule !== null || prompt !== null || wantedEnvironment !== null) router.replace('/')
-  }, [seed, schedule, prompt, wantedEnvironment, router])
+    if (seed !== null || schedule !== null || prompt !== null || wantedEnvironment !== null || wantedProject !== null) router.replace('/')
+  }, [seed, schedule, prompt, wantedEnvironment, wantedProject, router])
   const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
@@ -62,6 +64,10 @@ export function NewChat() {
   // Ready sandbox environments for the environment menu; '' is the default workspace. A failed load hides the menu.
   const [environments, setEnvironments] = useState<{ id: string; name: string; group?: 'new'; description?: string }[]>([])
   const [environmentId, setEnvironmentId] = useState('')
+  // A Project preset stays with this chat even when its agent/environment are overridden before the first send.
+  const [projectId, setProjectId] = useState('')
+  // The Project's saved agent model is applied once models load, so the cookie default cannot win the race.
+  const [presetModel, setPresetModel] = useState<string | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   // The message being sent, shown with a thinking state until the session exists and the chat opens.
   const [pending, setPending] = useState<{ text: string; files?: UserFile[] } | null>(null)
@@ -84,38 +90,60 @@ export function NewChat() {
     void loadModels()
   }, [loadModels])
   useEffect(() => {
-    // A failed or unavailable list just leaves the agent menu hidden.
-    Promise.resolve()
-      .then(() => api.listAgents())
-      .then((list) => setAgents(list.data), () => undefined)
+    // The saved agent's model wins over the cookie default, but only when the model list offers it.
+    if (presetModel && models?.includes(presetModel)) setModel(presetModel)
+  }, [models, presetModel])
+  useEffect(() => {
+    // A failed list just hides its menu; a missing, foreign or archived Project is ignored.
     Promise.resolve()
       .then(() => Promise.all([
-        api.listSandboxEnvironments(),
-        // Fresh sandboxes are offered only while the isolated sandbox is up; either list failing just offers less.
-        Promise.resolve().then(() => api.listSandboxProviders()).catch(() => ({ data: [] as SandboxProvider[] })),
-        Promise.resolve().then(() => api.listSandboxTemplates()).catch(() => ({ data: [] as SandboxTemplate[] })),
+        api.listAgents().catch(() => null),
+        Promise.all([
+          api.listSandboxEnvironments(),
+          // Fresh sandboxes are offered only while the isolated sandbox is up; either list failing just offers less.
+          Promise.resolve().then(() => api.listSandboxProviders()).catch(() => ({ data: [] as SandboxProvider[] })),
+          Promise.resolve().then(() => api.listSandboxTemplates()).catch(() => ({ data: [] as SandboxTemplate[] })),
+        ]).catch(() => null),
+        wantedProject ? api.getProject(wantedProject).catch(() => null) : Promise.resolve(null),
       ]))
-      .then(([list, providers, templates]) => {
-        // Running and stopped sandboxes (a stopped one starts on send) and ready local environments.
-        const usable = list.data.filter(canChatIn)
-        const sandboxUp = providers.data.some((p) => p.name === 'sandbox' && p.available !== false && p.capabilities.exec)
-        const fresh = sandboxUp
-          ? [
-              { id: NEW_SANDBOX, name: 'Empty sandbox', group: 'new' as const, description: 'Standard image; deleted with the chat.' },
-              ...templates.data
-                .filter((t) => t.provider === 'sandbox' && t.unsupported_fields.length === 0)
-                .map((t) => ({ id: `${NEW_SANDBOX}${t.id}`, name: t.name || 'Untitled template', group: 'new' as const, description: `${templateSummary(t)}; deleted with the chat.` })),
-            ]
-          : []
-        setEnvironments([...usable.map((e) => ({ id: e.id, name: environmentMenuLabel(e) })), ...fresh])
-        if (wantedEnvironment && usable.some((e) => e.id === wantedEnvironment)) setEnvironmentId(wantedEnvironment)
-      }, () => undefined)
-  }, [wantedEnvironment])
+      .then(([agentList, envData, project]) => {
+        if (agentList) setAgents(agentList.data)
+        let usable: SandboxEnvironment[] = []
+        if (envData) {
+          const [list, providers, templates] = envData
+          // Running and stopped sandboxes (a stopped one starts on send) and ready local environments.
+          usable = list.data.filter(canChatIn)
+          const sandboxUp = providers.data.some((p) => p.name === 'sandbox' && p.available !== false && p.capabilities.exec)
+          const fresh = sandboxUp
+            ? [
+                { id: NEW_SANDBOX, name: 'Empty sandbox', group: 'new' as const, description: 'Standard image; deleted with the chat.' },
+                ...templates.data
+                  .filter((t) => t.provider === 'sandbox' && t.unsupported_fields.length === 0)
+                  .map((t) => ({ id: `${NEW_SANDBOX}${t.id}`, name: t.name || 'Untitled template', group: 'new' as const, description: `${templateSummary(t)}; deleted with the chat.` })),
+              ]
+            : []
+          setEnvironments([...usable.map((e) => ({ id: e.id, name: environmentMenuLabel(e) })), ...fresh])
+          if (wantedEnvironment && usable.some((e) => e.id === wantedEnvironment)) setEnvironmentId(wantedEnvironment)
+        }
+        if (project && project.status === 'active') {
+          setProjectId(project.id)
+          if (project.agent_id) setAgentId(project.agent_id)
+          const saved = agentList?.data.find((a) => a.id === project.agent_id)
+          if (saved) {
+            setPresetModel(saved.model)
+            const effort = saved.reasoning?.effort
+            if (effort === 'low' || effort === 'medium' || effort === 'high') setEffort(effort)
+          }
+          const environment = (project.environment as { environment_id?: unknown } | null | undefined)?.environment_id
+          if (typeof environment === 'string' && usable.some((e) => e.id === environment)) setEnvironmentId(environment)
+        }
+      })
+  }, [wantedEnvironment, wantedProject])
 
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })
     try {
-      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}), ...(environmentId ? { environmentId } : {}) })
+      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}), ...(environmentId ? { environmentId } : {}), ...(projectId ? { projectId } : {}) })
       setPendingFirst(session.id, {
         text,
         ...(files?.length ? { files } : {}),

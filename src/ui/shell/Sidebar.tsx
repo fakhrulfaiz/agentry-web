@@ -1,19 +1,23 @@
 'use client'
 
 /**
- * Conversation sidebar: New chat, title search, the user's sessions (paged
- * newest first: starred chats under Starred, the rest grouped Today /
- * Yesterday / Earlier), star, rename and delete (shared with the chat title
- * menu, see `session-actions`), then Settings and the user menu. Collapsing is remembered in `localStorage`;
- * below 768px AppShell moves the whole sidebar into a drawer.
+ * Conversation sidebar: New chat, title search, Project sections (pinned first,
+ * then active), the Starred smart view, the user's unfiled sessions grouped by
+ * local date, star/rename/delete/move and Project actions, then Settings and
+ * the user menu. Project session pages load only for expanded sections; the
+ * global paged list stays the source for Recent/Unfiled and search. Collapsing
+ * is remembered in `localStorage`; below 768px AppShell moves the whole sidebar
+ * into a drawer.
  */
 import { Button } from '@astryxdesign/core/Button'
+import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav'
 import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
+import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
 import { ChatBubbleLeftIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
@@ -21,9 +25,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
-import type { OAIAgentSession } from '@/api/types'
+import type { OAIAgentSession, OAIProject } from '@/api/types'
 import { AgentryMark } from '@/ui/brand/Wordmark'
-import { groupSessions, sessionTitle } from './group'
+import { sessionTitle } from './group'
+import { ArchivedProjectsDialog, DeleteProjectDialog, MoveProjectDialog, ProjectDialog, useSessionMove } from './project-actions'
+import { announceProjects, useProjectChanges } from './project-events'
+import { groupSessionsForSidebar, type SidebarSection } from './project-groups'
 import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChanges, useStarToggle } from './session-actions'
 import { UserMenu, type ShellIdentity } from './UserMenu'
 
@@ -75,7 +82,9 @@ const STARRED_LIMIT = 100
 
 export { SESSIONS_CHANGED }
 
-type Session = Pick<OAIAgentSession, 'id' | 'created_at' | 'metadata'>
+type Session = OAIAgentSession
+type ProjectSection = Extract<SidebarSection, { type: 'project' }>
+type DateSection = Extract<SidebarSection, { type: 'date' }>
 
 function readCollapsed(): boolean {
   try {
@@ -110,6 +119,13 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [sessions, setSessions] = useState<Session[]>([])
   // Starred chats come from their own filtered query, so ones beyond the loaded pages still show.
   const [starredSessions, setStarredSessions] = useState<Session[]>([])
+  const [projects, setProjects] = useState<OAIProject[]>([])
+  // A Project's chats are loaded on expansion, with their own cursor for "More".
+  const [projectSessions, setProjectSessions] = useState<Record<string, Session[]>>({})
+  const [projectCursors, setProjectCursors] = useState<Record<string, string | null>>({})
+  const [projectHasMore, setProjectHasMore] = useState<Record<string, boolean>>({})
+  const [projectLoadErrors, setProjectLoadErrors] = useState<Record<string, string>>({})
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -118,9 +134,26 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [collapsed, setCollapsed] = useState(false)
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [deleting, setDeleting] = useState<Session | null>(null)
+  const [projectDialog, setProjectDialog] = useState<{ isOpen: boolean; project: OAIProject | null }>({ isOpen: false, project: null })
+  const [deletingProject, setDeletingProject] = useState<OAIProject | null>(null)
+  const [moving, setMoving] = useState<Session | null>(null)
+  const [archivedOpen, setArchivedOpen] = useState(false)
   const loadingRef = useRef(false)
   const sessionsRef = useRef<Session[]>([])
   sessionsRef.current = sessions
+  const toggleStar = useStarToggle()
+  const move = useSessionMove()
+  const toast = useToast()
+
+  // Project menu actions reload every view on success; failures keep the current list and explain why.
+  const changeProject = (label: string, action: () => Promise<unknown>) => {
+    void action()
+      .then(announceProjects)
+      .catch((error: unknown) => {
+        if (isSignedOut(error)) window.location.assign('/login')
+        else toast({ type: 'error', body: error instanceof ApiError ? error.message : `Could not ${label} the project.`, uniqueID: `project-${label}` })
+      })
+  }
 
   const load = useCallback(async (after: string | null) => {
     if (loadingRef.current) return
@@ -158,21 +191,67 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
     }
   }, [])
 
+  // Follow the cursor: a filed chat must never disappear because its Project was on a later page.
+  const loadProjects = useCallback(async () => {
+    try {
+      const all: OAIProject[] = []
+      let after: string | undefined
+      for (;;) {
+        const page = await api.listProjects({ status: 'active', ...(after ? { after } : {}) })
+        all.push(...page.data)
+        if (!page.has_more || !page.last_id || page.last_id === after) break
+        after = page.last_id
+      }
+      setProjects(all)
+    } catch (error) {
+      if (isSignedOut(error)) window.location.assign('/login')
+      // A failed reload leaves the last known sections in place.
+    }
+  }, [])
+
+  const loadProjectSessions = useCallback(async (projectId: string, after?: string) => {
+    try {
+      const page = await api.listSessions({ projectId, ...(after ? { after } : {}) })
+      setProjectSessions((prev) => ({ ...prev, [projectId]: after ? [...(prev[projectId] ?? []), ...page.data] : page.data }))
+      setProjectCursors((prev) => ({ ...prev, [projectId]: page.last_id }))
+      setProjectHasMore((prev) => ({ ...prev, [projectId]: page.has_more && page.last_id !== null }))
+      setProjectLoadErrors((prev) => {
+        if (!prev[projectId]) return prev
+        const next = { ...prev }
+        delete next[projectId]
+        return next
+      })
+    } catch (error) {
+      if (isSignedOut(error)) {
+        window.location.assign('/login')
+        return
+      }
+      // Keep any rows already loaded, but say why the section is incomplete.
+      setProjectLoadErrors((prev) => ({ ...prev, [projectId]: errorText(error) }))
+    }
+  }, [])
+
   // First page on mount.
   useEffect(() => {
     void load(null)
     void loadStarred()
-  }, [load, loadStarred])
+    void loadProjects()
+  }, [load, loadStarred, loadProjects])
 
-  // A renamed, starred or deleted chat updates in place; any other change (a new chat) reloads the first page.
+  useProjectChanges(() => void loadProjects())
+
+  // A renamed, starred or deleted chat updates in place; any other change (a new
+  // chat, or a move between Projects) reloads the Recent and expanded Project pages.
   useSessionChanges((change) => {
     if (change === null) {
       loadingRef.current = false
       void load(null)
       void loadStarred()
+      for (const id of expanded) void loadProjectSessions(id)
     } else if ('deleted' in change) {
       setSessions((prev) => prev.filter((s) => s.id !== change.id))
       setStarredSessions((prev) => prev.filter((s) => s.id !== change.id))
+      setProjectSessions((prev) => Object.fromEntries(Object.entries(prev).map(([id, list]) => [id, list.filter((s) => s.id !== change.id)])))
     } else {
       const updated = (s: Session): Session => ({ ...s, metadata: change.metadata })
       setSessions((prev) => prev.map((s) => (s.id === change.id ? updated(s) : s)))
@@ -183,9 +262,11 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         const from = sessionsRef.current.find((s) => s.id === change.id)
         return from ? [updated(from), ...prev] : prev
       })
+      setProjectSessions((prev) =>
+        Object.fromEntries(Object.entries(prev).map(([id, list]) => [id, list.map((s) => (s.id === change.id ? updated(s) : s))])),
+      )
     }
   })
-  const toggleStar = useStarToggle()
 
   // Opening a chat the list does not have yet (just created elsewhere): refresh the first page.
   const knownIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions])
@@ -224,10 +305,15 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const starred = [...starredSessions, ...sessions.filter((s) => isStarred(s) && !starredSessions.some((x) => x.id === s.id))].filter(
     (s) => isStarred(s) && matches(s),
   )
-  const groups = groupSessions(
-    visible.filter((s) => !isStarred(s)),
-    new Date(),
-  )
+  const grouped = groupSessionsForSidebar(projects, visible, new Date())
+  const projectSections = grouped.filter((section): section is ProjectSection => section.type === 'project')
+  const dateSections = grouped.filter((section): section is DateSection => section.type === 'date')
+  const loadedProjectRows = Object.values(projectSessions).flat()
+
+  // Search is a flat list: partial Project sections would be confusing while filtering.
+  const searchRows = [...visible, ...starred, ...loadedProjectRows]
+    .filter(matches)
+    .filter((s, i, all) => all.findIndex((other) => other.id === s.id) === i)
 
   const removed = (id: string) => {
     if (id === currentId) router.push('/')
@@ -242,11 +328,74 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         isSelected={s.id === currentId}
         items={[
           { label: isStarred(s) ? 'Unstar' : 'Star', onClick: () => void toggleStar(s) },
+          { label: 'Move to project…', onClick: () => setMoving(s) },
+          ...(s.project_id ? [{ label: 'Unfiled', onClick: () => void move(s, null) }] : []),
           { label: 'Rename', onClick: () => setRenaming(s) },
-          { label: 'Delete', variant: 'destructive', onClick: () => setDeleting(s) },
+          { label: 'Delete', variant: 'destructive' as const, onClick: () => setDeleting(s) },
         ]}
       />
     ))
+
+  const toggleProject = (projectId: string) => {
+    const expanding = !expanded.has(projectId)
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (expanding) next.add(projectId)
+      else next.delete(projectId)
+      return next
+    })
+    // Refresh on every expansion: a move made while collapsed must not show a stale page.
+    if (expanding) void loadProjectSessions(projectId)
+  }
+
+  const projectSection = (project: OAIProject) => {
+    const isExpanded = expanded.has(project.id)
+    const chats = (projectSessions[project.id] ?? []).filter(matches)
+    return (
+      <SideNavSection
+        key={project.id}
+        title={project.name}
+        endContent={
+          <HStack gap={1}>
+            <Button
+              label={`${isExpanded ? 'Hide' : 'Show'} chats in ${project.name}`}
+              size="sm"
+              variant="ghost"
+              onClick={() => toggleProject(project.id)}
+            />
+            <MoreMenu
+              label={`Options for ${project.name}`}
+              size="sm"
+              items={[
+                { label: 'New chat here', onClick: () => router.push(`/?project=${encodeURIComponent(project.id)}`) },
+                { label: 'Rename', onClick: () => setProjectDialog({ isOpen: true, project }) },
+                { label: project.pinned ? 'Unpin' : 'Pin', onClick: () => changeProject('pin', () => api.updateProject(project.id, { pinned: !project.pinned })) },
+                { label: 'Archive', onClick: () => changeProject('archive', () => api.archiveProject(project.id)) },
+                { label: 'Delete', variant: 'destructive', onClick: () => setDeletingProject(project) },
+              ]}
+            />
+          </HStack>
+        }
+      >
+        <SideNavItem label="New chat here" href={`/?project=${encodeURIComponent(project.id)}`} icon={PencilSquareIcon} size="sm" />
+        {isExpanded && (
+          <>
+            {rows(chats)}
+            {chats.length === 0 && !projectLoadErrors[project.id] && <Text type="supporting">No chats yet.</Text>}
+            {projectLoadErrors[project.id] && (
+              <VStack padding={2} gap={1} hAlign="start">
+                <Text type="supporting">{projectLoadErrors[project.id]}</Text>
+                <Button label="Retry" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id)} />
+              </VStack>
+            )}
+            {projectHasMore[project.id] && (
+              <Button label="More" size="sm" variant="ghost" onClick={() => void loadProjectSessions(project.id, projectCursors[project.id] ?? undefined)} />
+            )}
+          </>
+        )}
+      </SideNavSection>
+    )
+  }
 
   return (
     <>
@@ -256,6 +405,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         topContent={
           <VStack gap={2}>
             <SideNavItem label="New chat" icon={PencilSquareIcon} href="/" isSelected={pathname === '/'} />
+            <Button label="New project" size="sm" variant="ghost" onClick={() => setProjectDialog({ isOpen: true, project: null })} />
+            <Button label="Archived" size="sm" variant="ghost" onClick={() => setArchivedOpen(true)} />
             <SideNavItem
               label="Scheduled"
               icon={ClockIcon}
@@ -303,18 +454,32 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           <UserMenu identity={identity} />
         }
       >
-        {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
-        {groups.today.length > 0 && <SideNavSection title="Today">{rows(groups.today)}</SideNavSection>}
-        {groups.yesterday.length > 0 && <SideNavSection title="Yesterday">{rows(groups.yesterday)}</SideNavSection>}
-        {groups.week.length > 0 && <SideNavSection title="Previous 7 days">{rows(groups.week)}</SideNavSection>}
-        {groups.month.length > 0 && <SideNavSection title="Previous 30 days">{rows(groups.month)}</SideNavSection>}
-        {groups.older.length > 0 && <SideNavSection title="Older">{rows(groups.older)}</SideNavSection>}
-        {!loading && !loadError && visible.length === 0 && starred.length === 0 && (
-          <VStack padding={3} gap={1}>
-            <Icon icon={ChatBubbleLeftIcon} color="secondary" />
-            <Text type="supporting">{query.trim() ? 'No chats match.' : 'No chats yet.'}</Text>
-          </VStack>
+        {query.trim() ? (
+          <SideNavSection title="Search results">{rows(searchRows)}</SideNavSection>
+        ) : (
+          <>
+            {projectSections.map((section) => projectSection(section.project))}
+            {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
+            {dateSections.map((section) => {
+              const chats = section.sessions.filter((s) => !isStarred(s) && matches(s))
+              return chats.length > 0 ? (
+                <SideNavSection key={section.title} title={section.title}>
+                  {rows(chats)}
+                </SideNavSection>
+              ) : null
+            })}
+          </>
         )}
+        {!loading &&
+          !loadError &&
+          (query.trim()
+            ? searchRows.length === 0
+            : visible.length === 0 && starred.length === 0 && projects.length === 0 && loadedProjectRows.length === 0) && (
+            <VStack padding={3} gap={1}>
+              <Icon icon={ChatBubbleLeftIcon} color="secondary" />
+              <Text type="supporting">{query.trim() ? 'No chats match.' : 'No chats yet.'}</Text>
+            </VStack>
+          )}
         {loadError && (
           <VStack padding={3} gap={2} hAlign="start">
             <Text type="supporting">{loadError}</Text>
@@ -327,6 +492,10 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
       </SideNav>
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog session={deleting} onClose={() => setDeleting(null)} onDeleted={removed} />
+      <ProjectDialog project={projectDialog.project} isOpen={projectDialog.isOpen} onClose={() => setProjectDialog({ isOpen: false, project: null })} />
+      <DeleteProjectDialog project={deletingProject} onClose={() => setDeletingProject(null)} />
+      <MoveProjectDialog session={moving} projects={projects} onClose={() => setMoving(null)} />
+      <ArchivedProjectsDialog isOpen={archivedOpen} onClose={() => setArchivedOpen(false)} />
     </>
   )
 }

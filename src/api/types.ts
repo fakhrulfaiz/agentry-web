@@ -186,6 +186,32 @@ export interface OAIEnvironmentConfig {
   [key: string]: unknown
 }
 
+/** An owner-scoped grouping of chats (`GET /v1/agents/projects`). */
+export interface OAIProject {
+  id: string
+  object: 'project'
+  name: string
+  status: 'active' | 'archived'
+  pinned: boolean
+  agent_id: string | null
+  /** `null` means the default workspace. */
+  environment: OAIEnvironmentConfig | null
+  archived_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+/** Body for `POST /v1/agents/projects`. */
+export interface CreateProjectParams {
+  name: string
+  agent_id?: string | null
+  environment?: OAIEnvironmentConfig | null
+  pinned?: boolean
+}
+
+/** Body for `POST /v1/agents/projects/{id}`; omitted fields are left alone. */
+export type UpdateProjectParams = Partial<CreateProjectParams>
+
 /** One selectable answer offered to the user (DSH `AskUserQuestionOption`). */
 export interface AskUserQuestionOption {
   label: string
@@ -244,6 +270,8 @@ export interface OAIAgentSession {
   vault_ids: string[]
   agent: OAIAgent
   environment: OAIEnvironmentConfig
+  /** `null` means Unfiled. */
+  project_id: string | null
   required_actions: OAIRequiredAction[]
   usage: OAITokenUsage | null
 }
@@ -515,6 +543,8 @@ export interface CreateSessionParams {
   metadata?: Record<string, string> | null
   input?: string | OAIInputMessage[]
   stream?: boolean
+  /** Attaches the chat to this Project and inherits its agent and environment unless overridden. */
+  project_id?: string | null
 }
 
 /**

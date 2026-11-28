@@ -30,6 +30,9 @@ import type {
   SandboxRuntimes,
   SandboxTemplate,
   CreateSessionParams,
+  OAIProject,
+  CreateProjectParams,
+  UpdateProjectParams,
   OAIAgentSession,
   OAIInputEvent,
   CreateAgentParams,
@@ -209,10 +212,11 @@ async function listAll<T extends { id: string }>(url: string, from?: string): Pr
 }
 
 export const api = {
-  listSessions(q: { after?: string; limit?: number; metadata?: Record<string, string> } = {}): Promise<OAIListResponse<OAIAgentSession>> {
+  listSessions(q: { after?: string; limit?: number; metadata?: Record<string, string>; projectId?: string } = {}): Promise<OAIListResponse<OAIAgentSession>> {
     const params = new URLSearchParams()
     if (q.after) params.set('after', q.after)
     if (q.limit !== undefined) params.set('limit', String(q.limit))
+    if (q.projectId) params.set('project_id', q.projectId)
     for (const [key, value] of Object.entries(q.metadata ?? {})) params.set(`metadata[${key}]`, value)
     const query = params.size > 0 ? `?${params}` : ''
     return request('GET', `${AGENTRY}/agents/sessions${query}`)
@@ -223,8 +227,9 @@ export const api = {
   },
 
   /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string }): Promise<OAIAgentSession> {
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string; projectId?: string }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
+      ...(input.projectId ? { project_id: input.projectId } : {}),
       ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
       // An environment id, or `new:` / `new:<template id>` for a fresh sandbox that belongs to this chat.
@@ -359,6 +364,11 @@ export const api = {
 
   async deleteSession(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/sessions/${seg(id)}`)
+  },
+
+  /** Moves a chat into a Project, or to Unfiled with `null`. */
+  setSessionProject(id: string, projectId: string | null): Promise<OAIAgentSession> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { project_id: projectId })
   },
 
   /**
@@ -559,6 +569,41 @@ export const api = {
   async deleteAgent(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/${seg(id)}`)
   },
+
+  /** The user's Projects; `status` defaults to `active`, older pages via `after`. */
+  listProjects(q: { status?: 'active' | 'archived' | 'all'; after?: string; limit?: number } = {}): Promise<OAIListResponse<OAIProject>> {
+    const params = new URLSearchParams()
+    if (q.status) params.set('status', q.status)
+    if (q.after) params.set('after', q.after)
+    if (q.limit !== undefined) params.set('limit', String(q.limit))
+    const query = params.size > 0 ? `?${params}` : ''
+    return request('GET', `${AGENTRY}/agents/projects${query}`)
+  },
+
+  getProject(id: string): Promise<OAIProject> {
+    return request('GET', `${AGENTRY}/agents/projects/${seg(id)}`)
+  },
+
+  createProject(params: CreateProjectParams): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects`, params)
+  },
+
+  updateProject(id: string, params: UpdateProjectParams): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects/${seg(id)}`, params)
+  },
+
+  archiveProject(id: string): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects/${seg(id)}/archive`, {})
+  },
+
+  unarchiveProject(id: string): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects/${seg(id)}/unarchive`, {})
+  },
+
+  deleteProject(id: string): Promise<{ id: string; object: 'project.deleted'; deleted: true }> {
+    return request('DELETE', `${AGENTRY}/agents/projects/${seg(id)}`)
+  },
+
   /** The Host's tool catalog, for an agent's allow list. Tolerates the common list shapes. */
   async listHostTools(): Promise<HostToolInfo[]> {
     const body = await request<unknown>('GET', `${AGENTRY}/agents/tools`)
