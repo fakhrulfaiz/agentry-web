@@ -6,7 +6,10 @@
  * approval / question, or notice.
  */
 import { ChatMessage, ChatMessageBubble } from '@astryxdesign/core/Chat'
+import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
 import { Text } from '@astryxdesign/core/Text'
+import { CheckCircleIcon } from '@heroicons/react/16/solid'
 import { VStack } from '@astryxdesign/core/VStack'
 import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
@@ -15,6 +18,8 @@ import type { MessageView } from '@/chat/reducer'
 import type { ActionAnswer } from '@/chat/use-conversation'
 import { ApprovalCard } from './ApprovalCard'
 import { CommandResult } from './CommandResult'
+import { appLabel } from './ConnectCard'
+import { AppLogo } from '@/ui/shared/AppLogo'
 import { Markdown } from './Markdown'
 import { Notice } from './Notice'
 import { QuestionCard } from './QuestionCard'
@@ -102,8 +107,25 @@ export function Message({
   // Subagent items reuse the parent's item ids, so only top-level rows are anchors.
   const anchor = depth === 1 ? view.id : undefined
   switch (view.kind) {
-    case 'user':
+    case 'user': {
+      // The API's connect watcher posts "App connected: <app> (<account>). …" as the next input: a note, not the user's words.
+      const connected = /^App connected: ([a-z0-9_-]+)(?: \((.+?)\))?\./u.exec(view.text)
+      if (connected) {
+        const [, app = '', account] = connected
+        return (
+          <AssistantRow anchor={anchor}>
+            <HStack gap={2} vAlign="center" data-testid="app-connected-note">
+              <AppLogo slug={app} name={appLabel(app)} size={16} />
+              <Text type="supporting" color="secondary">
+                {appLabel(app)} connected{account ? ` (${account})` : ''}, continuing
+              </Text>
+              <Icon icon={CheckCircleIcon} size="sm" color="success" />
+            </HStack>
+          </AssistantRow>
+        )
+      }
       return <UserMessage view={view} anchor={anchor} highlight={highlighted ? styles.highlight : undefined} onSend={onSend} />
+    }
     case 'assistant':
       // A step that was only reasoning (or only tool calls) leaves an empty message: show nothing.
       if (!view.text) return null

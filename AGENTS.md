@@ -74,6 +74,7 @@ Generic, reused pieces. New generic UI goes in `src/ui/shared/` with a one-line 
 
 - `src/ui/shared/IconTile.tsx`: coloured icon tile (agents, environments, cards).
 - `src/ui/shared/FolderPicker.tsx`: Finder-style column folder browser (breadcrumb, lazy columns, new folder); takes any `listFolders(path)` loader (2026-11-28, used by the project dialog).
+- `src/ui/shared/AppLogo.tsx`: a connected app's logo with a letter-avatar fallback (2026-11-29, Connect cards).
 - `src/ui/shared/PromptChips.tsx`: wrapping row of small clickable suggestion chips (starter prompts) (2026-11-28, Ask Agentry on the new-chat page).
 - `src/ui/shared/DefinitionRow.tsx`: label/value rows for About panels; `src/ui/shared/CopyButton.tsx`: copy-to-clipboard icon button (2026-11-28, Sandboxes detail).
 - `src/ui/cards/EntityCard.tsx`: `EntityCard`, `CardGrid`, `Fact` for card grids (Agents, Sandboxes).

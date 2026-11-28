@@ -17,7 +17,7 @@ export interface ConnectionStatus {
 /** A focused tab re-checks status older than this. */
 const FOCUS_REFRESH_MS = 60_000
 
-async function fetchStatus(refresh: boolean, signal?: AbortSignal): Promise<ConnectionStatus | null> {
+export async function fetchStatus(refresh: boolean, signal?: AbortSignal): Promise<ConnectionStatus | null> {
   const res = await fetch(`/api/agentry/connectors/status${refresh ? '?refresh=1' : ''}`, { credentials: 'same-origin', signal })
   if (!res.ok) return null
   const body = (await res.json()) as Partial<ConnectionStatus>
