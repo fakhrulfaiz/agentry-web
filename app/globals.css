@@ -33,10 +33,17 @@
  * elements such as truncated labels a reserved gutter would show as stray space.
  */
 .astryx-layout-content,
-.astryx-app-shell-sidenav,
-.astryx-side-nav > div,
 .astryx-chat-layout {
   scrollbar-gutter: stable;
+}
+
+/*
+ * The sidebar list scrolls without a visible scrollbar (wheel, trackpad, touch, keyboard), so its rows
+ * keep the full width of the page links above it instead of losing ~10px to a scrollbar or its gutter.
+ */
+.astryx-app-shell-sidenav,
+.astryx-side-nav > div {
+  scrollbar-width: none;
 }
 
 /*

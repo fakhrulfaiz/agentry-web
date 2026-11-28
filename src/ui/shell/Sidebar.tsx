@@ -522,7 +522,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
 
   // The Workspace header: parent of Projects and Recents, with search and the view options.
   const workspaceHeader = (
-    <VStack gap={2} paddingInline={2} paddingBlockStart={1}>
+    // Right padding matches the rows' ⋯ menu, so the header icons and the line end where the rows' icons do.
+    <VStack gap={2} paddingInlineStart={2} paddingInlineEnd={1} paddingBlockStart={1}>
       <Divider />
       <HStack gap={1} vAlign="center">
         <StackItem size="fill">
