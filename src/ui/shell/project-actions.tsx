@@ -22,7 +22,7 @@ import { FolderIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent, OAIEnvironmentConfig, OAIProject, SandboxEnvironment } from '@/api/types'
-import { FolderPicker } from '@/ui/sandboxes/FolderPicker'
+import { FolderPicker } from '@/ui/shared/FolderPicker'
 import { normalizeWorkspaceFolder } from '@/ui/sandboxes/workspace-folder'
 import { announceProjects } from './project-events'
 import { announceSessions, type SessionRef } from './session-actions'
@@ -182,7 +182,11 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
               <Text type="supporting" color="secondary">Inside /workspace. Chats in this project start here; it is created if missing. Leave it on the whole workspace for no folder.</Text>
               {folderError && <Text type="supporting" role="alert">{folderError}</Text>}
               <FolderPicker
-                environmentId={environmentId}
+                rootLabel="/workspace"
+                emptyChoiceLabel="Use whole workspace"
+                allowNewFolder
+                validate={(path) => ('error' in normalizeWorkspaceFolder(path) ? (normalizeWorkspaceFolder(path) as { error: string }).error : null)}
+                listFolders={async (path) => (await api.listEnvironmentFolders(environmentId, path)).data}
                 value={folder}
                 isOpen={pickerOpen}
                 onClose={() => setPickerOpen(false)}

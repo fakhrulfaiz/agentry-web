@@ -5,12 +5,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiMock = vi.hoisted(() => ({ listEnvironmentFolders: vi.fn() }))
-vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
+const { FolderPicker } = await import('@/ui/shared/FolderPicker')
+const apiMock = { listEnvironmentFolders: vi.fn() }
 
-const { FolderPicker } = await import('@/ui/sandboxes/FolderPicker')
-
-const list = (path: string, names: string[]) => ({ object: 'list', path, has_more: false, data: names.map((name) => ({ name, path: path ? `${path}/${name}` : name })) })
+const list = (path: string, names: string[]) => names.map((name) => ({ name, path: path ? `${path}/${name}` : name }))
 const tree: Record<string, string[]> = { '': ['.git', 'biology', 'chem'], biology: ['notes'], 'biology/notes': [] }
 
 beforeEach(() => {
@@ -21,7 +19,7 @@ afterEach(() => cleanup())
 
 function open(value = '') {
   const onChoose = vi.fn()
-  render(<FolderPicker environmentId="env_1" value={value} isOpen onClose={vi.fn()} onChoose={onChoose} />)
+  render(<FolderPicker rootLabel="/workspace" emptyChoiceLabel="Use whole workspace" allowNewFolder validate={(p) => (p.includes('..') ? 'The folder cannot contain "..".' : null)} listFolders={(path) => apiMock.listEnvironmentFolders('env_1', path)} value={value} isOpen onClose={vi.fn()} onChoose={onChoose} />)
   return onChoose
 }
 

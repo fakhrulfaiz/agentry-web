@@ -1,10 +1,16 @@
 'use client'
 
 /**
- * A Finder-style column view of an environment's folders. Column 1 lists the
- * workspace root's sub-folders; picking one selects it and opens its sub-folders
- * as the next column. Columns load lazily. "New folder" only adds a name here:
- * the folder is created for real when the first chat starts.
+ * A reusable Finder-style column view for choosing a folder. It knows nothing
+ * about where the folders live: pass `listFolders(path)` (path relative to the
+ * root, '' = root) returning that folder's immediate sub-folders. Columns load
+ * lazily, show a spinner and an error with Retry, hide dot-folders, and a
+ * breadcrumb goes back up. With `allowNewFolder`, "New folder" only adds a name
+ * in the picker (nothing is created here); `validate(fullPath)` may refuse it by
+ * returning a message. `onChoose('')` means the root (the empty-choice button).
+ *
+ * <FolderPicker isOpen value="a/b" rootLabel="/workspace" listFolders={load}
+ *   onChoose={setFolder} onClose={close} allowNewFolder validate={check} />
  */
 import { Button } from '@astryxdesign/core/Button'
 import { Breadcrumbs, BreadcrumbItem } from '@astryxdesign/core/Breadcrumbs'
@@ -18,8 +24,6 @@ import { VStack } from '@astryxdesign/core/VStack'
 import { ChevronRightIcon, FolderIcon, FolderPlusIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api } from '@/api/client'
-import { normalizeWorkspaceFolder } from './workspace-folder'
 
 const ui = stylex.create({
   columns: {
@@ -54,17 +58,22 @@ type Column = {
 const join = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
 const parts = (path: string) => (path ? path.split('/') : [])
 
-/**
- * @param environmentId - the environment whose folders are shown.
- * @param value - the folder currently chosen ('' = whole workspace); the picker opens on it.
- * @param onChoose - called with the chosen relative folder ('' for the whole workspace).
- */
-export function FolderPicker({ environmentId, value, isOpen, onClose, onChoose }: {
-  environmentId: string
-  value: string
+export type FolderEntry = { name: string; path: string }
+
+export function FolderPicker({ isOpen, title = 'Choose a folder', rootLabel = '/', value, onChoose, onClose, listFolders, allowNewFolder = false, validate, emptyChoiceLabel = 'Use root' }: {
   isOpen: boolean
+  title?: string
+  /** Label of the root crumb, e.g. '/workspace'. */
+  rootLabel?: string
+  /** The chosen folder ('' = root); the picker opens on it. */
+  value: string
+  onChoose(path: string): void
   onClose(): void
-  onChoose(folder: string): void
+  listFolders(path: string, signal?: AbortSignal): Promise<FolderEntry[]>
+  allowNewFolder?: boolean
+  /** Returns an error message for a refused full path, or null. */
+  validate?(path: string): string | null
+  emptyChoiceLabel?: string
 }) {
   const [selected, setSelected] = useState('')
   const [columns, setColumns] = useState<Column[]>([])
@@ -84,14 +93,15 @@ export function FolderPicker({ environmentId, value, isOpen, onClose, onChoose }
     const setColumn = (patch: Partial<Column>) => setColumns((all) => all.map((c) => (c.path === path ? { ...c, ...patch } : c)))
     setColumn({ state: 'loading', error: undefined })
     Promise.resolve()
-      .then(() => api.listEnvironmentFolders(environmentId, path))
+      .then(() => listFolders(path))
       .finally(() => inFlight.current.delete(path))
       .then(
-        (list) => setColumn({ state: 'ready', names: list.data.map((d) => d.name).filter((n) => !n.startsWith('.')) }),
+        (list) => setColumn({ state: 'ready', names: list.map((d) => d.name).filter((n) => !n.startsWith('.')) }),
         // A folder that only exists as a typed name has nothing in it yet.
         (error: { status?: number; message?: string }) => (error?.status === 404 && addedRef.current[path] !== undefined ? setColumn({ state: 'ready', names: [] }) : setColumn({ state: 'error', error: error?.message || 'Could not load folders.' })),
       )
-  }, [environmentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Open on the current value: one column per level down to it.
   useEffect(() => {
@@ -138,11 +148,13 @@ export function FolderPicker({ environmentId, value, isOpen, onClose, onChoose }
       return
     }
     const parent = selected
-    const cleaned = normalizeWorkspaceFolder(join(parent, name))
-    if ('error' in cleaned) {
-      setNewError(cleaned.error)
+    const full = join(parent, name)
+    const refused = validate?.(full) ?? null
+    if (refused) {
+      setNewError(refused)
       return
     }
+    const cleaned = { value: full }
     setAdded((all) => ({ ...all, [cleaned.value]: [] }))
     setColumns((all) => {
       const upto = all.findIndex((c) => c.path === parent)
@@ -160,11 +172,11 @@ export function FolderPicker({ environmentId, value, isOpen, onClose, onChoose }
   const crumbs = parts(selected)
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={(open) => !open && onClose()} width="min(760px, 96vw)" purpose="form" aria-label="Choose a folder">
-      <DialogHeader title="Choose a folder" />
+    <Dialog isOpen={isOpen} onOpenChange={(open) => !open && onClose()} width="min(760px, 96vw)" purpose="form" aria-label={title}>
+      <DialogHeader title={title} />
       <VStack gap={3} xstyle={ui.body}>
         <Breadcrumbs label="Selected folder" separator="›">
-          <BreadcrumbItem onClick={() => goTo('')} isCurrent={crumbs.length === 0}>/workspace</BreadcrumbItem>
+          <BreadcrumbItem onClick={() => goTo('')} isCurrent={crumbs.length === 0}>{rootLabel}</BreadcrumbItem>
           {crumbs.map((name, i) => (
             <BreadcrumbItem key={crumbs.slice(0, i + 1).join('/')} onClick={() => goTo(crumbs.slice(0, i + 1).join('/'))} isCurrent={i === crumbs.length - 1}>
               {name}
@@ -221,9 +233,9 @@ export function FolderPicker({ environmentId, value, isOpen, onClose, onChoose }
           ))}
         </HStack>
         <HStack gap={2} hAlign="between">
-          <Button label="New folder" variant="ghost" icon={<Icon icon={FolderPlusIcon} />} onClick={() => { setAdding(true); setNewError(null) }} />
+          {allowNewFolder && <Button label="New folder" variant="ghost" icon={<Icon icon={FolderPlusIcon} />} onClick={() => { setAdding(true); setNewError(null) }} />}
           <HStack gap={2}>
-            <Button label="Use whole workspace" variant="ghost" onClick={() => onChoose('')} />
+            <Button label={emptyChoiceLabel} variant="ghost" onClick={() => onChoose('')} />
             <Button label="Cancel" variant="ghost" onClick={onClose} />
             <Button label="Choose" variant="primary" isDisabled={selected === ''} onClick={() => onChoose(selected)} />
           </HStack>
