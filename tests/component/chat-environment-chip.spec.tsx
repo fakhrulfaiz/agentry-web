@@ -95,6 +95,24 @@ describe('ChatEnvironmentChip', () => {
     expect(screen.queryByText('Old · Running')).not.toBeInTheDocument()
   })
 
+  it('keeps a newer refresh when an older request for the same sandbox resolves later', async () => {
+    const first = deferred<SandboxEnvironment>()
+    apiMock.getSandboxEnvironment
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(env({ sandbox: { state: 'stopped' } }))
+    render(<ChatEnvironmentChip environment={sandbox()} />)
+    expect(screen.getByText('Sandbox')).toBeInTheDocument()
+
+    fireEvent(window, new Event('focus'))
+    expect(await screen.findByText('Data box · Stopped')).toBeInTheDocument()
+
+    await act(async () => {
+      first.resolve(env({ sandbox: { state: 'running' } }))
+    })
+    expect(screen.getByText('Data box · Stopped')).toBeInTheDocument()
+    expect(screen.queryByText('Data box · Running')).not.toBeInTheDocument()
+  })
+
   it('refreshes on window focus without polling', async () => {
     apiMock.getSandboxEnvironment.mockResolvedValue(env({ sandbox: { state: 'running' } }))
     render(<ChatEnvironmentChip environment={sandbox()} />)

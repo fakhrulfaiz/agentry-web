@@ -13,6 +13,7 @@ export function ChatEnvironmentChip({ environment }: { environment: OAIEnvironme
   const [env, setEnv] = useState<SandboxEnvironment | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const currentIdRef = useRef<string | undefined>(id)
+  const requestSeqRef = useRef(0)
 
   useEffect(() => {
     currentIdRef.current = id
@@ -25,15 +26,16 @@ export function ChatEnvironmentChip({ environment }: { environment: OAIEnvironme
     setEnv(null)
     setError(null)
     const refresh = () => {
+      const seq = ++requestSeqRef.current
       void api.getSandboxEnvironment(id).then(
         (loaded) => {
-          if (currentIdRef.current === id) {
+          if (currentIdRef.current === id && seq === requestSeqRef.current) {
             setEnv(loaded)
             setError(null)
           }
         },
         (failure: ApiError) => {
-          if (currentIdRef.current === id) {
+          if (currentIdRef.current === id && seq === requestSeqRef.current) {
             setEnv(null)
             setError(failure)
           }
