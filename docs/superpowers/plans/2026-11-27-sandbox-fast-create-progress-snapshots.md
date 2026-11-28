@@ -60,6 +60,8 @@ Spec `~/code/agentry-sandbox/docs/superpowers/specs/2026-11-26-sandbox-next-desi
 
 ## Snapshots: API and web (next)
 
+Decided by the user 2026-11-28: deleting an environment KEEPS its snapshots (they can still start a new environment).
+
 Written 2026-11-28 after the sandbox service finished snapshots (`agentry-sandbox`, branch `feat/snapshots` merged to `develop`; not yet in a release). Not implemented. Two small plans, API first, then web. This is plan Task 3.8 of `agentry-sandbox/docs/superpowers/plans/2026-11-26-sandbox-next.md`.
 
 ### What the service offers (the contract to build on)
