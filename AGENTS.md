@@ -110,7 +110,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: Projects live check through the UI (user).
 
 **P2 (valuable, bigger)**
-- [ ] E2E mock fidelity: `mock/agentry-mock.ts` replays the pre-2026-11-26 recording and does not stream reasoning/tool items as item frames like the real API; re-record `tests/fixtures/live/web-search.json` or emit item frames, then tighten the live thought count in `tests/e2e/f1.spec.ts`. S.
+- [x] DONE 2026-11-28: e2e mock streams reasoning and tool items as item frames (`saveItem` in `mock/agentry-mock.ts`), like the API since 2026-11-26; the live thought count is strict again. User messages are still saved only.
 - [ ] F3 workspace panel remainder: live file tree, sandbox port preview, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
 - [ ] Agents import and owner connectors (plan `2026-11-26-agents-import-and-owner-connectors.md`, 4 open questions). L.
 - [ ] Composio named tools for apps beyond Gmail and Calendar (backlog 9). M.

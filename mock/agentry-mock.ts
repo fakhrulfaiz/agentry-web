@@ -173,6 +173,16 @@ function emit(s: MockSession, body: WireBody): void {
   for (const client of s.clients) write(client, frame)
 }
 
+/**
+ * Saves a reasoning or tool item and streams it as an item frame, as the API does since 2026-11-26
+ * (`item.added` for a tool call still waiting for its output, `item.done` otherwise). Assistant
+ * messages keep their own delta frames and are saved with `s.items.push`.
+ */
+function saveItem(s: MockSession, item: OAISessionItem, state: 'added' | 'done' = 'done'): void {
+  s.items.push(item)
+  emit(s, { type: `agent.session.turn.item.${state}`, session_id: s.id, turn_id: (item as { turn_id?: string | null }).turn_id ?? null, item } as WireBody)
+}
+
 function emitEphemeral(s: MockSession, body: WireBody): void {
   const event = { ...body, event_id: `evt_${s.id}_e${Date.now()}` } as OAISessionEvent
   for (const client of s.clients) write(client, { event })
@@ -233,7 +243,7 @@ async function streamText(s: MockSession, turnId: string, chunks: string[], ever
     // A cancelled reply is saved with the text streamed so far.
     const item: OAISessionItem = { id, type: 'message', role: 'assistant', content: [{ type: 'output_text', text }], status: 'completed', turn_id: turnId }
     if (reasoning) {
-      s.items.push({ id: `item_reason_${seq}`, type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }], status: 'completed', turn_id: turnId })
+      saveItem(s, { id: `item_reason_${seq}`, type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }], status: 'completed', turn_id: turnId })
     }
     s.items.push({ ...item, content: [{ type: 'output_text', text: (reasoning ?? '') + text }] })
     emit(s, { type: 'agent.session.turn.output_text.done', item_id: id, output_index: 0, content_index: 0, ...base, text })
@@ -253,7 +263,7 @@ async function functionCall(
   s.seq += 1
   const callId = `call_${s.seq}`
   const call: OAISessionItem = { id: `item_fn_${s.seq}`, type: 'function_call', name, call_id: callId, arguments: args, status: 'in_progress', turn_id: turnId }
-  s.items.push(call) // saved only, and left `in_progress`, as the backend does
+  saveItem(s, call, 'added') // left `in_progress` in the saved log, as the backend does
   const { output, failed } = await run()
   s.seq += 1
   const out: OAISessionItem = {
@@ -265,7 +275,7 @@ async function functionCall(
     turn_id: turnId,
     ...(failed ? { error: output } : {}),
   }
-  s.items.push(out)
+  saveItem(s, out)
 }
 
 // ---------- the recorded live turn ----------
@@ -318,14 +328,14 @@ async function replayRecording(s: MockSession, turnId: string, signal: AbortSign
         if (body.type === 'agent.session.turn.output_text.delta') await wait(60, signal)
         if (body.type === 'agent.session.turn.item.done') {
           // Saved when the step commits, together with its reasoning.
-          if (reasoning) s.items.push(reasoning)
+          if (reasoning) saveItem(s, reasoning)
           reasoning = undefined
           s.items.push(item)
         }
         emit(s, body as WireBody)
       }
     } else {
-      s.items.push(item)
+      saveItem(s, item, item.type === 'function_call' ? 'added' : 'done')
       await wait(item.type === 'function_call' ? 900 : 300, signal)
     }
   }
