@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMock = vi.hoisted(() => ({
   listEnvironmentSnapshots: vi.fn(),
+  listAllEnvironmentSnapshots: vi.fn(),
+  importEnvironmentSnapshot: vi.fn(),
+  snapshotDownloadUrl: vi.fn((id: string) => `/api/agentry/agents/environments/snapshots/${id}/content`),
   saveEnvironmentSnapshot: vi.fn(),
   deleteEnvironmentSnapshot: vi.fn(),
   restoreEnvironmentSnapshot: vi.fn(),
@@ -30,7 +33,10 @@ const renderPanel = (props: Partial<React.ComponentProps<typeof SnapshotsPanel>>
   return { onRestored, onNewEnvironment }
 }
 
-beforeEach(() => apiMock.listEnvironmentSnapshots.mockResolvedValue(page([snap()])))
+beforeEach(() => {
+  apiMock.listEnvironmentSnapshots.mockResolvedValue(page([snap()]))
+  apiMock.listAllEnvironmentSnapshots.mockResolvedValue(page([]))
+})
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -45,6 +51,53 @@ describe('SnapshotsPanel', () => {
     expect(screen.getByText('2 KB')).toBeInTheDocument()
     expect(screen.getByText('2 min ago')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save snapshot' })).toBeInTheDocument()
+  })
+
+  it('shows a Download link on files-only rows kept on the service and not on the others', async () => {
+    apiMock.listEnvironmentSnapshots.mockResolvedValue(page([snap(), snap({ id: `snap_${'d'.repeat(32)}`, name: 'Whole box', level: 'disk' }), snap({ id: `snap_${'e'.repeat(32)}`, name: 'Half done', state: 'saving', size_bytes: null }), snap({ id: `snap_${'c'.repeat(32)}`, name: 'Kept by the place', place: 'local' })]))
+    renderPanel()
+    await screen.findByText('Whole box')
+    const link = screen.getByRole('link', { name: 'Download Before the refactor' })
+    expect(link).toHaveAttribute('href', `/api/agentry/agents/environments/snapshots/snap_${'a'.repeat(32)}/content`)
+    expect(screen.getAllByRole('link', { name: /^Download/ })).toHaveLength(1)
+  })
+
+  it('uploads an archive from the toolbar icon with an optional name and lists it as uploaded', async () => {
+    apiMock.importEnvironmentSnapshot.mockResolvedValue(snap({ id: `snap_${'f'.repeat(32)}`, name: 'From laptop', environment_id: null }))
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByText('Before the refactor')
+    await user.click(screen.getByRole('button', { name: 'Upload snapshot' }))
+    const file = new File(['x'], 'work.tar.gz', { type: 'application/gzip' })
+    await screen.findByText('Upload snapshot', { selector: 'h2, h1, [role=heading]' })
+    await user.upload(document.querySelector('input[type=file]') as HTMLInputElement, file)
+    await user.type(screen.getByRole('textbox', { name: /Name/ }), 'From laptop')
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+    await waitFor(() => expect(apiMock.importEnvironmentSnapshot).toHaveBeenCalledWith(file, expect.objectContaining({ name: 'From laptop' })))
+    const uploaded = await screen.findByRole('list', { name: 'Uploaded snapshots' })
+    expect(within(uploaded).getByText('From laptop')).toBeInTheDocument()
+    expect(screen.getByText('Uploaded and from deleted environments')).toBeInTheDocument()
+  })
+
+  it('shows an upload error inline and keeps the dialog open', async () => {
+    apiMock.importEnvironmentSnapshot.mockRejectedValue(new ApiError(400, 'invalid_request', "symlink 'l' points outside the workspace"))
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByText('Before the refactor')
+    await user.click(screen.getByRole('button', { name: 'Upload snapshot' }))
+    await screen.findByText('Upload snapshot', { selector: 'h2, h1, [role=heading]' })
+    await user.upload(document.querySelector('input[type=file]') as HTMLInputElement, new File(['x'], 'bad.tar.gz'))
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+    expect(await screen.findByText("symlink 'l' points outside the workspace")).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Upload' })).toBeInTheDocument()
+  })
+
+  it('lists snapshots without an environment (uploaded or orphaned) so they can be restored here', async () => {
+    apiMock.listAllEnvironmentSnapshots.mockResolvedValue(page([snap({ id: `snap_${'9'.repeat(32)}`, name: 'Old box', environment_id: null }), snap()]))
+    renderPanel()
+    const list = await screen.findByRole('list', { name: 'Uploaded snapshots' })
+    expect(within(list).getByText('Old box')).toBeInTheDocument()
+    expect(within(list).queryByText('Before the refactor')).not.toBeInTheDocument()
   })
 
   it('shows one line and the save button when there are none', async () => {

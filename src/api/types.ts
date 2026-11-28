@@ -784,7 +784,7 @@ export type SnapshotLevel = 'workspace' | 'disk' | 'memory'
 export interface EnvironmentSnapshot {
   id: string
   object: 'snapshot'
-  /** The environment it was taken from; null once that environment was deleted. */
+  /** The environment it was taken from; null once that environment was deleted, and for an uploaded snapshot. */
   environment_id: string | null
   /** `service` for files kept on the sandbox service, else the place that holds it. */
   place: string

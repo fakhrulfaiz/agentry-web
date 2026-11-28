@@ -67,7 +67,11 @@ const RULES: readonly Rule[] = [
   // Snapshots of a sandbox: save, list, restore; a snapshot has its own id (`snap_…`) and outlives its environment.
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'snapshots'] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'restore'] },
+  { methods: ['GET'], segments: ['agents', 'environments', 'snapshots'] },
   { methods: ['DELETE'], segments: ['agents', 'environments', 'snapshots', SNAPSHOT] },
+  // A files-only snapshot's tar.gz: the download and the upload have their own routes (streamed, not buffered), which check these entries.
+  { methods: ['GET'], segments: ['agents', 'environments', 'snapshots', SNAPSHOT, 'content'] },
+  { methods: ['POST'], segments: ['agents', 'environments', 'snapshots', 'import'] },
   // Interactive shell in a sandbox: open, type, resize, close. The output stream has its own route (SSE).
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals'] },
   { methods: ['DELETE'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL] },

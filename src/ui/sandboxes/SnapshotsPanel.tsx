@@ -11,18 +11,20 @@ import { Button } from '@astryxdesign/core/Button'
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
+import { FileInput } from '@astryxdesign/core/FileInput'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
+import { ProgressBar } from '@astryxdesign/core/ProgressBar'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { VStack } from '@astryxdesign/core/VStack'
-import { CameraIcon } from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon, ArrowUpTrayIcon, CameraIcon } from '@heroicons/react/24/outline'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { EnvironmentSnapshot, SandboxEnvironment, SnapshotLevel } from '@/api/types'
@@ -102,6 +104,54 @@ function SaveDialog({ environmentId, levels, isOpen, onClose, onSaved }: {
   )
 }
 
+function UploadDialog({ isOpen, onClose, onUploaded }: { isOpen: boolean; onClose(): void; onUploaded(snapshot: EnvironmentSnapshot): void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [name, setName] = useState('')
+  const [progress, setProgress] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const busy = progress !== null
+
+  useEffect(() => {
+    if (isOpen) { setFile(null); setName(''); setProgress(null); setError(null) }
+  }, [isOpen])
+
+  async function upload(event: FormEvent) {
+    event.preventDefault()
+    if (!file || busy) return
+    if (name.trim().length > MAX_NAME) return setError(`Use at most ${String(MAX_NAME)} characters.`)
+    setError(null)
+    setProgress(0)
+    try {
+      const snap = await api.importEnvironmentSnapshot(file, { ...(name.trim() ? { name: name.trim() } : {}), onProgress: setProgress })
+      onUploaded(snap)
+      onClose()
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(message(err, 'Could not upload the snapshot.'))
+    } finally {
+      setProgress(null)
+    }
+  }
+
+  return (
+    <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && !busy && onClose()} purpose="form" width={460}>
+      <DialogHeader title="Upload snapshot" subtitle="A .tar.gz of workspace files, such as one you downloaded." onOpenChange={(open: boolean) => !open && !busy && onClose()} />
+      <form onSubmit={(e) => void upload(e)}>
+        <VStack gap={4} padding={4}>
+          <FileInput label="Archive" accept=".tar.gz,.tgz,.tar,application/gzip,application/x-tar" value={file} onChange={(v) => { setFile(Array.isArray(v) ? (v[0] ?? null) : v); setError(null) }} isDisabled={busy} />
+          <TextInput label="Name" isOptional placeholder="Before the refactor" value={name} onChange={(v) => { setName(v); setError(null) }} isDisabled={busy} />
+          {busy && <ProgressBar label="Uploading" value={Math.round(progress * 100)} />}
+          {error !== null && <Banner status="error" title={error} />}
+          <HStack gap={2} hAlign="end">
+            <Button label="Cancel" variant="ghost" onClick={onClose} isDisabled={busy} />
+            <Button label="Upload" variant="primary" type="submit" isLoading={busy} isDisabled={!file} />
+          </HStack>
+        </VStack>
+      </form>
+    </Dialog>
+  )
+}
+
 function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: EnvironmentSnapshot | null; onClose(): void; onCreated(): void }) {
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -143,6 +193,54 @@ function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: Environment
   )
 }
 
+function SnapshotList({ label, snaps, onRestore, onNewFrom, onDelete }: {
+  label: string
+  snaps: readonly EnvironmentSnapshot[]
+  onRestore(snap: EnvironmentSnapshot): void
+  onNewFrom(snap: EnvironmentSnapshot): void
+  onDelete(snap: EnvironmentSnapshot): void
+}) {
+  return (
+    <ul aria-label={label} style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+      {snaps.map((snap) => {
+        const items = snap.state === 'ready'
+          ? [
+              { label: 'Restore', onClick: () => onRestore(snap) },
+              { label: 'New environment from this snapshot', onClick: () => onNewFrom(snap) },
+              { type: 'divider' as const },
+              { label: 'Delete', variant: 'destructive' as const, onClick: () => onDelete(snap) },
+            ]
+          : snap.state === 'failed'
+            ? [{ label: 'Delete', variant: 'destructive' as const, onClick: () => onDelete(snap) }]
+            : []
+        return (
+          <li key={snap.id}>
+            <HStack gap={3} vAlign="center" padding={2}>
+              <StackItem size="fill">
+                <VStack gap={0.5}>
+                  <Text weight="medium" maxLines={1}>{snap.name}</Text>
+                  {snap.state === 'failed' && <Text type="supporting" color="secondary">{snap.error ?? 'Saving failed.'}</Text>}
+                </VStack>
+              </StackItem>
+              <Text type="supporting" color="secondary">{levelShort[snap.level]}</Text>
+              {snap.size_bytes !== null && <Text type="supporting" color="secondary">{formatBytes(snap.size_bytes)}</Text>}
+              <Text type="supporting" color="secondary">{ago(snap.created_at)}</Text>
+              {snap.state === 'saving' && (
+                <HStack gap={1} vAlign="center"><Spinner size="sm" /><Text type="supporting">Saving…</Text></HStack>
+              )}
+              {snap.state === 'failed' && <Text type="supporting" color="secondary">Failed</Text>}
+              {snap.state === 'ready' && snap.level === 'workspace' && snap.place === 'service' && (
+                <IconButton label={`Download ${snap.name}`} tooltip="Download" size="sm" variant="ghost" icon={<Icon icon={ArrowDownTrayIcon} />} href={api.snapshotDownloadUrl(snap.id)} />
+              )}
+              {items.length > 0 && <MoreMenu label={`More options for ${snap.name}`} size="sm" alignment="end" items={items} />}
+            </HStack>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onNewEnvironment, onCount }: {
   environmentId: string
   /** The levels this sandbox's place can take. */
@@ -155,6 +253,9 @@ export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onN
   onCount?(count: number): void
 }) {
   const [snaps, setSnaps] = useState<EnvironmentSnapshot[] | null>(null)
+  // Snapshots with no environment: uploaded ones and those whose environment was deleted. Any of them can be restored here.
+  const [others, setOthers] = useState<EnvironmentSnapshot[]>([])
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saveOpen, setSaveOpen] = useState(false)
   const [restoring, setRestoring] = useState<EnvironmentSnapshot | null>(null)
@@ -164,7 +265,11 @@ export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onN
 
   const load = useCallback(async () => {
     try {
-      const page = await api.listEnvironmentSnapshots(environmentId)
+      const [page, all] = await Promise.all([
+        api.listEnvironmentSnapshots(environmentId),
+        api.listAllEnvironmentSnapshots().catch((err: unknown) => { if (isSignedOut(err)) throw err; return null }),
+      ])
+      if (all) setOthers(all.data.filter((x) => x.environment_id === null))
       setSnaps(page.data)
       onCount?.(page.data.length)
       setError(null)
@@ -177,7 +282,7 @@ export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onN
   }, [environmentId])
   useEffect(() => { void load() }, [load])
 
-  const saving = snaps !== null && anySaving(snaps)
+  const saving = snaps !== null && (anySaving(snaps) || anySaving(others))
   useEffect(() => {
     if (!saving) return
     const timer = setInterval(() => void load(), POLL_MS)
@@ -219,6 +324,14 @@ export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onN
       <HStack gap={2} vAlign="center">
         <StackItem size="fill" />
         <IconButton
+          label="Upload snapshot"
+          tooltip="Upload snapshot"
+          size="sm"
+          variant="ghost"
+          icon={<Icon icon={ArrowUpTrayIcon} />}
+          onClick={() => setUploadOpen(true)}
+        />
+        <IconButton
           label="Save snapshot"
           tooltip={noLevels ? 'Snapshots are not set up on this service.' : 'Save snapshot'}
           size="sm"
@@ -234,41 +347,15 @@ export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onN
       ) : snaps.length === 0 ? (
         <EmptyState title="No snapshots yet." description="Save one before a risky change." />
       ) : (
-        <ul aria-label="Snapshots" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {snaps.map((snap) => {
-            const items = snap.state === 'ready'
-              ? [
-                  { label: 'Restore', onClick: () => setRestoring(snap) },
-                  { label: 'New environment from this snapshot', onClick: () => setNewFrom(snap) },
-                  { type: 'divider' as const },
-                  { label: 'Delete', variant: 'destructive' as const, onClick: () => setDeleting(snap) },
-                ]
-              : snap.state === 'failed'
-                ? [{ label: 'Delete', variant: 'destructive' as const, onClick: () => setDeleting(snap) }]
-                : []
-            return (
-              <li key={snap.id}>
-                <HStack gap={3} vAlign="center" padding={2}>
-                  <StackItem size="fill">
-                    <VStack gap={0.5}>
-                      <Text weight="medium" maxLines={1}>{snap.name}</Text>
-                      {snap.state === 'failed' && <Text type="supporting" color="secondary">{snap.error ?? 'Saving failed.'}</Text>}
-                    </VStack>
-                  </StackItem>
-                  <Text type="supporting" color="secondary">{levelShort[snap.level]}</Text>
-                  {snap.size_bytes !== null && <Text type="supporting" color="secondary">{formatBytes(snap.size_bytes)}</Text>}
-                  <Text type="supporting" color="secondary">{ago(snap.created_at)}</Text>
-                  {snap.state === 'saving' && (
-                    <HStack gap={1} vAlign="center"><Spinner size="sm" /><Text type="supporting">Saving…</Text></HStack>
-                  )}
-                  {snap.state === 'failed' && <Text type="supporting" color="secondary">Failed</Text>}
-                  {items.length > 0 && <MoreMenu label={`More options for ${snap.name}`} size="sm" alignment="end" items={items} />}
-                </HStack>
-              </li>
-            )
-          })}
-        </ul>
+        <SnapshotList label="Snapshots" snaps={snaps} onRestore={setRestoring} onNewFrom={setNewFrom} onDelete={setDeleting} />
       )}
+      {others.length > 0 && (
+        <VStack gap={1}>
+          <Text type="supporting" color="secondary" weight="medium">Uploaded and from deleted environments</Text>
+          <SnapshotList label="Uploaded snapshots" snaps={others} onRestore={setRestoring} onNewFrom={setNewFrom} onDelete={setDeleting} />
+        </VStack>
+      )}
+      <UploadDialog isOpen={uploadOpen} onClose={() => setUploadOpen(false)} onUploaded={(snap) => setOthers((cur) => [snap, ...cur])} />
       <SaveDialog
         environmentId={environmentId}
         levels={levels}

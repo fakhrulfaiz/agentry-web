@@ -535,6 +535,35 @@ export const api = {
   listEnvironmentSnapshots(id: string): Promise<SandboxPage<EnvironmentSnapshot>> {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/snapshots`)
   },
+  /** Every snapshot of the caller, newest first, including uploaded ones and those whose environment was deleted (`environment_id: null`). */
+  listAllEnvironmentSnapshots(): Promise<SandboxPage<EnvironmentSnapshot>> {
+    return request('GET', `${AGENTRY}/agents/environments/snapshots`)
+  },
+  /** Where a browser downloads a files-only snapshot's tar.gz (a plain link; the route streams it). */
+  snapshotDownloadUrl(snapshotId: string): string {
+    return `${AGENTRY}/agents/environments/snapshots/${seg(snapshotId)}/content`
+  },
+  /** Uploads a tar archive as a new files-only snapshot; reports progress in `0..1`; aborting `signal` cancels it. */
+  importEnvironmentSnapshot(file: File, opts: { name?: string; onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}): Promise<EnvironmentSnapshot> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${AGENTRY}/agents/environments/snapshots/import${opts.name ? `?name=${encodeURIComponent(opts.name)}` : ''}`)
+      xhr.setRequestHeader('accept', 'application/json')
+      xhr.setRequestHeader('content-type', 'application/gzip')
+      xhr.setRequestHeader(CSRF_HEADER, csrfToken())
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) opts.onProgress?.(event.loaded / event.total)
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) return resolve(JSON.parse(xhr.responseText) as EnvironmentSnapshot)
+        toError(new Response(xhr.responseText, { status: xhr.status })).then(reject, reject)
+      }
+      xhr.onerror = () => reject(new ApiError(0, 'network_error', 'Network error'))
+      xhr.onabort = () => reject(new ApiError(0, 'aborted', 'Upload cancelled'))
+      opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+      xhr.send(file)
+    })
+  },
   async deleteEnvironmentSnapshot(snapshotId: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/snapshots/${seg(snapshotId)}`)
   },

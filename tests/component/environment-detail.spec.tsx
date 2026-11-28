@@ -23,6 +23,8 @@ const apiMock = vi.hoisted(() => ({
   listSandboxTemplates: vi.fn(),
   listSessions: vi.fn(),
   listEnvironmentSnapshots: vi.fn(),
+  listAllEnvironmentSnapshots: vi.fn(),
+  snapshotDownloadUrl: vi.fn((id: string) => `/dl/${id}`),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
@@ -40,6 +42,7 @@ beforeEach(() => {
   apiMock.listSandboxProviders.mockRejectedValue(new Error('no places'))
   apiMock.listSandboxTemplates.mockResolvedValue({ object: 'list', data: [], has_more: false })
   apiMock.listEnvironmentSnapshots.mockResolvedValue({ object: 'list', data: [], has_more: false })
+  apiMock.listAllEnvironmentSnapshots.mockResolvedValue({ object: 'list', data: [], has_more: false })
   apiMock.listSessions.mockResolvedValue({ object: 'list', data: [], has_more: false, first_id: null, last_id: null })
 })
 afterEach(() => {

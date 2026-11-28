@@ -140,6 +140,10 @@ States you may see:
 
 Environments on **This server** have no Start, Stop or Reset. They are just a folder.
 
+## Moving files-only snapshots between machines
+
+On an environment's **Snapshots** tab, a "Files only" snapshot has a download icon: it saves the workspace as a `.tar.gz`. The upload icon next to the camera takes such a file (or a plain `.tar`) and keeps it as a new snapshot, which you can restore into an environment or start a new environment from. Uploaded snapshots (and those of deleted environments) are listed in a second group on the tab. The service checks every file in the archive and refuses absolute paths, `..`, links that point out of the workspace and device files; the size limit is `AGENTRY_SANDBOX_SNAPSHOT_IMPORT_MAX_MB` (default 2048), and an upload counts toward the per-owner snapshot limit. Whole-sandbox and running-state snapshots cannot be downloaded, and neither can files-only snapshots a place keeps itself (taken while `AGENTRY_SANDBOX_SNAPSHOT_DIR` was not set on the service; `scripts/dev.sh` now defaults it to `~/.local/share/agentry-sandbox/snapshots`).
+
 ## Limits (so an agent can't run away with resources)
 
 Agentry Sandbox enforces these. Going over one refuses the request with the reason, for example "sandbox limit reached: … (limit 5)", and the web app shows that message in the dialog. The easiest way to change them is the admin page, which applies changes live. The environment variables below set the defaults; changing those needs a restart:
