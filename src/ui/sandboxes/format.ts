@@ -30,8 +30,8 @@ export function environmentLook(env: SandboxEnvironment): Look {
   }
 }
 
-/** The name people see: the given name, else "Unnamed environment". */
-export const environmentName = (env: Pick<SandboxEnvironment, 'id' | 'name'>): string => env.name || 'Unnamed environment'
+/** The name people see: the given name, else "Unnamed sandbox". */
+export const environmentName = (env: Pick<SandboxEnvironment, 'id' | 'name'>): string => env.name || 'Unnamed sandbox'
 
 /** A short form of an id for secondary text: `env_6784…3a`. */
 export const shortId = (id: string): string => (id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-3)}` : id)

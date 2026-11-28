@@ -127,7 +127,7 @@ describe('Browser tab live view', () => {
 
   it.each([
     ['not_sandbox', 'Only chats on a sandbox can use a browser', /Start a chat on a sandbox/],
-    ['no_browser', 'This sandbox has no browser', /Start a new chat on an environment made from the Web and browser template\./],
+    ['no_browser', 'This sandbox has no browser', /Start a new chat on a sandbox made from the Web and browser template\./],
     ['browser_off', 'The web browser is off for this agent', /Turn on Web browser in the agent's Tools\./],
   ])('says why the chat cannot browse: %s', (reason, title, description) => {
     openBrowserTab(EMPTY_BROWSER)

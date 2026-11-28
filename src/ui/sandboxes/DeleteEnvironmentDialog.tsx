@@ -42,10 +42,10 @@ export function DeleteEnvironmentDialog({ environmentId, name, isOpen, onClose, 
       <DialogHeader title={`Delete ${name}?`} onOpenChange={(open: boolean) => !open && onClose()} />
       <VStack gap={3} padding={4}>
         <Text>Its workspace and every file in it are removed. Chats that used it keep their history.</Text>
-        {count > 0 && <CheckboxInput label={`Also delete its ${String(count)} ${count === 1 ? 'snapshot' : 'snapshots'}`} description="Otherwise they are kept and can still start a new environment." value={also} onChange={setAlso} />}
+        {count > 0 && <CheckboxInput label={`Also delete its ${String(count)} ${count === 1 ? 'snapshot' : 'snapshots'}`} description="Otherwise they are kept and can still start a new sandbox." value={also} onChange={setAlso} />}
         <HStack gap={2} hAlign="end">
           <Button label="Cancel" variant="ghost" onClick={onClose} />
-          <Button label="Delete environment" variant="destructive" onClick={() => onConfirm(count > 0 && also)} />
+          <Button label="Delete sandbox" variant="destructive" onClick={() => onConfirm(count > 0 && also)} />
         </HStack>
       </VStack>
     </Dialog>

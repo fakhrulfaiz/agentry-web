@@ -170,7 +170,7 @@ export function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: Envi
       onCreated()
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
-      setError(message(err, 'Could not create the environment.'))
+      setError(message(err, 'Could not create the sandbox.'))
     } finally {
       setCreating(false)
     }
@@ -178,14 +178,14 @@ export function NewFromDialog({ snapshot, onClose, onCreated }: { snapshot: Envi
 
   return (
     <Dialog isOpen={snapshot !== null} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={440}>
-      <DialogHeader title="New environment from snapshot" subtitle={snapshot ? `Starting from ${snapshot.name}` : undefined} onOpenChange={(open: boolean) => !open && onClose()} />
+      <DialogHeader title="New sandbox from snapshot" subtitle={snapshot ? `Starting from ${snapshot.name}` : undefined} onOpenChange={(open: boolean) => !open && onClose()} />
       <form onSubmit={(e) => void create(e)}>
         <VStack gap={4} padding={4}>
           <TextInput label="Name" isOptional placeholder="Data analysis" value={name} onChange={setName} hasAutoFocus />
           {error !== null && <Banner status="error" title={error} />}
           <HStack gap={2} hAlign="end">
             <Button label="Cancel" variant="ghost" onClick={onClose} />
-            <Button label="Create environment" variant="primary" type="submit" isLoading={creating} />
+            <Button label="Create sandbox" variant="primary" type="submit" isLoading={creating} />
           </HStack>
         </VStack>
       </form>
@@ -207,7 +207,7 @@ export function SnapshotList({ label, snaps, onRestore, onNewFrom, onDelete }: {
         const items = snap.state === 'ready'
           ? [
               ...(onRestore ? [{ label: 'Restore', onClick: () => onRestore(snap) }] : []),
-              { label: 'New environment from this snapshot', onClick: () => onNewFrom(snap) },
+              { label: 'New sandbox from this snapshot', onClick: () => onNewFrom(snap) },
               { type: 'divider' as const },
               { label: 'Delete', variant: 'destructive' as const, onClick: () => onDelete(snap) },
             ]
@@ -352,7 +352,7 @@ export function SnapshotsPanel({ environmentId, levels, canSave, onRestored, onN
       )}
       {others.length > 0 && (
         <VStack gap={1}>
-          <Text type="supporting" color="secondary" weight="medium">Uploaded and from deleted environments</Text>
+          <Text type="supporting" color="secondary" weight="medium">Uploaded and from deleted sandboxes</Text>
           <SnapshotList label="Uploaded snapshots" snaps={others} onRestore={setRestoring} onNewFrom={setNewFrom} onDelete={setDeleting} />
         </VStack>
       )}

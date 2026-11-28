@@ -23,16 +23,16 @@ export function environmentChip(
   error?: ApiError | null,
 ): EnvironmentChip {
   const id = sandboxEnvironmentId(environment)
-  if (!id) return { label: 'Server', variant: 'neutral', description: 'Default workspace on this server' }
+  if (!id) return { label: 'Server', variant: 'neutral', description: 'Runs on this server, not in a sandbox' }
 
   if (!env) {
     if (error?.status === 404) {
       return { label: 'Removed sandbox', variant: 'neutral', description: 'This chat’s sandbox no longer exists' }
     }
     if (error) {
-      return { label: 'Sandbox', variant: 'neutral', description: `Could not load environment details (${shortId(id)})` }
+      return { label: 'Sandbox', variant: 'neutral', description: `Could not load sandbox details (${shortId(id)})` }
     }
-    return { label: 'Sandbox', variant: 'neutral', description: 'Loading environment details…' }
+    return { label: 'Sandbox', variant: 'neutral', description: 'Loading sandbox details…' }
   }
 
   const look = environmentLook(env)

@@ -150,7 +150,7 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
             ]}
           />
           <Selector
-            label="Environment"
+            label="Runs in"
             description="Pick a sandbox to give this project its own workspace and files."
             value={environmentId}
             onChange={(value) => {
@@ -160,7 +160,7 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
               setEnvironmentId(value ?? '')
             }}
             options={[
-              { value: '', label: 'Default workspace' },
+              { value: '', label: 'This server' },
               ...environments.map((environment) => ({ value: environment.id, label: environment.name || 'Untitled sandbox' })),
             ]}
           />

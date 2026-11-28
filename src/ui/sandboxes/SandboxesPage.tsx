@@ -104,11 +104,11 @@ function NewEnvironmentDialog({
   return (
     <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={520}>
       <Layout
-        header={<DialogHeader title="New environment" subtitle="A workspace an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />}
+        header={<DialogHeader title="New sandbox" subtitle="An isolated machine an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />}
         content={
           <LayoutContent>
             <VStack gap={4}>
-              <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat environment menu." value={name} onChange={setName} />
+              <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat 'Runs in' menu." value={name} onChange={setName} />
               {providers.length > 0 && <RunsOnPicker
                 providers={providers}
                 value={provider}
@@ -144,7 +144,7 @@ function NewEnvironmentDialog({
           <LayoutFooter>
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="ghost" onClick={onClose} />
-              <Button label="Create environment" variant="primary" isDisabled={!provider} onClick={create} />
+              <Button label="Create sandbox" variant="primary" isDisabled={!provider} onClick={create} />
             </HStack>
           </LayoutFooter>
         }
@@ -215,7 +215,7 @@ export function SandboxesPage() {
       },
       (err: unknown) => {
         if (isSignedOut(err)) return goToLogin()
-        setError(err instanceof ApiError ? err.message : 'Could not create the environment.')
+        setError(err instanceof ApiError ? err.message : 'Could not create the sandbox.')
       },
     )
   }
@@ -345,12 +345,12 @@ export function SandboxesPage() {
         <HStack gap={3} vAlign="center" wrap="wrap">
           <StackItem size="fill">
             <HStack gap={1} vAlign="center" role="group" aria-label="Sandboxes view">
-              <ToggleButton label="Environments" size="sm" isPressed={view === 'environments'} onPressedChange={() => setView('environments')} />
+              <ToggleButton label="Sandboxes" size="sm" isPressed={view === 'environments'} onPressedChange={() => setView('environments')} />
               <ToggleButton label="Templates" size="sm" isPressed={view === 'templates'} onPressedChange={() => setView('templates')} />
               <ToggleButton label="Providers" size="sm" isPressed={view === 'providers'} onPressedChange={() => setView('providers')} />
             </HStack>
           </StackItem>
-          {view === 'environments' && <Button label="New environment" variant="primary" onClick={() => setDialog('environment')} />}
+          {view === 'environments' && <Button label="New sandbox" variant="primary" onClick={() => setDialog('environment')} />}
           {view === 'templates' && <Button label="New template" variant="primary" onClick={() => setDialog('template')} />}
         </HStack>
         {error !== null && <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />}
@@ -361,9 +361,9 @@ export function SandboxesPage() {
           environments.length === 0 ? (
             <EmptyState
               icon={<Icon icon={CircleStackIcon} size="lg" color="secondary" />}
-              title="No environments yet."
-              description="An environment is a workspace an agent runs in, with its own files. Create one, then pick it when you start a chat."
-              actions={<Button label="New environment" onClick={() => setDialog('environment')} />}
+              title="No sandboxes yet."
+              description="A sandbox is an isolated machine an agent runs in, with its own files. Create one, then pick it when you start a chat."
+              actions={<Button label="New sandbox" onClick={() => setDialog('environment')} />}
             />
           ) : (
             <VStack gap={5}>
@@ -402,7 +402,7 @@ export function SandboxesPage() {
             <EmptyState
               icon={<Icon icon={DocumentDuplicateIcon} size="lg" color="secondary" />}
               title="No templates yet."
-              description="A template saves a setup (software, starter files, commands) so every new environment begins the same way."
+              description="A template saves a setup (software, starter files, commands) so every new sandbox begins the same way."
               actions={<Button label="New template" onClick={() => setDialog('template')} />}
             />
           ) : (
@@ -461,7 +461,7 @@ export function SandboxesPage() {
       <RenameEnvironmentDialog environment={renaming} onClose={() => setRenaming(null)} onRenamed={replaceEnvironment} />
       <DeleteEnvironmentDialog
         environmentId={deletingEnv?.id ?? ''}
-        name={deletingEnv ? environmentName(deletingEnv) : 'this environment'}
+        name={deletingEnv ? environmentName(deletingEnv) : 'this sandbox'}
         isOpen={deletingEnv !== null}
         onClose={() => setDeletingEnv(null)}
         onConfirm={(deleteSnapshots) => void removeEnvironment(deleteSnapshots)}
@@ -473,7 +473,7 @@ export function SandboxesPage() {
         isOpen={removing !== null}
         onOpenChange={(open: boolean) => !open && setRemoving(null)}
         title="Delete this template?"
-        description="Environments already created from it keep running. You cannot start new ones from it."
+        description="Sandboxes already created from it keep running. You cannot start new ones from it."
         actionLabel="Delete template"
         onAction={() => void removeTemplate()}
       />

@@ -167,7 +167,7 @@ export function Message({
     case 'action': {
       const action = view.action
       if (action.type !== 'approval') {
-        const what = action.type === 'function_call' ? `Waiting for ${action.name} to run` : 'Waiting for the environment to connect'
+        const what = action.type === 'function_call' ? `Waiting for ${action.name} to run` : 'Waiting for the sandbox to connect'
         return (
           <AssistantRow anchor={anchor} highlighted={highlighted}>
             <Text type="supporting">{what}</Text>

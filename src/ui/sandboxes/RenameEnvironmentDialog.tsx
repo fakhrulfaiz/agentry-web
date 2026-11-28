@@ -43,7 +43,7 @@ export function RenameEnvironmentDialog({
       onClose()
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
-      setError(err instanceof ApiError ? err.message : 'Could not rename the environment.')
+      setError(err instanceof ApiError ? err.message : 'Could not rename the sandbox.')
     } finally {
       setSaving(false)
     }
@@ -51,13 +51,13 @@ export function RenameEnvironmentDialog({
 
   return (
     <Dialog isOpen={environment !== null} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={440}>
-      <DialogHeader title="Rename environment" onOpenChange={(open: boolean) => !open && onClose()} />
+      <DialogHeader title="Rename sandbox" onOpenChange={(open: boolean) => !open && onClose()} />
       <form onSubmit={(e) => void save(e)}>
         <VStack gap={4} padding={4}>
           <TextInput
             label="Name"
             placeholder="Data analysis"
-            description="Leave it empty to show the environment's id instead."
+            description="Leave it empty to show the sandbox's id instead."
             value={name}
             onChange={(v) => { setName(v); setError(null) }}
             hasAutoFocus

@@ -73,7 +73,7 @@ describe('ChatEnvironmentChip', () => {
     expect(await screen.findByText('Sandbox')).toBeInTheDocument()
     expect(screen.getByText('Sandbox').closest('[aria-description]')).toHaveAttribute(
       'aria-description',
-      'Could not load environment details (env_1)',
+      'Could not load sandbox details (env_1)',
     )
   })
 

@@ -30,7 +30,7 @@ export function TemplateDetailsDialog({ template, onClose }: { template: Sandbox
     <Dialog isOpen={t !== null} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={480}>
       <DialogHeader
         title={t?.name || 'Template'}
-        subtitle={t?.built_in ? 'Built in. It cannot be changed or deleted.' : 'A saved setup new environments start from.'}
+        subtitle={t?.built_in ? 'Built in. It cannot be changed or deleted.' : 'A saved setup new sandboxes start from.'}
         onOpenChange={(open: boolean) => !open && onClose()}
       />
       {t && (

@@ -129,7 +129,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
       if (err instanceof ApiError && err.status === 404) return setMissing(true)
-      setError(err instanceof ApiError ? err.message : 'Could not load this environment.')
+      setError(err instanceof ApiError ? err.message : 'Could not load this sandbox.')
       void loadFiles()
     }
   }, [environmentId, loadFiles])
@@ -226,7 +226,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
       setConfirmReset(false)
-      setError(err instanceof ApiError ? err.message : `Could not ${action} the environment.`)
+      setError(err instanceof ApiError ? err.message : `Could not ${action} the sandbox.`)
     } finally {
       setActing(null)
     }
@@ -238,14 +238,14 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
       router.push('/sandboxes')
     } catch (err) {
       setConfirmDelete(false)
-      setError(err instanceof ApiError ? err.message : 'Could not delete the environment.')
+      setError(err instanceof ApiError ? err.message : 'Could not delete the sandbox.')
     }
   }
 
   if (missing) {
     return (
       <div style={{ width: '100%', maxWidth: COLUMN_WIDTH, margin: '0 auto', padding: '24px 16px' }}>
-        <EmptyState title="This environment no longer exists." description="It may have been deleted." actions={<Button label="Back to sandboxes" onClick={() => router.push('/sandboxes')} />} />
+        <EmptyState title="This sandbox no longer exists." description="It may have been deleted." actions={<Button label="Back to sandboxes" onClick={() => router.push('/sandboxes')} />} />
       </div>
     )
   }
@@ -273,7 +273,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const menu = [
     ...(state !== undefined && state !== 'gone' && !settingUp && canReset && !placeDown ? [{ label: 'Reset', onClick: () => setConfirmReset(true) }] : []),
     { label: 'Rename', onClick: () => setRenaming(true) },
-    ...(state !== 'gone' ? [{ type: 'divider' as const }, { label: 'Delete environment', variant: 'destructive' as const, onClick: () => setConfirmDelete(true) }] : []),
+    ...(state !== 'gone' ? [{ type: 'divider' as const }, { label: 'Delete sandbox', variant: 'destructive' as const, onClick: () => setConfirmDelete(true) }] : []),
   ]
 
   const about = env && (
@@ -302,10 +302,10 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         )}
         <DefinitionRow label="Created">{shortDate(env.created_at)}</DefinitionRow>
         {env.sandbox?.last_used_at ? <DefinitionRow label="Last used">{ago(env.sandbox.last_used_at)}</DefinitionRow> : null}
-        <DefinitionRow label="Environment ID">
+        <DefinitionRow label="Sandbox ID">
           <HStack gap={1} vAlign="center" hAlign="end">
             <Text type="code" color="primary">{shortId(env.id)}</Text>
-            <CopyButton text={env.id} label="Copy environment ID" />
+            <CopyButton text={env.id} label="Copy sandbox ID" />
           </HStack>
         </DefinitionRow>
       </VStack>
@@ -333,9 +333,9 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         <IconButton label="Upload file" tooltip="Upload file" size="sm" variant="ghost" icon={<Icon icon={ArrowUpTrayIcon} />} isLoading={uploading} isDisabled={!uploading && state !== undefined && state !== 'running'} onClick={() => fileInput.current?.click()} />
       </HStack>
       {picked && uploading && <Text type="supporting" color="secondary">{`Uploading ${picked.name}`}</Text>}
-      {state !== undefined && state !== 'running' && <Text type="supporting" color="secondary">Uploads need a running environment.</Text>}
+      {state !== undefined && state !== 'running' && <Text type="supporting" color="secondary">Uploads need a running sandbox.</Text>}
       {filesProblem === 'not-running' && (
-        <Banner status="info" title="Start the environment to see its files." endContent={notRunning ? <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} /> : undefined} />
+        <Banner status="info" title="Start the sandbox to see its files." endContent={notRunning ? <Button label="Start" size="sm" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} /> : undefined} />
       )}
       {filesProblem === 'unreachable' && <Banner status="warning" title="Couldn't reach the sandbox to list files." endContent={<Button label="Retry" size="sm" onClick={() => void loadFiles()} />} />}
       {filesProblem === 'other' && <Banner status="warning" title="Couldn't list the files." />}
@@ -380,7 +380,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   )
 
   const chatsPanel = chats.length === 0 ? (
-    <EmptyState title="No chats here yet." description={chatsByEnv ? 'Chats you start in this environment are listed here.' : 'Chats on this environment will show here once they load.'} actions={canChat ? <Button label="New chat here" onClick={startChat} /> : undefined} />
+    <EmptyState title="No chats here yet." description={chatsByEnv ? 'Chats you start in this sandbox are listed here.' : 'Chats on this sandbox will show here once they load.'} actions={canChat ? <Button label="New chat here" onClick={startChat} /> : undefined} />
   ) : (
     <ul aria-label="Chats" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {chats.slice(0, 50).map((chat) => (
@@ -418,7 +418,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             </VStack>
           </StackItem>
           {env && (
-            <HStack gap={2} vAlign="center" role="group" aria-label="Environment actions">
+            <HStack gap={2} vAlign="center" role="group" aria-label="Sandbox actions">
               {canChat && <IconButton label="New chat here" tooltip="New chat here" variant="primary" icon={<Icon icon={ChatBubbleLeftEllipsisIcon} />} onClick={startChat} />}
               {state === 'stopped' && !placeDown && <IconButton label="Start" tooltip="Start" variant="ghost" icon={<Icon icon={PlayIcon} />} isLoading={acting === 'start'} isDisabled={acting !== null && acting !== 'start'} onClick={() => void act('start')} />}
               {state === 'running' && !placeDown && <IconButton label="Stop" tooltip="Stop" variant="ghost" icon={<Icon icon={StopIcon} />} isLoading={acting === 'stop'} isDisabled={acting !== null && acting !== 'stop'} onClick={() => void act('stop')} />}
@@ -427,7 +427,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
           )}
         </HStack>
         {env?.error && state !== 'failed' && <Banner status="error" title={env.error} />}
-        {state === 'unknown' && <Banner status="warning" title="Agentry Sandbox is not answering, so this environment's state is unknown." />}
+        {state === 'unknown' && <Banner status="warning" title="Agentry Sandbox is not answering, so this sandbox's state is unknown." />}
         {placeDown && <Banner status="warning" title={`${placeDown.name} is unavailable`} description={`${placeDown.reason ? `${placeDown.reason}. ` : ''}Its stored state may be out of date, so Start, Stop and Reset are hidden until it answers again.`} />}
         {error !== null && <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />}
 
@@ -437,10 +437,10 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
             {state === 'gone' ? (
               <EmptyState
                 title="This sandbox is gone"
-                description="Its files can't be recovered. Delete this environment, then create a new one from Sandboxes."
+                description="Its files can't be recovered. Delete this sandbox, then create a new one from Sandboxes."
                 actions={
                   <HStack gap={2}>
-                    <Button label="Delete environment" variant="destructive" onClick={() => setConfirmDelete(true)} />
+                    <Button label="Delete sandbox" variant="destructive" onClick={() => setConfirmDelete(true)} />
                     <Button label="Back to sandboxes" onClick={() => router.push('/sandboxes')} />
                   </HStack>
                 }
@@ -449,7 +449,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
               <Banner status="info" title="Setting up this sandbox. Its terminal and files appear when it is ready." description={env?.sandbox?.progress ? setupProgressText(env.sandbox.progress) : undefined} />
             ) : brokenSetup ? null : (
               <VStack gap={3}>
-                <TabList value={tab} onChange={(v) => setTab(v as typeof tab)} role="tablist" hasDivider aria-label="Environment">
+                <TabList value={tab} onChange={(v) => setTab(v as typeof tab)} role="tablist" hasDivider aria-label="Sandbox">
                   {tabs.map((t) => (
                     <Tab key={t.value} value={t.value} label={t.label} panelId="environment-panel" endContent={t.value === 'chats' && chats.length > 0 ? <Text type="supporting" color="secondary">{chats.length}</Text> : t.value === 'snapshots' && snapshotCount ? <Text type="supporting" color="secondary">{snapshotCount}</Text> : undefined} />
                   ))}
@@ -463,11 +463,11 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         </div>
       </VStack>
       <Dialog isOpen={confirmReset} onOpenChange={(open: boolean) => { setConfirmReset(open); if (!open) setKeepWorkspace(true) }} purpose="form" width={440}>
-        <DialogHeader title="Reset this environment?" onOpenChange={(open: boolean) => { setConfirmReset(open); if (!open) setKeepWorkspace(true) }} />
+        <DialogHeader title="Reset this sandbox?" onOpenChange={(open: boolean) => { setConfirmReset(open); if (!open) setKeepWorkspace(true) }} />
         <VStack gap={3} padding={4}>
           <Text>
             {!canKeep
-              ? 'Reset deletes all files in this environment.'
+              ? 'Reset deletes all files in this sandbox.'
               : keepWorkspace
               ? 'The sandbox is rebuilt from its template: installed software and anything outside the workspace are lost. Workspace files are kept.'
               : 'The sandbox is rebuilt from its template and every workspace file is deleted.'}
@@ -482,7 +482,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
       <RenameEnvironmentDialog environment={renaming ? env : null} onClose={() => setRenaming(false)} onRenamed={setEnv} />
       <DeleteEnvironmentDialog
         environmentId={environmentId}
-        name={env ? cardName(env) : 'this environment'}
+        name={env ? cardName(env) : 'this sandbox'}
         isOpen={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={(deleteSnapshots) => void remove(deleteSnapshots)}

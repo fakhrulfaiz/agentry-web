@@ -87,7 +87,7 @@ export interface ComposerSettings {
   onAgentChange?(id: string): void
   /** Environment choices for the environment menu (new chats only); the menu shows "Default workspace" until they load. */
   environments?: { id: string; name: string; group?: 'new'; description?: string }[]
-  /** The chosen environment's id; `''` is the default workspace. */
+  /** The chosen environment's id; `''` is this server. */
   environmentId?: string
   onEnvironmentChange?(id: string): void
   /** The environment choices are still loading (the trigger shows a spinner, but stays usable). */
@@ -127,7 +127,7 @@ export function ContextMenus({ settings }: { settings: ComposerSettings }) {
       )}
       {environments && onEnvironmentChange && (
         <Selector
-          label="Environment"
+          label="Runs in"
           isLabelHidden
           size="sm"
           variant="ghost"
@@ -148,14 +148,14 @@ const contextStyles = stylex.create({
   menu: { maxWidth: 280, minWidth: 0 },
 })
 
-/** The environment menu: the default workspace, existing environments, then fresh sandboxes for this chat. */
+/** The environment menu: this server, existing environments, then fresh sandboxes for this chat. */
 function environmentOptions(environments: NonNullable<ComposerSettings['environments']>) {
   const option = (e: (typeof environments)[number]) => ({ value: e.id, label: e.name, ...(e.description ? { description: e.description } : {}) })
   const existing = environments.filter((e) => e.group !== 'new')
   const fresh = environments.filter((e) => e.group === 'new')
   return [
-    { value: '', label: 'Default workspace' },
-    ...(existing.length > 0 ? [{ type: 'section' as const, title: 'Your environments', options: existing.map(option) }] : []),
+    { value: '', label: 'This server' },
+    ...(existing.length > 0 ? [{ type: 'section' as const, title: 'Your sandboxes', options: existing.map(option) }] : []),
     ...(fresh.length > 0 ? [{ type: 'section' as const, title: 'New sandbox for this chat', options: fresh.map(option) }] : []),
   ]
 }

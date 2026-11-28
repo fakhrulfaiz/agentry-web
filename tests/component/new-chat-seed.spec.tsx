@@ -146,7 +146,7 @@ describe('New chat environment menu', () => {
   it('offers existing environments and a fresh sandbox per template, and sends the choice', async () => {
     const user = userEvent.setup()
     render(<NewChat />)
-    await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
+    await user.click(await screen.findByRole('combobox', { name: 'Runs in' }))
     expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
     expect(screen.getByText('New sandbox for this chat')).toBeInTheDocument()
     expect(screen.getByText('Empty sandbox')).toBeInTheDocument()
@@ -165,7 +165,7 @@ describe('New chat environment menu', () => {
     render(<NewChat />)
 
     // The menu is usable as soon as the environment list arrives, without waiting for the slow reads.
-    const menu = await screen.findByRole('combobox', { name: 'Environment' })
+    const menu = await screen.findByRole('combobox', { name: 'Runs in' })
     await user.click(menu)
     expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
     expect(screen.queryByText('New sandbox for this chat')).not.toBeInTheDocument()
@@ -179,7 +179,7 @@ describe('New chat environment menu', () => {
     apiMock.listSandboxProviders.mockResolvedValue(page([{ object: 'sandbox.provider', name: 'sandbox', default: false, available: false, reason: 'down', capabilities: { templateFields: [], files: true, exec: true } }]))
     const user = userEvent.setup()
     render(<NewChat />)
-    await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
+    await user.click(await screen.findByRole('combobox', { name: 'Runs in' }))
     expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
     expect(screen.queryByText('New sandbox for this chat')).not.toBeInTheDocument()
   })
@@ -188,7 +188,7 @@ describe('New chat environment menu', () => {
     const user = userEvent.setup()
     apiMock.createSession.mockResolvedValue({ id: 'sess_created' } as never)
     render(<NewChat />)
-    await user.click(await screen.findByRole('combobox', { name: 'Environment' }))
+    await user.click(await screen.findByRole('combobox', { name: 'Runs in' }))
     await user.click(screen.getByRole('option', { name: /Empty sandbox/ }))
     await user.click(input())
     await user.keyboard('hello{Enter}')
@@ -213,7 +213,7 @@ describe('New chat project preset', () => {
   })
   const selection = () => ({
     agent: screen.getByRole('combobox', { name: 'Agent' }),
-    environment: screen.getByRole('combobox', { name: 'Environment' }),
+    environment: screen.getByRole('combobox', { name: 'Runs in' }),
     model: screen.getByRole('combobox', { name: 'Model' }),
     effort: screen.getByRole('combobox', { name: 'Reasoning effort' }),
   })
@@ -285,7 +285,7 @@ describe('New chat project preset', () => {
     apiMock.getProject.mockResolvedValue(project({ status: 'archived' }))
     render(<NewChat />)
     await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
-    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().environment).toHaveTextContent('This server')
     expect(selection().model).toHaveTextContent('m-default')
     expect(selection().effort).toHaveTextContent('Auto')
     await send()
@@ -298,7 +298,7 @@ describe('New chat project preset', () => {
     render(<NewChat />)
     await waitFor(() => expect(apiMock.getProject).toHaveBeenCalledWith('bad_id'))
     await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
-    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().environment).toHaveTextContent('This server')
     expect(selection().model).toHaveTextContent('m-default')
     expect(selection().effort).toHaveTextContent('Auto')
     await send()
@@ -321,7 +321,7 @@ describe('New chat project preset', () => {
     apiMock.models.mockResolvedValue(['m-default', 'm-saved'])
     const view = render(<NewChat />)
     await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
-    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().environment).toHaveTextContent('This server')
     expect(nav.replace).not.toHaveBeenCalled()
 
     nav.query = 'project=proj_1'
@@ -338,7 +338,7 @@ describe('New chat project preset', () => {
     nav.query = 'fresh=1'
     view.rerender(<NewChat />)
     await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
-    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().environment).toHaveTextContent('This server')
     await waitFor(() => expect(selection().model).toHaveTextContent('m-default'))
     expect(selection().effort).toHaveTextContent('Auto')
   })
@@ -348,7 +348,7 @@ describe('New chat project preset', () => {
     apiMock.models.mockResolvedValue(['m-default', 'm-saved'])
     render(<NewChat />)
     await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
-    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().environment).toHaveTextContent('This server')
     expect(selection().model).toHaveTextContent('m-default')
     expect(selection().effort).toHaveTextContent('Auto')
     await send()

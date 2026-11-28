@@ -36,7 +36,7 @@ const MAX_STARTER_FILES = 20
 type Section = 'software' | 'startup' | 'variables' | 'limits'
 const SECTIONS: { value: Section; label: string; fields: string[]; intro: string }[] = [
   { value: 'software', label: 'Software', fields: ['image', 'packages'], intro: 'What is installed before the agent starts. Leave it empty to use the standard image as it is.' },
-  { value: 'startup', label: 'Startup', fields: ['files', 'setup_commands'], intro: 'Files the workspace starts with, and commands that run once when the environment is first set up.' },
+  { value: 'startup', label: 'Startup', fields: ['files', 'setup_commands'], intro: 'Files the workspace starts with, and commands that run once when the sandbox is first set up.' },
   { value: 'variables', label: 'Variables', fields: ['env'], intro: 'Environment variables every command sees. Do not put secrets you would not show the agent here.' },
   { value: 'limits', label: 'Internet and limits', fields: ['network', 'resources'], intro: 'Private networks are always blocked. Empty limits use the service defaults.' },
 ]
@@ -214,8 +214,8 @@ export function TemplateEditorDialog({
             <Heading level={2} maxLines={1}>{mode === 'create' ? form.name.trim() || words.title : words.title}</Heading>
             <Text type="supporting" color="secondary" maxLines={2}>
               {mode === 'edit'
-                ? 'Changes apply to new environments only. Environments already made from this template keep the setup they were created with.'
-                : 'A setup new environments start from. Editing it later leaves existing environments as they are.'}
+                ? 'Changes apply to new sandboxes only. Sandboxes already made from this template keep the setup they were created with.'
+                : 'A setup new sandboxes start from. Editing it later leaves existing sandboxes as they are.'}
             </Text>
           </div>
           <IconButton label="Close" icon={<Icon icon={XMarkIcon} />} variant="ghost" size="sm" onClick={onClose} />
@@ -337,7 +337,7 @@ export function TemplateEditorDialog({
                   <Selector
                     label="GPUs"
                     isOptional
-                    description={`${chosenPlace?.name ?? 'This place'} has ${gpuCount}. They are reserved for the environment while it runs.`}
+                    description={`${chosenPlace?.name ?? 'This place'} has ${gpuCount}. They are reserved for the sandbox while it runs.`}
                     options={[...Array.from({ length: gpuCount + 1 }, (_, n) => ({ value: String(n), label: String(n) })), { value: 'all', label: 'All' }]}
                     value={form.gpus || '0'}
                     onChange={set('gpus')}

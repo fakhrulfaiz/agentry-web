@@ -29,7 +29,7 @@ describe('sandboxEnvironmentId', () => {
 
 describe('environmentChip', () => {
   it('names the default server workspace for local, legacy and missing configs', () => {
-    const server = { label: 'Server', variant: 'neutral', description: 'Default workspace on this server' }
+    const server = { label: 'Server', variant: 'neutral', description: 'Runs on this server, not in a sandbox' }
     expect(environmentChip({ type: 'local' }, undefined)).toEqual(server)
     expect(environmentChip({ type: 'none' }, undefined)).toEqual(server)
     expect(environmentChip(undefined, undefined)).toEqual(server)
@@ -39,7 +39,7 @@ describe('environmentChip', () => {
     expect(environmentChip(sandbox(), undefined)).toEqual({
       label: 'Sandbox',
       variant: 'neutral',
-      description: 'Loading environment details…',
+      description: 'Loading sandbox details…',
     })
   })
 
@@ -55,7 +55,7 @@ describe('environmentChip', () => {
     expect(environmentChip(sandbox('env_abcdefghijklmno'), undefined, new ApiError(503, 'unavailable', 'down'))).toEqual({
       label: 'Sandbox',
       variant: 'neutral',
-      description: 'Could not load environment details (env_abcd…mno)',
+      description: 'Could not load sandbox details (env_abcd…mno)',
     })
   })
 

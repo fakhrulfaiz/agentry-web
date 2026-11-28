@@ -498,7 +498,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
       <DropdownMenuGroup title="Group by">
         <DropdownMenuRadioGroup label="Group by" value={view.group} onChange={(group) => changeView({ group: group as GroupBy })}>
           <DropdownMenuRadioItem value="project" label="Projects" icon={FolderIcon} />
-          <DropdownMenuRadioItem value="environment" label="Environment" icon={ServerStackIcon} />
+          <DropdownMenuRadioItem value="environment" label="Sandbox" icon={ServerStackIcon} />
           <DropdownMenuRadioItem value="list" label="In one list" icon={QueueListIcon} />
         </DropdownMenuRadioGroup>
       </DropdownMenuGroup>

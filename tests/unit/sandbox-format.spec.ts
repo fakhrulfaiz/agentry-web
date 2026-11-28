@@ -21,7 +21,7 @@ describe('sandbox environment format', () => {
 
   it('names and last use', () => {
     expect(environmentName(env({ name: 'Data box' }))).toBe('Data box')
-    expect(environmentName(env())).toBe('Unnamed environment')
+    expect(environmentName(env())).toBe('Unnamed sandbox')
     const now = 10_000_000_000
     expect(lastUsed(null, now)).toBeNull()
     expect(lastUsed(now / 1000 - 300, now)).toBe('Used 5 min ago')
