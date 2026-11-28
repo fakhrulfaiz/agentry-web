@@ -6,6 +6,8 @@
 import type { AgentDraft } from '@/api/types'
 import type { AgentForm } from './form'
 import { MAX_SUBAGENTS } from './form'
+import { AGENT_COLORS, AGENT_ICONS } from './avatar'
+import type { HueName } from '@/ui/brand/palette'
 
 /** A draft plus what the form shows above it. */
 export interface PendingDraft {
@@ -37,8 +39,11 @@ export function applyDraft(base: AgentForm, draft: AgentDraft, catalog: string[]
   if (draft.name) next.name = draft.name
   if (typeof draft.instructions === 'string') next.instructions = draft.instructions
   if (draft.model && models.includes(draft.model)) next.model = draft.model
-  const { icon: _icon, color: _color, connectors: _connectors, ...metadata } = draft.metadata ?? {}
+  const { icon, color, connectors: _connectors, ...metadata } = draft.metadata ?? {}
   Object.assign(next.extraMetadata, metadata)
+  // A Library agent brings its avatar; anything unknown keeps the form's.
+  if (icon && icon in AGENT_ICONS) next.icon = icon
+  if (color && (AGENT_COLORS as readonly string[]).includes(color)) next.color = color as HueName
   const allow = draft.host_tools?.allow?.filter((t) => catalog.length === 0 || catalog.includes(t))
   if (allow && allow.length > 0) {
     next.allTools = false

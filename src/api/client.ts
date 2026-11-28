@@ -40,6 +40,8 @@ import type {
   OAIAgentSession,
   OAIInputEvent,
   AgentImportResult,
+  LibraryCandidate,
+  LibrarySource,
   CreateAgentParams,
   HostToolInfo,
   OAIAgent,
@@ -635,6 +637,20 @@ export const api = {
   /** Reads an agent definition from a link or pasted text into a draft; nothing is saved. */
   importAgent(input: { url: string } | { text: string }): Promise<AgentImportResult> {
     return request('POST', `${AGENTRY}/agents/import`, input)
+  },
+  /** The user's Library sources (the built-in "Agentry" source lives in the web app). */
+  listLibrarySources(): Promise<{ object: 'list'; data: LibrarySource[] }> {
+    return request('GET', `${AGENTRY}/agents/library/sources`)
+  },
+  addLibrarySource(input: { label: string; url: string }): Promise<LibrarySource> {
+    return request('POST', `${AGENTRY}/agents/library/sources`, input)
+  },
+  async deleteLibrarySource(id: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/library/sources/${seg(id)}`)
+  },
+  /** A source's agent files; the API caches them for 10 minutes unless `refresh`. */
+  listLibrarySourceAgents(id: string, refresh = false): Promise<{ object: 'list'; source_id: string; data: LibraryCandidate[] }> {
+    return request('GET', `${AGENTRY}/agents/library/sources/${seg(id)}/agents${refresh ? '?refresh=1' : ''}`)
   },
   createAgent(params: CreateAgentParams): Promise<OAIAgent> {
     return request('POST', `${AGENTRY}/agents`, params)

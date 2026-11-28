@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * The Agents page: Yours (a dense table of the user's saved agents, or the empty
- * state), with Import (from a link or pasted text) and New agent.
+ * The Agents page: Yours (cards of the user's saved agents, or the empty state) and Library
+ * (built-in and source agents to add), with Import (from a link or pasted text) and New agent.
  */
 import { avatarOf } from '@/agents/avatar'
 import { AgentAvatar } from './AgentAvatar'
@@ -14,6 +14,7 @@ import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { VStack } from '@astryxdesign/core/VStack'
@@ -30,7 +31,8 @@ import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { AgentEditorDialog, editorTargetOf } from './AgentEditorDialog'
 import { useCachedState } from '@/ui/page-cache'
 import { ImportAgentDialog } from './ImportAgentDialog'
-import { setPendingDraft } from '@/agents/draft'
+import { setPendingDraft, type PendingDraft } from '@/agents/draft'
+import { LibraryTab } from './LibraryTab'
 import { download, slugOf, toAgentJson, toAgentMarkdown } from '@/agents/export'
 
 const COLUMN_WIDTH = 880
@@ -72,6 +74,11 @@ export function AgentsPage() {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [importing, setImporting] = useState(false)
+  const [tab, setTab] = useState<'yours' | 'library'>(() => (params.get('tab') === 'library' ? 'library' : 'yours'))
+  const openDraft = (draft: PendingDraft) => {
+    setPendingDraft(draft)
+    go('/agents?new=1&draft=1')
+  }
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +104,10 @@ export function AgentsPage() {
       <VStack gap={4}>
         <Heading level={1} type="display-2">Agents</Heading>
         <HStack gap={3} vAlign="center">
+          <TabList value={tab} onChange={(v) => setTab(v === 'library' ? 'library' : 'yours')} size="sm" aria-label="Agent groups">
+            <Tab value="yours" label="Yours" />
+            <Tab value="library" label="Library" />
+          </TabList>
           <StackItem size="fill" />
           <IconButton label="Import an agent" tooltip="Import from a link or pasted text" variant="ghost" size="sm" icon={<Icon icon={ArrowDownTrayIcon} size="sm" />} onClick={() => setImporting(true)} />
           <Button label="New agent" variant="primary" onClick={() => go('/agents?new=1')} />
@@ -104,14 +115,21 @@ export function AgentsPage() {
         {error !== null && (
           <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />
         )}
-        {agents === null ? (
+        {tab === 'library' ? (
+          <LibraryTab agents={agents ?? []} onDraft={openDraft} />
+        ) : agents === null ? (
           <Skeleton height={160} />
         ) : agents.length === 0 ? (
           <EmptyState
             icon={<Icon icon={UserGroupIcon} size="lg" color="secondary" />}
             title="No agents yet."
-            description="An agent is a saved setup: instructions, a model and the tools it may use. Create one, or import one from a link or pasted text."
-            actions={<Button label="Import an agent" onClick={() => setImporting(true)} />}
+            description="An agent is a saved setup: instructions, a model and the tools it may use. Pick one from the Library, import one, or create your own."
+            actions={
+              <HStack gap={2}>
+                <Button label="Browse the Library" variant="primary" onClick={() => setTab('library')} />
+                <Button label="Import an agent" onClick={() => setImporting(true)} />
+              </HStack>
+            }
           />
         ) : (
           <VStack gap={3}>
@@ -179,8 +197,7 @@ export function AgentsPage() {
         onClose={() => setImporting(false)}
         onDraft={(draft) => {
           setImporting(false)
-          setPendingDraft(draft)
-          go('/agents?new=1&draft=1')
+          openDraft(draft)
         }}
       />
       <AgentEditorDialog

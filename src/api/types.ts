@@ -182,6 +182,22 @@ export type AgentImportResult =
   | { object: 'agent.import.draft'; draft: AgentDraft; source: { url?: string; format: 'ecc' | 'agentry' }; notes: string[] }
   | { object: 'agent.import.candidates'; data: Array<{ name: string; description: string; url: string }> }
 
+/** An agent Library source of the user (`/v1/agents/library/sources`): a label and a GitHub folder or gist link. */
+export interface LibrarySource {
+  id: string
+  object: 'library.source'
+  label: string
+  url: string
+  created_at: number
+}
+
+/** One agent file of a Library source; add it with `importAgent({ url })`. */
+export interface LibraryCandidate {
+  name: string
+  description: string
+  url: string
+}
+
 /** One Host tool from `GET /v1/agents/tools`. */
 export interface HostToolInfo {
   name: string

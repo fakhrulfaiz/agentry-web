@@ -2,9 +2,9 @@
 export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 
 /** Names under `/agents/` that are routes, never an agent id. */
-const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files', 'projects', 'import', 'connectors'])
+const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files', 'projects', 'import', 'connectors', 'library'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'job' | 'project' | 'snapshot' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'job' | 'project' | 'snapshot' | 'source' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -20,6 +20,7 @@ const ENVIRONMENT = { id: 'environment' } as const
 const SKILL = { id: 'skill' } as const
 const SNAPSHOT = { id: 'snapshot' } as const
 const PROJECT = { id: 'project' } as const
+const SOURCE = { id: 'source' } as const
 const TERMINAL = { id: 'terminal' } as const
 const TURN = { id: 'turn' } as const
 const JOB = { id: 'job' } as const
@@ -28,6 +29,8 @@ const INDEX = { id: 'index' } as const
 const INDEX_SEGMENT = /^[0-9]{1,5}$/
 /** Installed skill ids Agentry issues. */
 const SKILL_ID = /^skill_[a-f0-9]{32}$/
+/** Agent library source ids. */
+const SOURCE_ID = /^lsrc_[a-f0-9]{32}$/
 /** Sandbox snapshot ids. */
 const SNAPSHOT_ID = /^snap_[a-f0-9]{32}$/
 
@@ -39,6 +42,10 @@ const RULES: readonly Rule[] = [
   { methods: ['GET'], segments: ['agents', 'tools'] },
   // Agent import: a draft from a GitHub/gist link or pasted text; nothing is saved.
   { methods: ['POST'], segments: ['agents', 'import'] },
+  // Agent Library sources (label + GitHub folder or gist) and their agent files; adding one goes through import.
+  { methods: ['GET', 'POST'], segments: ['agents', 'library', 'sources'] },
+  { methods: ['DELETE'], segments: ['agents', 'library', 'sources', SOURCE] },
+  { methods: ['GET'], segments: ['agents', 'library', 'sources', SOURCE, 'agents'] },
   { methods: ['GET'], segments: ['agents', 'skills'] },
   { methods: ['GET'], segments: ['agents', 'commands'] },
   // Artifacts listing; the bytes live under session workspace paths and their
@@ -125,6 +132,7 @@ function matches(rule: Segment, part: string): boolean {
   if (!ID_SEGMENT.test(part)) return false
   if (rule.id === 'skill') return SKILL_ID.test(part)
   if (rule.id === 'snapshot') return SNAPSHOT_ID.test(part)
+  if (rule.id === 'source') return SOURCE_ID.test(part)
   if (rule.id === 'index') return INDEX_SEGMENT.test(part)
   // Environment ids are `env_…`, so `providers`, `runtimes` and `templates` never pass as one.
   if (rule.id === 'environment') return part.startsWith('env_')

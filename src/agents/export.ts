@@ -23,7 +23,13 @@ export function toAgentJson(agent: OAIAgent): string {
 }
 
 /** Front matter (`name`, `description`, `tools`) plus the instructions; tools without a Claude Code name are left out. */
-export function toAgentMarkdown(agent: OAIAgent): string {
+export function toAgentMarkdown(agent: {
+  name?: string | null
+  instructions?: string | null
+  metadata?: Record<string, string> | null
+  host_tools?: OAIAgent['host_tools']
+  multi_agent?: OAIAgent['multi_agent']
+}): string {
   const description = (agent.metadata?.description ?? (agent.instructions ?? '').split('\n').find((l) => l.trim()) ?? '').trim()
   const lines = ['---', `name: ${slugOf(agent.name)}`, `description: ${JSON.stringify(description)}`]
   const allow = agent.host_tools?.allow
