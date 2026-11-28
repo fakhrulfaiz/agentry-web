@@ -6,7 +6,7 @@ import { environmentChip, sandboxEnvironmentId } from '@/ui/chat/environment-chi
 const env = (overrides: Partial<SandboxEnvironment> = {}): SandboxEnvironment => ({
   id: 'env_1',
   object: 'agent.environment',
-  type: 'sandbox',
+  type: 'openai_hosted',
   status: 'connected',
   provider: 'sandbox',
   created_at: 1,
