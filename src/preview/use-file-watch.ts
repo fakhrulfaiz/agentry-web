@@ -14,6 +14,7 @@ export function useFileWatch(sessionId: string, enabled: boolean, onChange: (pat
 
     const open = () => {
       if (closedByServer) return
+      if (typeof EventSource === 'undefined') return
       es = new EventSource(`/api/agentry/agents/sessions/${encodeURIComponent(sessionId)}/artifacts/watch`)
       es.addEventListener('changed', (ev: MessageEvent) => {
         attempt = 0

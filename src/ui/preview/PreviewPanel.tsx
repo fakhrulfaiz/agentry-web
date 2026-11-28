@@ -43,6 +43,7 @@ import { type RendererId, renderersFor } from '@/preview/renderers'
 import { MAX_WIDTH, MIN_WIDTH, usePreviewPanel } from '@/preview/store'
 import { buildTree, type TreeNode } from '@/preview/tree'
 import { fileUrl } from '@/preview/use-file-bytes'
+import { useFileWatch } from '@/preview/use-file-watch'
 import { Terminal } from '@/ui/terminal/Terminal'
 import { usePanelConversation } from '@/chat/panel-data'
 import { todoCount } from '@/chat/todos'
@@ -402,6 +403,17 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
     }
     wasIdle.current = idle
   }, [state.open, idle, load])
+  const activeRef = useRef(state.active)
+  activeRef.current = state.active
+  const watchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => { clearTimeout(watchTimer.current) }, [])
+  useFileWatch(sessionId, state.open, (paths) => {
+    clearTimeout(watchTimer.current)
+    watchTimer.current = setTimeout(() => {
+      load()
+      if (paths === 'reset' || paths.includes(activeRef.current)) setReloadKey((k) => k + 1)
+    }, 1000)
+  })
   const tree = useMemo(() => buildTree(entries), [entries])
 
   const reducedMotion = usePrefersReducedMotion()
