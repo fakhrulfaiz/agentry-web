@@ -111,7 +111,8 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 
 **P2 (valuable, bigger)**
 - [x] DONE 2026-11-28: e2e mock streams reasoning and tool items as item frames (`saveItem` in `mock/agentry-mock.ts`), like the API since 2026-11-26; the live thought count is strict again. User messages are still saved only.
-- [ ] F3 workspace panel remainder: live file tree, sandbox port preview, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
+- [x] DONE 2026-11-28 (live check below): sandbox port preview (plan `2026-11-28-port-preview.md`; Docker places, HTTP only, no WebSocket, absolute-path apps need a base path). Follow-ups: per-port subdomain origin, WebSocket/HMR, E2B per-port hosts, auto-open when the agent mentions localhost.
+- [ ] F3 workspace panel remainder: live file tree, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
 - [ ] Agents import and owner connectors (plan `2026-11-26-agents-import-and-owner-connectors.md`, 4 open questions). L.
 - [ ] Composio named tools for apps beyond Gmail and Calendar (backlog 9). M.
 - [ ] Dark-mode and narrow-width pass on Agents, Sandboxes, Scheduled. M.

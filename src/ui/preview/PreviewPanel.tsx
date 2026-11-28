@@ -33,6 +33,7 @@ import {
   DocumentMagnifyingGlassIcon,
   ChevronRightIcon,
   FilmIcon,
+  ComputerDesktopIcon,
 } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePrefersReducedMotion } from '@/ui/chat/use-reduced-motion'
@@ -48,6 +49,7 @@ import { todoCount } from '@/chat/todos'
 import { PlanTab, SubagentTab, TasksTab } from './PanelTabs'
 import { BROWSER_TITLE, BROWSER_VIEW, BrowserTab } from './BrowserView'
 import { JobTab } from './JobView'
+import { PortPreview, PREVIEW_TITLE, PREVIEW_VIEW } from './PortPreview'
 import { isLiveJob, parseJobViewKey } from '@/chat/jobs'
 import { ChangesTab, DiffView, officeKind } from './ChangesPanel'
 import { parseDiffKey } from '@/preview/diff'
@@ -334,6 +336,13 @@ function StartPage({ canTerminal, fileCount }: { canTerminal: boolean; fileCount
           disabled={!canTerminal}
         />
         <StartRow
+          icon={ComputerDesktopIcon}
+          title="Preview"
+          description={canTerminal ? 'An app running in this chat’s sandbox' : 'Only chats that run in a sandbox can preview an app'}
+          onOpen={() => actions.openView(PREVIEW_VIEW, PREVIEW_TITLE)}
+          disabled={!canTerminal}
+        />
+        <StartRow
           icon={GlobeAltIcon}
           title="Browser"
           description="Pages the agent’s web browser visited"
@@ -359,6 +368,7 @@ function viewIcon(key: string): IconType {
   if (key === 'changes') return PencilSquareIcon
   if (key.startsWith('diff:')) return DocumentMagnifyingGlassIcon
   if (key === BROWSER_VIEW) return GlobeAltIcon
+  if (key === PREVIEW_VIEW) return ComputerDesktopIcon
   return DocumentIcon
 }
 
@@ -472,8 +482,8 @@ export function PreviewPanel({ sessionId, idle, environmentId }: { sessionId: st
         {state.active === 'start' ? (
           <StartPage canTerminal={environmentId !== undefined} fileCount={entries.length} />
         ) : activeView ? (
-          <div {...stylex.props(styles.filesPage, activeView.key === BROWSER_VIEW && styles.fillPage)}>
-            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab sessionId={sessionId} /> : parseJobViewKey(activeView.key) !== null ? <JobTab key={activeView.key} sessionId={sessionId} jobId={parseJobViewKey(activeView.key)!} /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
+          <div {...stylex.props(styles.filesPage, (activeView.key === BROWSER_VIEW || activeView.key === PREVIEW_VIEW) && styles.fillPage)}>
+            {activeView.key === 'changes' ? <ChangesTab sessionId={sessionId} /> : parseDiffKey(activeView.key) ? <DiffView sessionId={sessionId} {...parseDiffKey(activeView.key)!} /> : activeView.key === 'tasks' ? <TasksTab /> : activeView.key === 'plan' ? <PlanTab /> : activeView.key === BROWSER_VIEW ? <BrowserTab sessionId={sessionId} /> : activeView.key === PREVIEW_VIEW && environmentId !== undefined ? <PortPreview environmentId={environmentId} /> : parseJobViewKey(activeView.key) !== null ? <JobTab key={activeView.key} sessionId={sessionId} jobId={parseJobViewKey(activeView.key)!} /> : <SubagentTab subagentId={activeView.key.slice(4)} />}
           </div>
         ) : onTerminal ? null : showingFiles ? (
           <div {...stylex.props(styles.filesPage)}>

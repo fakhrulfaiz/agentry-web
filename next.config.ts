@@ -35,6 +35,8 @@ const ARTIFACT_CONTENT = '/api/agentry/agents/artifacts/:id/content'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // `/preview/<token>/` must keep its trailing slash: relative URLs in the previewed app resolve against it.
+  skipTrailingSlashRedirect: true,
   // The e2e run builds into its own directory, so it can run beside a `next dev` on `.next`.
   distDir: process.env.AGENTRY_WEB_DIST_DIR || '.next',
   // The Docker image (Dockerfile) runs Next's self-contained server; `next start` does not need it.
@@ -58,7 +60,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/:path((?!api/agentry/agents/artifacts/[^/]+/content$).*)',
+        source: '/:path((?!api/agentry/agents/artifacts/[^/]+/content$|preview/).*)',
         headers: [
           { key: 'Content-Security-Policy', value: csp },
           { key: 'X-Content-Type-Options', value: 'nosniff' },

@@ -886,6 +886,12 @@ export interface EnvironmentFile {
 
 /** A token page as the Agents API returns it for environment files. */
 /** One workspace folder's immediate sub-folders (`path` is relative to the workspace root). */
+/** Ports an app in a sandbox listens on (all addresses), for the Preview tab. */
+export interface EnvironmentPortList {
+  object: 'list'
+  data: Array<{ port: number }>
+}
+
 export interface EnvironmentFolderList {
   object: 'list'
   path: string

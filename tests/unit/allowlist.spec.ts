@@ -42,6 +42,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/environments/env_1/files'],
     ['POST', '/agents/environments/env_1/files'],
     ['GET', '/agents/environments/env_1/folders'],
+    ['GET', '/agents/environments/env_1/ports'],
     ['GET', '/agents/environments/env_1/snapshots'],
     ['POST', '/agents/environments/env_1/snapshots'],
     ['POST', '/agents/environments/env_1/restore'],
@@ -94,6 +95,12 @@ describe('isAllowed', () => {
 
   it('accepts a lowercase method and a trailing slash', () => {
     expect(isAllowed('get', '/agents/')).toBe(true)
+  })
+
+  it('keeps the port preview proxy out of the allow-list (only the preview route serves it)', () => {
+    expect(isAllowed('GET', '/agents/environments/env_1/ports/8765')).toBe(false)
+    expect(isAllowed('GET', '/agents/environments/env_1/ports/8765/index.html')).toBe(false)
+    expect(isAllowed('POST', '/agents/environments/env_1/ports')).toBe(false)
   })
 
   it('rejects traversal and non-allow-listed paths', () => {

@@ -25,6 +25,7 @@ import type {
   CreateTemplateParams,
   EnvironmentFile,
   EnvironmentFolderList,
+  EnvironmentPortList,
   SandboxEnvironment,
   EnvironmentSnapshot,
   SnapshotLevel,
@@ -605,6 +606,14 @@ export const api = {
   /** One page of an environment's files, A to Z. */
   listEnvironmentFiles(id: string, page?: string): Promise<SandboxPage<EnvironmentFile>> {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/files?limit=100&order=asc${page ? `&page=${encodeURIComponent(page)}` : ''}`)
+  },
+  /** Ports an app in the sandbox listens on (bound to all addresses). */
+  listEnvironmentPorts(id: string, signal?: AbortSignal): Promise<EnvironmentPortList> {
+    return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/ports`, undefined, signal)
+  },
+  /** The base URL (`/preview/<token>/`) a sandbox port's app is served from, and when it stops working (epoch ms). */
+  mintPreview(environment: string, port: number): Promise<{ url: string; expires_at: number }> {
+    return request('POST', '/api/preview', { environment, port })
   },
   /** The sub-folders of one workspace folder (`path` relative; empty = the workspace root). */
   listEnvironmentFolders(id: string, path = ''): Promise<EnvironmentFolderList> {

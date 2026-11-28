@@ -64,6 +64,8 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'reset'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'files'] },
   { methods: ['GET'], segments: ['agents', 'environments', ENVIRONMENT, 'folders'] },
+  // Ports an app in the sandbox listens on. The preview itself (`ports/{port}/...`) is served by `/preview/<token>/`, never through this proxy.
+  { methods: ['GET'], segments: ['agents', 'environments', ENVIRONMENT, 'ports'] },
   // Snapshots of a sandbox: save, list, restore; a snapshot has its own id (`snap_…`) and outlives its environment.
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'snapshots'] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'restore'] },
