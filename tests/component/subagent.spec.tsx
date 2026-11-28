@@ -55,6 +55,12 @@ describe('SubagentCard', () => {
     expect(within(screen.getByTestId('subagent-prompt')).getByText(/Your task: list the files/)).toBeVisible()
   })
 
+  it('offers Save as agent on a finished subagent with a prompt, as a link to the prefilled editor', () => {
+    const view = card(CHILD.turns, { ...CHILD.subagent, model: 'deepseek-flash' })
+    render(<Message view={view} answer={noAnswer} />)
+    expect(screen.getByRole('link', { name: 'Save as agent' })).toHaveAttribute('href', '/agents?new=1&draft=1')
+  })
+
   it('shows an approval the subagent waits on inside its card, collapsed or not, and answers it through the conversation', async () => {
     const user = userEvent.setup()
     const answer = vi.fn(async () => {})

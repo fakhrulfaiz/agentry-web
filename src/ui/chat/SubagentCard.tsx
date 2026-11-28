@@ -23,7 +23,9 @@ import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ArrowTopRightOnSquareIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ArrowTopRightOnSquareIcon, BookmarkIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { setPendingDraft } from '@/agents/draft'
+import { subagentDraft } from '@/agents/from-subagent'
 import * as stylex from '@stylexjs/stylex'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { api, ApiError } from '@/api/client'
@@ -193,6 +195,7 @@ export function SubagentCard({
 }) {
   const [open, setOpen] = useState(false)
   const { actions: panel } = usePreviewPanel()
+  const running = view.status === 'in_progress' || view.status === 'queued'
   const actions = useContext(SubagentActions).get(view.subagentId) ?? []
   const waiting = actions.length > 0 && <Waiting actions={actions} answer={answer} />
   if (depth >= MAX_SUBAGENT_DEPTH) {
@@ -215,7 +218,20 @@ export function SubagentCard({
             </Collapsible>
           </StackItem>
           <StackItem xstyle={styles.fixed}>
-            <IconButton label="Open in panel" tooltip="Open in panel" variant="ghost" size="sm" icon={<Icon icon={ArrowTopRightOnSquareIcon} size="sm" />} onClick={() => panel.openView(`sub:${view.subagentId}`, view.name)} />
+            <HStack gap={0}>
+              {!running && view.prompt && (
+                <IconButton
+                  label="Save as agent"
+                  tooltip="Save as agent"
+                  variant="ghost"
+                  size="sm"
+                  icon={<Icon icon={BookmarkIcon} size="sm" />}
+                  href="/agents?new=1&draft=1"
+                  onClick={() => setPendingDraft(subagentDraft({ name: view.name, prompt: view.prompt ?? '', model: view.model }))}
+                />
+              )}
+              <IconButton label="Open in panel" tooltip="Open in panel" variant="ghost" size="sm" icon={<Icon icon={ArrowTopRightOnSquareIcon} size="sm" />} onClick={() => panel.openView(`sub:${view.subagentId}`, view.name)} />
+            </HStack>
           </StackItem>
         </HStack>
         {waiting}
