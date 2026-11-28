@@ -50,7 +50,7 @@ describe('New chat prefill from the URL', () => {
     nav.query = `seed=${seed}`
     render(<NewChat />)
     await waitFor(() => expect(input()).toHaveTextContent(text))
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/', { scroll: false }))
   })
 
   it('?schedule=1 starts the composer with the schedule request and the browser time zone, then clears the query', async () => {
@@ -60,7 +60,7 @@ describe('New chat prefill from the URL', () => {
     await waitFor(() => expect(input()).toHaveTextContent(`Set up a scheduled task:`))
     expect(input()).toHaveTextContent(`My time zone is ${zone}.`)
     expect(scheduleSeedText(zone)).toContain(zone)
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/', { scroll: false }))
   })
 
   it('?prompt= prefills sanitized, length-limited text without sending, then clears the query', async () => {
@@ -69,7 +69,7 @@ describe('New chat prefill from the URL', () => {
     await waitFor(() => expect(input()).toHaveTextContent('Connect my Gmail account x'))
     expect(input().textContent?.length).toBeLessThanOrEqual(200)
     expect(apiMock.createSession).not.toHaveBeenCalled()
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/', { scroll: false }))
   })
 
   it('an unknown seed or no query leaves the composer empty and does not rewrite the URL', async () => {
@@ -214,7 +214,7 @@ describe('New chat project preset', () => {
     expect(selection().effort).toHaveTextContent('Medium')
     await send()
     expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-saved', effort: 'medium', agentId: 'agent_1', environmentId: 'env_1', projectId: 'proj_1' })
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/', { scroll: false }))
   })
 
   it('keeps the project folder on its environment, shows it, and drops it for another environment', async () => {
@@ -284,6 +284,45 @@ describe('New chat project preset', () => {
     expect(apiMock.getProject).not.toHaveBeenCalled()
     expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
     expect(nav.replace).not.toHaveBeenCalled()
+  })
+
+  it('applies a project preset on an already-mounted / page and clears it for a plain New chat', async () => {
+    nav.query = ''
+    apiMock.models.mockResolvedValue(['m-default', 'm-saved'])
+    const view = render(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
+    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(nav.replace).not.toHaveBeenCalled()
+
+    nav.query = 'project=proj_1'
+    view.rerender(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Research agent'))
+    expect(selection().environment).toHaveTextContent('Data box')
+    await waitFor(() => expect(selection().model).toHaveTextContent('m-saved'))
+    expect(selection().effort).toHaveTextContent('Medium')
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/', { scroll: false }))
+
+    // The inner cleanup replaces the URL; once it settles to plain /, a fresh New chat resets the preset.
+    nav.query = ''
+    view.rerender(<NewChat />)
+    nav.query = 'fresh=1'
+    view.rerender(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
+    expect(selection().environment).toHaveTextContent('Default workspace')
+    await waitFor(() => expect(selection().model).toHaveTextContent('m-default'))
+    expect(selection().effort).toHaveTextContent('Auto')
+  })
+
+  it('keeps a plain / page on defaults after reload-style mount', async () => {
+    nav.query = ''
+    apiMock.models.mockResolvedValue(['m-default', 'm-saved'])
+    render(<NewChat />)
+    await waitFor(() => expect(selection().agent).toHaveTextContent('Default agent'))
+    expect(selection().environment).toHaveTextContent('Default workspace')
+    expect(selection().model).toHaveTextContent('m-default')
+    expect(selection().effort).toHaveTextContent('Auto')
+    await send()
+    expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-default' })
   })
 })
 

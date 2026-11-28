@@ -520,7 +520,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         header={<SideNavHeading heading="Agentry" headingHref="/" icon={<Icon icon={AgentryMark} color="accent" />} />}
         topContent={
           <VStack gap={2}>
-            <SideNavItem label="New chat" icon={PencilSquareIcon} href="/" isSelected={pathname === '/'} />
+            <SideNavItem label="New chat" icon={PencilSquareIcon} href="/" isSelected={pathname === '/'} onClick={(e) => { e.preventDefault(); router.push('/?fresh=1') }} />
             <SideNavItem
               label="Scheduled"
               icon={ClockIcon}

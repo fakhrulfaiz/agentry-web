@@ -10,7 +10,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import * as stylex from '@stylexjs/stylex'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent, SandboxEnvironment, SandboxProvider, SandboxTemplate } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
@@ -39,7 +39,7 @@ const styles = stylex.create({
 
 type Failure = { message: string; unavailable: boolean; retry: () => void }
 
-export function NewChat() {
+function NewChatInner() {
   const router = useRouter()
   const params = useSearchParams()
   // `?seed=docs|slides|data` (Artifacts tiles) and `?schedule=1` (Scheduled page) prefill the composer once.
@@ -47,14 +47,18 @@ export function NewChat() {
   const schedule = params.get('schedule')
   // `?prompt=` (Connectors page Connect) prefills sanitized, length-limited text; the user still presses send.
   const prompt = params.get('prompt')
+  const fresh = params.get('fresh')
   // `?environment=` (an environment's "New chat here") preselects it in the environment menu.
   const [wantedEnvironment] = useState(() => params.get('environment'))
   // `?project=` (a Project's "New chat here") files the chat under the Project and inherits its defaults.
   const [wantedProject] = useState(() => params.get('project'))
   const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : promptText(prompt)))
   useEffect(() => {
-    if (seed !== null || schedule !== null || prompt !== null || wantedEnvironment !== null || wantedProject !== null) router.replace('/')
-  }, [seed, schedule, prompt, wantedEnvironment, wantedProject, router])
+    // Clean the URL so presets don't linger; the outer wrapper ignores this cleanup navigation.
+    if (seed !== null || schedule !== null || prompt !== null || fresh !== null || wantedEnvironment !== null || wantedProject !== null) {
+      router.replace('/', { scroll: false })
+    }
+  }, [seed, schedule, prompt, fresh, wantedEnvironment, wantedProject, router])
   const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
@@ -244,4 +248,49 @@ export function NewChat() {
       )}
     </VStack>
   )
+}
+
+function actionKeyFrom(params: { get(name: string): string | null }): string | null {
+  const seed = params.get('seed')
+  const schedule = params.get('schedule')
+  const prompt = params.get('prompt')
+  const environment = params.get('environment')
+  const project = params.get('project')
+  const fresh = params.get('fresh')
+  if (seed || schedule || prompt || environment || project) {
+    return `preset:${seed ?? ''}|${schedule ?? ''}|${prompt ?? ''}|${environment ?? ''}|${project ?? ''}`
+  }
+  if (fresh) return `fresh:${fresh}`
+  return null
+}
+
+/** Remounts the inner chat when preset/fresh params arrive, but ignores the inner component's URL cleanup. */
+export function NewChat() {
+  const params = useSearchParams()
+  const actionKey = actionKeyFrom(params)
+  const lastAction = useRef<string | null>(actionKey)
+  const cleaning = useRef(actionKey !== null)
+  const [innerKey, setInnerKey] = useState(0)
+
+  useEffect(() => {
+    if (actionKey) {
+      if (actionKey === lastAction.current) return
+      lastAction.current = actionKey
+      cleaning.current = true
+      setInnerKey((k) => k + 1)
+      return
+    }
+    if (cleaning.current) {
+      // The inner component cleaned the preset URL; keep its applied state but allow the same preset again.
+      cleaning.current = false
+      lastAction.current = null
+      return
+    }
+    if (lastAction.current !== null) {
+      lastAction.current = null
+      setInnerKey((k) => k + 1)
+    }
+  }, [actionKey])
+
+  return <NewChatInner key={innerKey} />
 }
