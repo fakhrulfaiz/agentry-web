@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-29: A delegated saved agent's card and Flow node use its name ("Echo helper", from `delegate_to_agent`'s `agent`, without the "(Yours)" qualifier) and its `task` as the prompt, instead of "Subagent"; a finished helper reads Done rather than Closed.
 - 2026-11-29: Helpers flow. The Tasks tab has a Flow / List toggle (choice remembered): Flow draws the chat's agent on the left joined to a card per helper (status dot, name, model, time, tokens; click opens its work; a helper that needs you also has a Review button), stacking vertically in a narrow panel. A Helpers button in the open chat's composer (shown once there is a helper) opens it, with a green pulsing dot and the running count while helpers run, amber when one needs you. A helper that needs you is never folded into "Worked for…". New `src/ui/shared/FlowGraph.tsx`, `src/ui/icons/WorkflowIcon.tsx`.
 - 2026-11-29: The collapsed sidebar is a clean icon rail: the Workspace lists (header, Projects, Recents) no longer spill out half-cut; it shows ✨ Ask Agentry and New project as icons instead. The Next.js dev badge is off (`devIndicators: false`) because it covered the collapse button in dev.
 - 2026-11-29: Sandboxes list: sections now run Running, Stopped, This server, Place unavailable (unavailable last); a search box (name, image, place, template) with an All / Running / Stopped / This server / Unavailable filter, a Place filter when sandboxes span more than one place, and a "No sandboxes match." line with Clear.

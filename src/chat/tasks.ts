@@ -19,9 +19,10 @@ export interface TaskRow {
 }
 
 function statusOf(view: SubagentView, run: SubagentActivity | undefined): TaskStatus {
-  if (run?.subagent.status === 'closed') return 'closed'
+  // A finished helper is closed afterwards too; "done" says more than "closed".
   if (view.status === 'failed') return 'failed'
   if (view.status === 'completed' || view.status === 'cancelled') return 'done'
+  if (run?.subagent.status === 'closed') return 'closed'
   return 'running'
 }
 

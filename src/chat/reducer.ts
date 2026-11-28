@@ -493,11 +493,14 @@ function placeSubagentView(
   const current = find(s.items, id)
   const previous = current?.kind === 'subagent' ? current : undefined
   const spawn = s.items.find((v): v is ToolView => v.kind === 'tool' && typeof v.output === 'string' && v.output.includes(subagentId))
-  // The `subagent` tool's arguments: `description` (display name), `prompt`, and optional `provider`/`model`/`reasoning_effort`.
+  // The `subagent` tool's arguments: `description` (display name), `prompt`, and optional `provider`/`model`/`reasoning_effort`;
+  // `delegate_to_agent`'s are `agent` and `task`.
   const args = spawn && spawn.args && typeof spawn.args === 'object' ? (spawn.args as Record<string, unknown>) : undefined
   const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
-  const name = text(args?.description) ?? previous?.name ?? SUBAGENT_NAME
-  const prompt = text(args?.prompt) ?? previous?.prompt
+  // `delegate_to_agent` (a saved agent) names it by `agent` ("Echo helper (Yours)") and asks with `task`.
+  const delegated = text(args?.agent)?.replace(/\s*\((?:Yours|Built in)[^)]*\)\s*$/u, '')
+  const name = text(args?.description) ?? delegated ?? previous?.name ?? SUBAGENT_NAME
+  const prompt = text(args?.prompt) ?? text(args?.task) ?? previous?.prompt
   const model = update.model ?? previous?.model ?? text(args?.model)
   const view: SubagentView = {
     kind: 'subagent',

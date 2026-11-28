@@ -389,6 +389,14 @@ describe('live subagent events', () => {
     expect(s.lastEventId).toBeNull()
   })
 
+  it('names a delegated saved agent by its agent argument, without the qualifier, and shows its task', () => {
+    const call = { id: 'f9', type: 'function_call', name: 'delegate_to_agent', call_id: 'c9', arguments: '{"agent":"Echo helper (Yours)","task":"Echo PONG"}', status: 'completed', turn_id: 't' } as StoredSessionItem
+    const out = { id: 'o9', type: 'function_call_output', call_id: 'c9', output: '{"started":true,"subagent_id":"child_1"}', status: 'completed', turn_id: 't' } as StoredSessionItem
+    let s = applyItems(initialState(SID), [call, out])
+    s = applyEvent(s, { event: { type: 'agent.session.subagent.created', event_id: 'x1', session_id: SID, subagent } })
+    expect(s.items.find((v) => v.kind === 'subagent')).toMatchObject({ name: 'Echo helper', prompt: 'Echo PONG' })
+  })
+
   it('drops an item for a child it does not know yet (the next /subagents read has it)', () => {
     const s0 = initialState(SID)
     const s = applyEvent(s0, { event: { type: 'agent.session.subagent.item.done', event_id: 'x', session_id: SID, subagent_id: 'nope', turn_id: 't', item: childItem } })
