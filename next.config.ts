@@ -34,6 +34,8 @@ const artifactCsp = "default-src 'none'; style-src 'unsafe-inline'; img-src 'sel
 const ARTIFACT_CONTENT = '/api/agentry/agents/artifacts/:id/content'
 
 const nextConfig: NextConfig = {
+  // The dev-only "N" badge sat on the sidebar's collapse button; build and runtime errors still show as the overlay.
+  devIndicators: false,
   reactStrictMode: true,
   // `/preview/<token>/` must keep its trailing slash: relative URLs in the previewed app resolve against it.
   skipTrailingSlashRedirect: true,

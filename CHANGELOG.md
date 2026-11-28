@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-29: The collapsed sidebar is a clean icon rail: the Workspace lists (header, Projects, Recents) no longer spill out half-cut; it shows ✨ Ask Agentry and New project as icons instead. The Next.js dev badge is off (`devIndicators: false`) because it covered the collapse button in dev.
 - 2026-11-29: Sandboxes list: sections now run Running, Stopped, This server, Place unavailable (unavailable last); a search box (name, image, place, template) with an All / Running / Stopped / This server / Unavailable filter, a Place filter when sandboxes span more than one place, and a "No sandboxes match." line with Clear.
 - 2026-11-29: One set of words: "sandbox" for an Agentry Sandbox (was "environment" on the Sandboxes pages, dialogs, errors and the chat header chip) and "This server" for the no-sandbox choice (was "Default workspace"). The composer and project menus are labelled "Runs in" and the sidebar "Group by" option is "Sandbox". Wording only; routes, URL parameters and API fields keep their names.
 - 2026-11-29: Connect cards show the app's logo and turn into a small "<App> connected ✓" line once the app is connected (checked on show, then every 5 s while the tab is visible, for up to 10 minutes; one shared status request per page). The API's "App connected: <app>" message shows as a small note with the logo instead of a user bubble. New shared `src/ui/shared/AppLogo.tsx`.

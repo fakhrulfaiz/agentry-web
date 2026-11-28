@@ -609,48 +609,59 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
           <UserMenu identity={identity} />
         }
       >
-        {workspaceHeader}
-        {query.trim() ? (
-          <SideNavSection title="Search results">{rows(orderSessions(searchRows, view.order))}</SideNavSection>
-        ) : view.show === 'starred' ? (
-          <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>
-        ) : view.group === 'list' ? (
-          <SideNavSection title="All chats" isHeaderHidden>{rows(orderSessions(visible, view.order))}</SideNavSection>
-        ) : view.group === 'environment' ? (
-          groupByEnvironment(visible, environmentNames, view.order).map((group) => (
-            <SideNavSection key={group.key} title={group.title}>{rows(group.sessions)}</SideNavSection>
-          ))
+        {collapsed ? (
+          // Collapsed: the chat lists do not fit an icon rail; keep the two Workspace actions as icons.
+          <VStack gap={2} paddingBlockStart={2}>
+            <Divider />
+            <SideNavItem label="Ask Agentry" icon={SparklesIcon} size="sm" onClick={() => askAgentryStore.open()} />
+            <SideNavItem label="New project" icon={FolderPlusIcon} size="sm" onClick={() => setProjectDialog({ isOpen: true, project: null })} />
+          </VStack>
         ) : (
           <>
-            {projectSections.length > 0 && projectsSection}
-            {starred.length > 0 && <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>}
-            {recents.length > 0 && (
-              <SideNavSection title="Recents" isHeaderHidden>
-                <SectionHeader label="Recents" isOpen={!recentsHidden} onToggle={toggleRecents} />
-                {!recentsHidden && rows(recents)}
-              </SideNavSection>
+          {workspaceHeader}
+          {query.trim() ? (
+            <SideNavSection title="Search results">{rows(orderSessions(searchRows, view.order))}</SideNavSection>
+          ) : view.show === 'starred' ? (
+            <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>
+          ) : view.group === 'list' ? (
+            <SideNavSection title="All chats" isHeaderHidden>{rows(orderSessions(visible, view.order))}</SideNavSection>
+          ) : view.group === 'environment' ? (
+            groupByEnvironment(visible, environmentNames, view.order).map((group) => (
+              <SideNavSection key={group.key} title={group.title}>{rows(group.sessions)}</SideNavSection>
+            ))
+          ) : (
+            <>
+              {projectSections.length > 0 && projectsSection}
+              {starred.length > 0 && <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>}
+              {recents.length > 0 && (
+                <SideNavSection title="Recents" isHeaderHidden>
+                  <SectionHeader label="Recents" isOpen={!recentsHidden} onToggle={toggleRecents} />
+                  {!recentsHidden && rows(recents)}
+                </SideNavSection>
+              )}
+            </>
+          )}
+          {!loading &&
+            !loadError &&
+            (query.trim()
+              ? searchRows.length === 0
+              : visible.length === 0 && starred.length === 0 && projects.length === 0 && loadedProjectRows.length === 0) && (
+              <VStack padding={3} gap={1}>
+                <Icon icon={ChatBubbleLeftIcon} color="secondary" />
+                <Text type="supporting">{query.trim() ? 'No chats match.' : 'No chats yet.'}</Text>
+              </VStack>
             )}
-          </>
-        )}
-        {!loading &&
-          !loadError &&
-          (query.trim()
-            ? searchRows.length === 0
-            : visible.length === 0 && starred.length === 0 && projects.length === 0 && loadedProjectRows.length === 0) && (
-            <VStack padding={3} gap={1}>
-              <Icon icon={ChatBubbleLeftIcon} color="secondary" />
-              <Text type="supporting">{query.trim() ? 'No chats match.' : 'No chats yet.'}</Text>
+          {loadError && (
+            <VStack padding={3} gap={2} hAlign="start">
+              <Text type="supporting">{loadError}</Text>
+              <Button label="Retry" size="sm" onClick={() => void load(null)} />
             </VStack>
           )}
-        {loadError && (
-          <VStack padding={3} gap={2} hAlign="start">
-            <Text type="supporting">{loadError}</Text>
-            <Button label="Retry" size="sm" onClick={() => void load(null)} />
+          <VStack ref={sentinel} hAlign="center" padding={hasMore || loading ? 2 : 0} data-testid="sidebar-sentinel">
+            {loading && <Spinner size="sm" />}
           </VStack>
+          </>
         )}
-        <VStack ref={sentinel} hAlign="center" padding={hasMore || loading ? 2 : 0} data-testid="sidebar-sentinel">
-          {loading && <Spinner size="sm" />}
-        </VStack>
       </SideNav>
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog session={deleting} onClose={() => setDeleting(null)} onDeleted={removed} />
