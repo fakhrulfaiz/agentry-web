@@ -4,6 +4,7 @@ import '../helpers/dom'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { api } from '@/api/client'
 import type { OAIApprovalAction, StoredSessionItem } from '@/api/types'
 import { applyItems, initialState, type MessageView } from '@/chat/reducer'
 import { Conversation } from '@/ui/chat/Conversation'
@@ -351,6 +352,58 @@ describe('Conversation', () => {
     try {
       render(<Conversation sessionId="sess_x" />)
       expect(await screen.findByText('Live updates are not available')).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('shows the chat environment chip in both views', async () => {
+    const user = userEvent.setup()
+    document.head.innerHTML = '<meta name="agentry-csrf" content="t">'
+    window.localStorage.clear()
+    const list = (data: unknown[]) => Response.json({ object: 'list', data, first_id: null, last_id: null, has_more: false })
+    const session = {
+      id: 'sess_chip',
+      object: 'agent.session',
+      created_at: 1,
+      last_active_at: 1,
+      status: 'idle',
+      error: null,
+      metadata: { title: 'Chip chat' },
+      vault_ids: [],
+      agent: { id: 'a', object: 'agent', created_at: 1, updated_at: 1, name: null, instructions: null, model: null, metadata: {}, tools: [] },
+      environment: { type: 'sandbox', environment_id: 'env_chip' },
+      required_actions: [],
+      usage: null,
+    }
+    const envSpy = vi.spyOn(api, 'getSandboxEnvironment').mockResolvedValue({
+      id: 'env_chip',
+      object: 'agent.environment',
+      type: 'openai_hosted',
+      status: 'connected',
+      provider: 'sandbox',
+      created_at: 1,
+      name: 'Data box',
+      sandbox: { state: 'running' },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/stream')) return new Response(new ReadableStream({ start() {} }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+        if (url === '/api/agentry/agents/sessions/sess_chip') return Response.json(session)
+        if (url.includes('/items')) return list(live.items)
+        if (url.includes('/turns')) return list(live.turns)
+        if (url.includes('/models')) return Response.json([])
+        return list([])
+      }),
+    )
+    try {
+      render(<Conversation sessionId="sess_chip" />)
+      expect(await screen.findByText('Data box · Running')).toBeInTheDocument()
+      expect(envSpy).toHaveBeenCalledWith('env_chip')
+      await user.click(await screen.findByRole('button', { name: 'Trajectory' }))
+      expect(screen.getByText('Data box · Running')).toBeInTheDocument()
     } finally {
       vi.unstubAllGlobals()
     }

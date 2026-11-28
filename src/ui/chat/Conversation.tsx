@@ -41,6 +41,7 @@ import { REFRESH_MS } from '@/commands/list-store'
 import { useSkillCommands, useSkillsLoader } from '@/skills/skills-store'
 import { goToLogin, useConversation, type ActionAnswer, type ClosedReason } from '@/chat/use-conversation'
 import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
+import { ChatEnvironmentChip } from './ChatEnvironmentChip'
 import { ChatTitleMenu } from '@/ui/shell/ChatTitleMenu'
 import { RenameDialog, SESSIONS_CHANGED, type SessionRef } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
@@ -441,6 +442,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
         title={session && !blank ? <ChatTitleMenu sessionId={session.id} metadata={session.metadata} /> : undefined}
         end={
           <HStack gap={2} vAlign="center">
+            {session && !blank && <ChatEnvironmentChip environment={session.environment} />}
             {session && !blank && <PreviewControls />}
             <ConnectionPill connection={connection} />
           </HStack>
