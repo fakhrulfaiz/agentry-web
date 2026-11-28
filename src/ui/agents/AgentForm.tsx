@@ -34,13 +34,14 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { HostToolInfo } from '@/api/types'
 import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
-import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
+import { agentToForm, delegationError, descriptionError, emptyForm, formToParams, MAX_SUBAGENTS, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
 import { applyDraft, pendingDraft, type PendingDraft } from '@/agents/draft'
 import { goToLogin } from '@/chat/use-conversation'
 import { HUES, tint } from '@/ui/brand/palette'
 import { AgentAvatar } from './AgentAvatar'
 import { AppsSection } from './AppsSection'
 import { AvatarPicker } from './AvatarPicker'
+import { DelegationSection } from './DelegationSection'
 import { SkillsSection } from './SkillsSection'
 import { ToolsPicker } from './ToolsPicker'
 
@@ -135,6 +136,7 @@ const INTROS: Record<Section, string> = {
 export function readiness(form: FormState): { label: string; ok: boolean; required: boolean }[] {
   return [
     { label: 'Name', ok: form.name.trim() !== '', required: true },
+    { label: 'Description', ok: descriptionError(form.description) === null, required: true },
     { label: 'Model', ok: form.model !== '', required: true },
     { label: 'Tools', ok: form.allTools || form.tools.length > 0, required: true },
     { label: 'Instructions', ok: form.instructions.trim().length >= 20, required: false },
@@ -219,8 +221,12 @@ export function AgentForm({ agentId, fromDraft = false, onClose, onSaved }: {
   async function save() {
     if (!form) return
     if (!form.name.trim()) return setError('Give the agent a name.')
+    const descriptionProblem = descriptionError(form.description)
+    if (descriptionProblem) return setError(descriptionProblem)
     if (!form.model) return setError('Choose a model.')
     if (!form.allTools && form.tools.length === 0) return setError('Choose at least one tool, or allow every tool.')
+    const delegationProblem = delegationError(form.delegation)
+    if (delegationProblem) return setError(delegationProblem)
     setSaving(true)
     setError(null)
     try {
@@ -330,6 +336,14 @@ export function AgentForm({ agentId, fromDraft = false, onClose, onSaved }: {
               />
             )}
             <TextInput label="Name" value={form.name} onChange={(name) => set({ name })} placeholder="Inbox assistant" isRequired />
+            <TextInput
+              label="Description"
+              description="One line that says what this agent does. Shown on its card and to other agents choosing delegates."
+              value={form.description}
+              onChange={(description) => set({ description })}
+              placeholder="Sorts my inbox"
+              isRequired
+            />
             <HStack gap={3}>
               <StackItem size="fill">
                 <Selector label="Model" options={models.length > 0 ? models : [form.model]} value={form.model} onChange={(model) => set({ model })} />
@@ -394,14 +408,17 @@ export function AgentForm({ agentId, fromDraft = false, onClose, onSaved }: {
                     onChange={(subagents) => set({ subagents })}
                   />
                   {form.subagents && (
-                    <VStack gap={2}>
-                      <Text weight="medium">Most at once</Text>
-                      <HStack gap={1} wrap="wrap" role="group" aria-label="Most subagents at once">
-                        {Array.from({ length: MAX_SUBAGENTS }, (_, i) => i + 1).map((n) => (
-                          <ToggleButton key={n} label={String(n)} size="sm" isPressed={form.maxSubagents === n} onPressedChange={() => set({ maxSubagents: n })} />
-                        ))}
-                      </HStack>
-                    </VStack>
+                    <>
+                      <VStack gap={2}>
+                        <Text weight="medium">Most at once</Text>
+                        <HStack gap={1} wrap="wrap" role="group" aria-label="Most subagents at once">
+                          {Array.from({ length: MAX_SUBAGENTS }, (_, i) => i + 1).map((n) => (
+                            <ToggleButton key={n} label={String(n)} size="sm" isPressed={form.maxSubagents === n} onPressedChange={() => set({ maxSubagents: n })} />
+                          ))}
+                        </HStack>
+                      </VStack>
+                      <DelegationSection value={form.delegation} onChange={(delegation) => set({ delegation })} selfId={agentId} />
+                    </>
                   )}
                 </VStack>
               )}

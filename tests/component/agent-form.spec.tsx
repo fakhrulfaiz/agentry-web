@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentForm } from '@/ui/agents/AgentForm'
 import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
+import type { LibraryCandidate, LibrarySource } from '@/api/types'
 
 const { apiMock, nav } = vi.hoisted(() => ({
   apiMock: {
@@ -13,8 +14,22 @@ const { apiMock, nav } = vi.hoisted(() => ({
     listHostTools: vi.fn(async () => [{ name: 'read_file' }, { name: 'grep' }, { name: 'shell' }]),
     createAgent: vi.fn(async () => ({ id: 'agent_9' })),
     updateAgent: vi.fn(),
-    getAgent: vi.fn(),
+    getAgent: vi.fn(async (id: string) => ({
+      id, object: 'agent', name: 'Coordinator', model: 'm1', instructions: 'Coordinate work',
+      description: 'Coordinates work', metadata: {}, tools: [], delegation: { mode: 'choose', agent_ids: ['agent_2'] },
+    })),
     deleteAgent: vi.fn(),
+    listAgents: vi.fn(async () => ({ object: 'list', data: [
+      { id: 'agent_1', object: 'agent', name: 'Coordinator', model: 'm1', instructions: 'Coordinate work', description: 'Coordinates work', metadata: {}, tools: [] },
+      { id: 'agent_2', object: 'agent', name: 'Reviewer', model: 'm1', instructions: 'Review PRs', description: 'Reviews pull requests', metadata: {}, tools: [] },
+      { id: 'agent_3', object: 'agent', name: 'Writer', model: 'm1', instructions: 'Write docs', description: 'Writes docs', metadata: {}, tools: [] },
+      { id: 'builtin_1', object: 'agent', built_in: true, name: 'Agentry', model: 'm1', instructions: 'Set up Agentry', description: 'Sets up your Agentry workspace', metadata: {}, tools: [] },
+    ] })),
+    listBuiltinLibrary: vi.fn(async () => ({ object: 'list', data: [
+      { ref: 'Agentry:planner', source: 'Agentry', name: 'Planner', slug: 'planner', description: 'Plans work' },
+    ] })),
+    listLibrarySources: vi.fn(async () => ({ object: 'list' as const, data: [] as LibrarySource[] })),
+    listLibrarySourceAgents: vi.fn(async () => ({ object: 'list' as const, data: [] as LibraryCandidate[] })),
     listSkills: vi.fn(async () => ({ object: 'list', data: [
       { name: 'composio', kind: 'builtin', enabled: true },
       { name: 'create-agent', kind: 'builtin', enabled: true },
@@ -41,6 +56,7 @@ describe('AgentForm avatar', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Inbox')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Sorts the inbox')
     await userEvent.click(screen.getByRole('button', { name: 'Change avatar' }))
     await userEvent.click(within(await screen.findByRole('group', { name: 'Agent icon' })).getByRole('button', { name: 'Email' }))
     await userEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Teal' }))
@@ -56,6 +72,7 @@ describe('AgentForm skills and apps', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Poet')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Writes poems')
     await userEvent.click(screen.getByRole('tab', { name: /^Skills/ }))
     await userEvent.click(await screen.findByRole('switch', { name: /Use all built-in skills/ }))
     const office = await screen.findByRole('checkbox', { name: /office-docx/ })
@@ -71,6 +88,7 @@ describe('AgentForm skills and apps', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: ['gmail', 'github'] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Mail')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Keeps the inbox tidy')
     await userEvent.click(await screen.findByRole('tab', { name: /^Apps/ }))
     await userEvent.click(await screen.findByRole('switch', { name: /Limit this agent to specific apps/ }))
     await userEvent.click(within(screen.getByRole('group', { name: 'github access' })).getByRole('button', { name: 'Off' }))
@@ -92,6 +110,7 @@ describe('AgentForm', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Researcher')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Researches topics')
     await userEvent.click(screen.getByRole('tab', { name: /^Tools/ }))
     expect(await screen.findByRole('radio', { name: /^Auto/ })).toBeChecked()
     expect(screen.getByText(/Runs in sandbox chats only/)).toBeInTheDocument()
@@ -106,10 +125,12 @@ describe('AgentForm', () => {
     render(<AgentForm />)
     const name = await screen.findByRole('textbox', { name: /Name/ })
     await userEvent.type(name, ' Reviewer ')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), ' Reviews pull requests ')
     await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect(apiMock.createAgent).toHaveBeenCalledWith({
-      model: 'm1', name: 'Reviewer', instructions: '', metadata: { icon: expect.any(String), color: expect.any(String) }, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask', browser: null,
+      model: 'm1', name: 'Reviewer', description: 'Reviews pull requests', delegation: { mode: 'any', agent_ids: [] },
+      instructions: '', metadata: { icon: expect.any(String), color: expect.any(String) }, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask', browser: null,
     })
     expect(nav.push).toHaveBeenCalledWith('/agents')
   })
@@ -118,15 +139,19 @@ describe('AgentForm', () => {
     render(<AgentForm />)
     const checks = await screen.findByRole('list', { name: 'Before you save' })
     expect(within(checks).getByText('Name needed')).toBeInTheDocument()
+    expect(within(checks).getByText('Description needed')).toBeInTheDocument()
     expect(within(checks).getByText('Add instructions')).toBeInTheDocument()
     await userEvent.type(screen.getByRole('textbox', { name: /Name/ }), 'Planner')
     expect(within(checks).queryByText('Name needed')).toBeNull()
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Plans work')
+    expect(within(checks).queryByText('Description needed')).toBeNull()
   })
 
   it('tool search narrows the list and Select all ticks only the matches', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Reader')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Reads files')
     await userEvent.click(screen.getByRole('switch', { name: /Allow every tool/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search tools' }), 'read')
@@ -144,6 +169,7 @@ describe('AgentForm review fixes', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     render(<AgentForm />)
     await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Nothing')
+    await userEvent.type(screen.getByRole('textbox', { name: /Description/ }), 'Does nothing')
     await userEvent.click(screen.getByRole('switch', { name: /Allow every tool/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(within(screen.getByRole('list', { name: 'Before you save' })).getByText('Choose at least one tool')).toBeInTheDocument()
@@ -161,5 +187,69 @@ describe('AgentForm review fixes', () => {
     render(<AgentForm />)
     await screen.findByRole('textbox', { name: /Name/ })
     expect(apiMock.listHostTools).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('AgentForm description and delegation', () => {
+  it('refuses to save without a one-line description', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Reviewer')
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    expect(await screen.findByText(/Give the agent a one-line description/)).toBeInTheDocument()
+    expect(apiMock.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('lists saved agents with provenance and built-in Agentry, and saves chosen ids', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm agentId="agent_1" />)
+    await userEvent.click(await screen.findByRole('tab', { name: /^Subagents/ }))
+    await userEvent.click(screen.getByRole('switch', { name: /Let this agent delegate to subagents/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose' }))
+    const reviewer = await screen.findByRole('checkbox', { name: 'Reviewer (Yours)' })
+    expect(reviewer).toBeChecked()
+    expect(screen.getByText('Reviews pull requests')).toBeInTheDocument()
+    expect(screen.getByText('Agentry (Built in)')).toBeInTheDocument()
+    expect(screen.getByText('Sets up your Agentry workspace')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Coordinator (Yours)' })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Agentry (Built in)' })).toBeNull()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Writer (Yours)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(apiMock.updateAgent).toHaveBeenCalled())
+    expect((apiMock.updateAgent.mock.calls[0] as unknown[])[1]).toMatchObject({ delegation: { mode: 'choose', agent_ids: ['agent_2', 'agent_3'] } })
+  })
+
+  it('shows Library entries as non-selectable rows and narrows the picker by search', async () => {
+    apiMock.listLibrarySources.mockResolvedValueOnce({ object: 'list', data: [
+      { id: 'src_1', object: 'library.source', label: 'ECC', url: 'https://example.com/agents', created_at: 1 },
+    ] })
+    apiMock.listLibrarySourceAgents.mockResolvedValueOnce({ object: 'list', data: [
+      { name: 'security-reviewer', description: 'Reviews security', url: 'https://example.com/security.md' },
+    ] })
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm agentId="agent_1" />)
+    await userEvent.click(await screen.findByRole('tab', { name: /^Subagents/ }))
+    await userEvent.click(screen.getByRole('switch', { name: /Let this agent delegate to subagents/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose' }))
+    expect(await screen.findByText('Planner (Library: Agentry)')).toBeInTheDocument()
+    expect(await screen.findByText('Security reviewer (Library: ECC)')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Planner \(Library/ })).toBeNull()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search delegates' }), 'planner')
+    expect(screen.queryByText(/Security reviewer/)).toBeNull()
+  })
+
+  it('hides the picker and clears ids when the mode is Off', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm agentId="agent_1" />)
+    await userEvent.click(await screen.findByRole('tab', { name: /^Subagents/ }))
+    await userEvent.click(screen.getByRole('switch', { name: /Let this agent delegate to subagents/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose' }))
+    expect(await screen.findByRole('checkbox', { name: 'Reviewer (Yours)' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Off' }))
+    expect(screen.queryByRole('checkbox', { name: 'Reviewer (Yours)' })).toBeNull()
+    expect(screen.queryByText('Agentry (Built in)')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(apiMock.updateAgent).toHaveBeenCalled())
+    expect((apiMock.updateAgent.mock.calls[0] as unknown[])[1]).toMatchObject({ delegation: { mode: 'off', agent_ids: [] } })
   })
 })

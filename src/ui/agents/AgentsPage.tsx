@@ -25,7 +25,7 @@ import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent } from '@/api/types'
-import { agentToForm } from '@/agents/form'
+import { agentToForm, descriptionOf } from '@/agents/form'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { AgentEditorDialog, editorTargetOf } from './AgentEditorDialog'
@@ -36,9 +36,6 @@ import { LibraryTab } from './LibraryTab'
 import { download, slugOf, toAgentJson, toAgentMarkdown } from '@/agents/export'
 
 const COLUMN_WIDTH = 880
-
-/** One-line summary: the first line of the instructions. */
-const summary = (agent: OAIAgent): string => (agent.instructions ?? '').split('\n').find((l) => l.trim())?.trim() ?? ''
 
 /**
  * The editor is opened and closed by changing the URL in place: no server
@@ -97,7 +94,7 @@ export function AgentsPage() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return (agents ?? []).filter((a) => !q || `${a.name ?? ''} ${a.instructions ?? ''}`.toLowerCase().includes(q))
+    return (agents ?? []).filter((a) => !q || `${a.name ?? ''} ${descriptionOf(a)} ${a.instructions ?? ''}`.toLowerCase().includes(q))
   }, [agents, query])
 
   return (
@@ -142,6 +139,7 @@ export function AgentsPage() {
                 {rows.map((agent) => {
                   const form = agentToForm(agent)
                   const apps = Object.keys(form.apps ?? {})
+                  const description = descriptionOf(agent)
                   return (
                     <EntityCard
                       key={agent.id}
@@ -180,10 +178,10 @@ export function AgentsPage() {
                         </>
                       }
                     >
-                      {summary(agent) ? (
-                        <Text type="supporting" color="secondary" maxLines={2}>{summary(agent)}</Text>
+                      {description ? (
+                        <Text type="supporting" color="secondary" maxLines={2}>{description}</Text>
                       ) : (
-                        <Text type="supporting" color="secondary">No instructions yet.</Text>
+                        <Text type="supporting" color="secondary">No description yet.</Text>
                       )}
                     </EntityCard>
                   )

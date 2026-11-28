@@ -5,7 +5,7 @@
  */
 import type { AgentDraft } from '@/api/types'
 import type { AgentForm } from './form'
-import { MAX_SUBAGENTS } from './form'
+import { descriptionOf, MAX_SUBAGENTS, normalizeDelegation } from './form'
 import { AGENT_COLORS, AGENT_ICONS } from './avatar'
 import type { HueName } from '@/ui/brand/palette'
 
@@ -38,8 +38,13 @@ export function applyDraft(base: AgentForm, draft: AgentDraft, catalog: string[]
   const next: AgentForm = { ...base, extraMetadata: { ...base.extraMetadata } }
   if (draft.name) next.name = draft.name
   if (typeof draft.instructions === 'string') next.instructions = draft.instructions
+  const metadataDescription = draft.metadata?.description
+  const description = draft.description ?? metadataDescription
+  // A draft without one stays empty: the form asks the user instead of deriving it from instructions.
+  if (typeof description === 'string') next.description = descriptionOf({ description, metadata: null, instructions: null })
+  if (draft.delegation !== undefined) next.delegation = normalizeDelegation(draft.delegation)
   if (draft.model && models.includes(draft.model)) next.model = draft.model
-  const { icon, color, connectors: _connectors, ...metadata } = draft.metadata ?? {}
+  const { icon, color, connectors: _connectors, description: _description, ...metadata } = draft.metadata ?? {}
   Object.assign(next.extraMetadata, metadata)
   // A Library agent brings its avatar; anything unknown keeps the form's.
   if (icon && icon in AGENT_ICONS) next.icon = icon

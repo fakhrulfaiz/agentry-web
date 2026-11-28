@@ -82,7 +82,9 @@ class FakeSource {
   close() { this.readyState = 2 }
   emit(name: string, data: unknown) { act(() => { this.listeners.get(name)?.({ data: JSON.stringify(data) } as MessageEvent<string>) }) }
 }
-const lastSource = () => FakeSource.all.at(-1)!
+// The panel also opens the artifacts watch stream; count only the browser live stream here.
+const liveSources = () => FakeSource.all.filter(source => source.url === '/api/agentry/agents/sessions/s1/browser/live')
+const lastSource = () => liveSources().at(-1)!
 
 function openBrowserTab(browser: BrowserState) {
   render(<Panel browser={browser} />)
@@ -151,7 +153,7 @@ describe('Browser tab live view', () => {
     setHidden(true)
     expect(first.readyState).toBe(2)
     setHidden(false)
-    expect(FakeSource.all).toHaveLength(2)
+    expect(liveSources()).toHaveLength(2)
     expect(lastSource().readyState).toBe(1)
   })
 

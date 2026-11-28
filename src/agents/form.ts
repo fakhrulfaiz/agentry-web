@@ -1,7 +1,7 @@
 /** Agents page logic: saved agent <-> form <-> request body. Client-safe and pure. */
 import { avatarOf, defaultAvatar } from './avatar'
 import type { HueName } from '@/ui/brand/palette'
-import type { AgentAppGrants, AgentSkillSelection, CreateAgentParams, OAIAgent, ReasoningEffort } from '@/api/types'
+import type { AgentAppGrants, AgentDelegation, AgentSkillSelection, CreateAgentParams, OAIAgent, ReasoningEffort } from '@/api/types'
 
 export type EffortChoice = 'auto' | Extract<ReasoningEffort, 'low' | 'medium' | 'high'>
 
@@ -12,6 +12,8 @@ export interface AgentForm {
   color: HueName
   model: string
   effort: EffortChoice
+  /** Required one-line summary; stored on the agent and shown on its card and in the delegation picker. */
+  description: string
   instructions: string
   /** True: no Host tool mask (every tool). */
   allTools: boolean
@@ -29,17 +31,59 @@ export interface AgentForm {
   browser: 'auto' | 'on' | 'off'
   subagents: boolean
   maxSubagents: number
+  /** Saved agents this one may delegate to; built-in Agentry is always allowed when subagents are on. */
+  delegation: AgentDelegation
   /** Other metadata keys on the record, kept as they were. */
   extraMetadata: Record<string, string>
 }
 
 export const MAX_SUBAGENTS = 8
 export const CONNECTORS_KEY = 'connectors'
+/** Must match the API's `DESCRIPTION_MAX`. */
+export const DESCRIPTION_MAX = 160
 
 export const emptyForm = (model = ''): AgentForm => ({
-  name: '', ...defaultAvatar(`new-${String(Date.now())}`), model, effort: 'auto', instructions: '', allTools: true, tools: [], deniedTools: [],
-  apps: null, skills: null, sendPolicy: 'ask', browser: 'auto', subagents: false, maxSubagents: 3, extraMetadata: {},
+  name: '', ...defaultAvatar(`new-${String(Date.now())}`), model, effort: 'auto', description: '', instructions: '', allTools: true, tools: [], deniedTools: [],
+  apps: null, skills: null, sendPolicy: 'ask', browser: 'auto', subagents: false, maxSubagents: 3,
+  delegation: { mode: 'any', agent_ids: [] }, extraMetadata: {},
 })
+
+/** The agent's description, or the legacy fallback: `metadata.description`, then the first instruction line. */
+export function descriptionOf(agent: { description?: string | null; metadata?: Record<string, string> | null; instructions?: string | null }): string {
+  for (const value of [agent.description, agent.metadata?.description, agent.instructions]) {
+    if (typeof value !== 'string') continue
+    const first = value.split(/\r?\n/u, 1)[0]?.trim() ?? ''
+    if (first) return first.slice(0, DESCRIPTION_MAX)
+  }
+  return ''
+}
+
+/** Why the description cannot be saved, or `null` when it is a nonempty single line. */
+export function descriptionError(value: string): string | null {
+  const text = value.trim()
+  if (!text) return 'Give the agent a one-line description.'
+  if (/[\r\n]/u.test(text)) return 'Use one line for the description.'
+  if (text.length > DESCRIPTION_MAX) return `Use at most ${String(DESCRIPTION_MAX)} characters for the description.`
+  return null
+}
+
+/** Normalise a saved delegation setting: unknown modes become Any, ids only survive in Choose. */
+export function normalizeDelegation(value: AgentDelegation | null | undefined): AgentDelegation {
+  const mode = value?.mode === 'choose' || value?.mode === 'off' ? value.mode : 'any'
+  const ids = mode === 'choose' && Array.isArray(value?.agent_ids)
+    ? [...new Set(value.agent_ids.map((id) => (typeof id === 'string' ? id.trim() : '')).filter(Boolean))]
+    : []
+  return { mode, agent_ids: ids }
+}
+
+/** Why a delegation setting cannot be saved, or `null` when mode and ids are well formed. */
+export function delegationError(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return 'Choose a valid delegation mode.'
+  const setting = value as { mode?: unknown; agent_ids?: unknown }
+  if (setting.mode !== 'any' && setting.mode !== 'choose' && setting.mode !== 'off') return 'Choose a valid delegation mode.'
+  if (!Array.isArray(setting.agent_ids) || setting.agent_ids.some((id) => typeof id !== 'string')) return 'Choose valid delegate agents.'
+  return null
+}
 
 /** Grants from a saved agent: `apps`, else the legacy `metadata.connectors` list (all tools each), else unrestricted. */
 export function grantsOf(agent: Pick<OAIAgent, 'apps' | 'metadata'>): AgentAppGrants | null {
@@ -49,7 +93,7 @@ export function grantsOf(agent: Pick<OAIAgent, 'apps' | 'metadata'>): AgentAppGr
 }
 
 export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
-  const { [CONNECTORS_KEY]: _legacy, icon: _icon, color: _color, ...extraMetadata } = agent.metadata ?? {}
+  const { [CONNECTORS_KEY]: _legacy, description: _legacyDescription, icon: _icon, color: _color, ...extraMetadata } = agent.metadata ?? {}
   const allow = agent.host_tools?.allow
   const effort = agent.reasoning?.effort
   return {
@@ -57,6 +101,7 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
     ...avatarOf(agent),
     model: agent.model || defaultModel,
     effort: effort === 'low' || effort === 'medium' || effort === 'high' ? effort : 'auto',
+    description: descriptionOf(agent),
     instructions: agent.instructions ?? '',
     allTools: !allow || allow.length === 0,
     tools: allow ?? [],
@@ -67,6 +112,7 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
     browser: agent.browser === true ? 'on' : agent.browser === false ? 'off' : 'auto',
     subagents: agent.multi_agent?.enabled ?? false,
     maxSubagents: Math.min(MAX_SUBAGENTS, Math.max(1, agent.multi_agent?.max_concurrent_subagents ?? 3)),
+    delegation: normalizeDelegation(agent.delegation),
     extraMetadata,
   }
 }
@@ -81,6 +127,7 @@ export function formToParams(form: AgentForm, catalog: string[] = []): CreateAge
   return {
     model: form.model,
     name: form.name.trim(),
+    description: form.description.trim(),
     instructions: form.instructions,
     metadata,
     host_tools: mask,
@@ -90,5 +137,6 @@ export function formToParams(form: AgentForm, catalog: string[] = []): CreateAge
     skills: form.skills,
     send_policy: form.sendPolicy,
     browser: form.browser === 'on' ? true : form.browser === 'off' ? false : null,
+    delegation: normalizeDelegation(form.delegation),
   }
 }

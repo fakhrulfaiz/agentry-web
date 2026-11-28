@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OAIAgent } from '@/api/types'
-import { agentToForm, emptyForm, formToParams } from '@/agents/form'
+import { agentToForm, delegationError, descriptionError, emptyForm, formToParams } from '@/agents/form'
 
 const agent = (over: Partial<OAIAgent> = {}): OAIAgent => ({
   id: 'agent_1', object: 'agent', created_at: 1, updated_at: 1, name: 'Reviewer', instructions: 'Review.', model: 'm1',
@@ -16,6 +16,8 @@ describe('agent form', () => {
     expect(params.metadata).toEqual({ owner_note: 'x', icon: expect.any(String), color: expect.any(String) })
     expect(params.apps).toEqual({ gmail: 'all', github: 'all' })
     expect(params.reasoning).toEqual({ effort: 'high' })
+    expect(params.description).toBe('Review.')
+    expect(params.delegation).toEqual({ mode: 'any', agent_ids: [] })
   })
   it('sends no mask when every tool is allowed, and clears connectors when none', () => {
     const form = { ...emptyForm('m1'), name: ' A ', allTools: false, tools: ['a', 'b'] }
@@ -69,5 +71,53 @@ describe('browser field', () => {
     expect(formToParams({ ...on, browser: 'auto' }).browser).toBeNull()
     expect(agentToForm(agent({ metadata: {}, browser: false })).browser).toBe('off')
     expect(emptyForm().browser).toBe('auto')
+  })
+})
+
+describe('description', () => {
+  it('round-trips a saved one-line description', () => {
+    const form = agentToForm(agent({ description: 'Reviews pull requests' }))
+    expect(form.description).toBe('Reviews pull requests')
+    expect(formToParams(form).description).toBe('Reviews pull requests')
+  })
+
+  it('falls back to legacy metadata, then the first instruction line, capped at the API limit', () => {
+    expect(agentToForm(agent({ metadata: { description: 'Sorts the inbox' }, instructions: 'First line.\nMore.' })).description).toBe('Sorts the inbox')
+    expect(agentToForm(agent({ metadata: {}, instructions: 'First line.\nMore.' })).description).toBe('First line.')
+    expect(agentToForm(agent({ metadata: {}, instructions: `${'x'.repeat(200)}\nMore.` })).description).toBe('x'.repeat(160))
+    expect(emptyForm('m1').description).toBe('')
+  })
+
+  it('requires a nonempty description on one line within the API limit', () => {
+    expect(descriptionError('')).toBe('Give the agent a one-line description.')
+    expect(descriptionError('   ')).toBe('Give the agent a one-line description.')
+    expect(descriptionError('First line\nSecond line')).toBe('Use one line for the description.')
+    expect(descriptionError('x'.repeat(161))).toBe('Use at most 160 characters for the description.')
+    expect(descriptionError('Reviews pull requests')).toBeNull()
+  })
+})
+
+describe('delegation', () => {
+  it('round-trips a saved mode and chosen ids', () => {
+    const form = agentToForm(agent({
+      description: 'Coordinates work',
+      delegation: { mode: 'choose', agent_ids: ['agent_2', 'agent_3'] },
+    }))
+    expect(form.delegation).toEqual({ mode: 'choose', agent_ids: ['agent_2', 'agent_3'] })
+    expect(formToParams(form).delegation).toEqual({ mode: 'choose', agent_ids: ['agent_2', 'agent_3'] })
+  })
+
+  it('defaults to Any with no ids and clears ids when Off', () => {
+    expect(emptyForm('m1').delegation).toEqual({ mode: 'any', agent_ids: [] })
+    expect(agentToForm(agent()).delegation).toEqual({ mode: 'any', agent_ids: [] })
+    const off = { ...emptyForm('m1'), name: 'A', description: 'Does A', delegation: { mode: 'off' as const, agent_ids: ['agent_2'] } }
+    expect(formToParams(off).delegation).toEqual({ mode: 'off', agent_ids: [] })
+  })
+
+  it('rejects an unknown mode or ids that are not a list', () => {
+    expect(delegationError({ mode: 'any', agent_ids: [] })).toBeNull()
+    expect(delegationError({ mode: 'choose', agent_ids: ['agent_2'] })).toBeNull()
+    expect(delegationError({ mode: 'bogus' as never, agent_ids: [] })).toBe('Choose a valid delegation mode.')
+    expect(delegationError({ mode: 'choose', agent_ids: 'agent_2' as never })).toBe('Choose valid delegate agents.')
   })
 })

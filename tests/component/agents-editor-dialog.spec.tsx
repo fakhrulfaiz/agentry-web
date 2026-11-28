@@ -9,7 +9,7 @@ import { AgentsPage } from '@/ui/agents/AgentsPage'
 
 const { apiMock, nav } = vi.hoisted(() => ({
   apiMock: {
-    listAgents: vi.fn(async () => ({ data: [{ id: 'agent_1', name: 'Mailer', model: 'm1', instructions: 'Sort mail' }] })),
+    listAgents: vi.fn(async () => ({ data: [{ id: 'agent_1', name: 'Mailer', model: 'm1', instructions: 'Sort mail', description: 'Keeps your inbox tidy' }] })),
     models: vi.fn(async () => ['m1']),
     listHostTools: vi.fn(async () => []),
     getAgent: vi.fn(async () => ({ id: 'agent_1', name: 'Mailer', model: 'm1', instructions: 'Sort mail' })),
@@ -35,6 +35,11 @@ describe('editorTargetOf', () => {
 })
 
 describe('AgentsPage editor', () => {
+  it('shows the saved description on an agent card', async () => {
+    render(<AgentsPage />)
+    expect(await screen.findByText('Keeps your inbox tidy')).toBeInTheDocument()
+  })
+
   it('opens the editor dialog over the list for ?agent=', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
     nav.params = new URLSearchParams('agent=agent_1')
