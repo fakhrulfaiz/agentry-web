@@ -36,5 +36,7 @@ Open `http://localhost:3000`.
 6. Restart the Agentry API while a reply streams. The "Reconnecting…" pill shows, and the reply completes without duplicated text once the API is back.
 7. Rename and delete a chat from the sidebar. Sign out from the user menu; you return to `/login`.
 8. In the browser dev tools, check that no request, response, cookie or storage entry contains the dev key (the key is only sent once, in the sign-in form post).
+9. Connectors (needs `AGENTRY_SECRETS_KEY` on the API): Plugins shows the saved key as `ck_…1234`. Schedule a task that reads Gmail ("list my 3 newest email subjects"); the run uses the connector without any web app involvement.
+10. Agents → Import: import `https://github.com/affaan-m/everything-claude-code/blob/main/agents/planner.md`; the editor opens as "Planner" with Read, Grep and Glob and a note about the model; Cancel saves nothing.
 
 Record the date, the backend commit, and any differences from the mock in the PR description.

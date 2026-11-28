@@ -93,19 +93,6 @@ export function formToParams(form: AgentForm, catalog: string[] = []): CreateAge
   }
 }
 
-/** The soft app limit as the last line of the instructions; `names` maps slugs to display names. */
-export function connectorNote(slugs: string[], names: Record<string, string> = {}): string {
-  const list = slugs.map((s) => names[s] ?? s).join(', ')
-  return `Use only these connected apps: ${list}. Do not use other connected apps.`
-}
-
-/** Instructions for a session: the saved ones plus the soft app limit when the agent has one. */
-export function instructionsWithConnectors(saved: string | null | undefined, connectors: string | undefined): string | undefined {
-  const slugs = (connectors ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  if (slugs.length === 0) return undefined
-  return [saved?.trim(), connectorNote(slugs)].filter(Boolean).join('\n\n')
-}
-
 export type ToolPreset = 'read-only' | 'edit' | 'all'
 
 const READ = /(^|[_.-])(read|grep|glob|find|search|list|ls|view|fetch|cat)([_.-]|$)/i

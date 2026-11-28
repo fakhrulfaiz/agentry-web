@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-28: The proxy no longer rewrites session-create bodies: the soft "Use only these connected apps" note is gone, because the API enforces each agent's app grants itself.
 - 2026-11-28: Save a subagent as an agent. A finished subagent card has a Save as agent icon: it opens the agent editor prefilled with the card's name, its prompt under "You handle tasks like this one:" (edit it to describe the kind of task), and the model it ran; nothing is saved until Create agent.
 - 2026-11-28: New chat project presets apply on the already-mounted `/` page. Clicking "New chat here" in a project or sandbox now remounts the new-chat page so the project, environment, agent, model and effort preset take effect immediately; the preset URL is cleaned without losing the applied state. The sidebar "New chat" button resets to a plain new chat (`/?fresh=1`), and a reload or plain `/` stays on the default new chat.
 - 2026-11-28: Preview panel live file tree and xlsx sheet view. The Files tree refreshes while a turn runs via the new BFF SSE watch route (`GET /api/agentry/agents/sessions/{id}/artifacts/watch`, owner-scoped, 1 s debounced reload; idle refresh fallback kept) backed by the API workspace watch. Spreadsheets (`.xlsx`/`.xls`) open as a read-only sheet view (lazy-loaded `exceljs`, sheet tabs, first 2000 rows/50 cols, truncation/error banner with Download fallback) with PDF and Download still available. Changes persistence across API restart remains deferred.

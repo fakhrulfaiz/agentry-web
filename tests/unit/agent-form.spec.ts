@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OAIAgent } from '@/api/types'
-import { agentToForm, connectorNote, emptyForm, formToParams, instructionsWithConnectors, toolMask } from '@/agents/form'
+import { agentToForm, emptyForm, formToParams, toolMask } from '@/agents/form'
 import { STARTERS } from '@/agents/starters'
 
 const agent = (over: Partial<OAIAgent> = {}): OAIAgent => ({
@@ -41,14 +41,6 @@ describe('skills, apps and sending', () => {
     expect(params).toMatchObject({ apps: { gmail: 'all' }, skills: { builtin: ['create-agent'], library: ['skill_x'] }, send_policy: 'auto' })
     expect(params.metadata).toEqual({ icon: expect.any(String), color: expect.any(String) })
     expect(formToParams({ ...emptyForm('m1'), name: 'B' })).toMatchObject({ apps: null, skills: null, send_policy: 'ask' })
-  })
-})
-
-describe('soft app limit', () => {
-  it('appends the note to the saved instructions; nothing without connectors', () => {
-    expect(instructionsWithConnectors('Review.', 'gmail,github')).toBe(`Review.\n\n${connectorNote(['gmail', 'github'])}`)
-    expect(instructionsWithConnectors('Review.', undefined)).toBeUndefined()
-    expect(instructionsWithConnectors(null, 'gmail')).toBe(connectorNote(['gmail']))
   })
 })
 

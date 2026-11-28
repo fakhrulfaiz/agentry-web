@@ -43,7 +43,7 @@ Specialized agents are the point, so the page ships a small bundled gallery of s
 - **New chat:** an agent menu in the composer beside the model menu; "Default" first. Choosing one sends `agent_id` and the composer's model/effort as overrides.
 - **Schedules:** an "Agent" field in the schedule form (default "Default"), sent as `agent_id` on create and update; shown on the schedule detail.
 - **Soft app limit at session start:** when a session is created with an `agent_id` whose `metadata.connectors` is set, the BFF fetches the agent (one `GET /agents/{id}`), and overlays `agent.instructions` = saved instructions plus a final line "Use only these connected apps: Gmail, GitHub." The saved record keeps clean instructions. The existing connector injection (key in the mcp tool headers) is unchanged.
-- Known limitation: scheduled runs create their sessions inside the backend, so the BFF's connector injection and soft limit do not apply to them. Connectors for scheduled tasks are a separate change.
+- Known limitation (resolved 2026-11-28): scheduled runs create their sessions inside the backend, so the BFF's connector injection and soft limit did not apply to them. The API now holds each owner's key and mounts Composio on every session, and enforces app grants; the BFF note is gone. See `2026-11-26-agents-import-and-owner-connectors-design.md`.
 
 ## Data and server
 
