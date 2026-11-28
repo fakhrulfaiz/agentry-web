@@ -116,7 +116,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [ ] F3 workspace panel remainder: live file tree, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
 - [ ] Agents import and owner connectors (plan `2026-11-26-agents-import-and-owner-connectors.md`, 4 open questions). L.
 - [ ] Composio named tools for apps beyond Gmail and Calendar (backlog 9). M.
-- [ ] Dark-mode and narrow-width pass on Agents, Sandboxes, Scheduled. M.
+- [x] DONE 2026-11-28: dark-mode and narrow-width pass on Agents, Sandboxes, Scheduled (only the scheduled detail page needed a fix).
 - [ ] Split the API's `src/gateway.ts`. L.
 - [ ] Tool-card images for shell results and subagent images after a restart (backlog 2). M.
 
