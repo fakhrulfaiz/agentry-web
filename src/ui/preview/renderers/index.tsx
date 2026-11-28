@@ -16,6 +16,7 @@ import type { RendererId } from '@/preview/renderers'
 import { fileUrl, useFileText } from '@/preview/use-file-bytes'
 import { Markdown } from '@/ui/chat/Markdown'
 import { OfficePdfView } from './OfficePdfView'
+import { SheetView } from './SheetView'
 import { VideoView } from './VideoView'
 
 const TABLE_ROW_LIMIT = 2000
@@ -250,6 +251,8 @@ export function RendererBody(props: RendererProps) {
       return <DocxView {...props} />
     case 'officePdf':
       return <OfficePdfView sessionId={sessionId} path={path} reloadKey={props.reloadKey} onMissing={props.onMissing} onRetry={props.onRetry} />
+    case 'sheet':
+      return <SheetView sessionId={sessionId} path={path} reloadKey={props.reloadKey} onMissing={props.onMissing} onRetry={props.onRetry} />
     case 'download':
       return <DownloadCard sessionId={sessionId} path={path} />
     case 'source':

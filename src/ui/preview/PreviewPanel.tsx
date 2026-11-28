@@ -193,7 +193,7 @@ const extOf = (path: string) => path.slice(path.lastIndexOf('.') + 1).toUpperCas
 
 /** Preview-side renderers vs code-side ones, for the two-way header switch. */
 const SIDE: Record<RendererId, 'preview' | 'code'> = {
-  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', video: 'preview', pdf: 'preview', officePdf: 'preview', download: 'preview',
+  markdown: 'preview', html: 'preview', table: 'preview', json: 'preview', image: 'preview', video: 'preview', pdf: 'preview', officePdf: 'preview', sheet: 'preview', download: 'preview',
   code: 'code', source: 'code', text: 'code', docx: 'code',
 }
 const TEXT_LIKE = new Set<RendererId>(['markdown', 'html', 'table', 'json', 'code', 'source', 'text'])
@@ -203,6 +203,7 @@ function kindOf(path: string, id: RendererId): { label: string; icon: IconType }
   if (id === 'video') return { label: 'Video', icon: FilmIcon }
   if (id === 'pdf') return { label: 'PDF', icon: DocumentIcon }
   if (id === 'officePdf') return officeKind(path)
+  if (id === 'sheet') return { label: 'Spreadsheet', icon: TableCellsIcon }
   if (id === 'table') return { label: 'Table', icon: TableCellsIcon }
   if (id === 'markdown' || id === 'docx') return { label: 'Document', icon: DocumentTextIcon }
   if (id === 'download') return { label: 'File', icon: DocumentIcon }
