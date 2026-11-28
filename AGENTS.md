@@ -105,7 +105,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [ ] Finish sandbox snapshots (`agentry-sandbox` branch `feat/snapshots`, WIP, unmerged). M.
 - [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.
-- [ ] Projects: live check through the UI (create a project with a folder via the Finder picker, start a chat, move a chat). Sidebar Workspace header, view options and project folders DONE 2026-11-28. S.
+- [x] DONE 2026-11-28: Projects live check through the UI (user).
 
 **P2 (valuable, bigger)**
 - [ ] F3 workspace panel remainder: live file tree, sandbox port preview, xlsx sheet view, changes kept across an API restart (plan `2026-11-26-f3-workspace-panel.md`). L.
