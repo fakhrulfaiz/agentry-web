@@ -38,3 +38,16 @@
 .astryx-chat-layout {
   scrollbar-gutter: stable;
 }
+
+/*
+ * Sidebar rows nested under a collapsible item (chats inside a Project). Astryx wraps them in a
+ * grid (for the open/close animation) whose child keeps its content's width, so a long chat title
+ * pushed past the sidebar instead of truncating, and its hover menu fell off the edge. Let that
+ * child shrink, and indent nested rows less than astryx's default so titles keep more room.
+ */
+.astryx-side-nav [role="group"][id$="-children"] > * {
+  min-width: 0;
+}
+.astryx-side-nav [role="group"][id$="-children"] .astryx-side-nav-item > a {
+  padding-inline-start: 12px;
+}
