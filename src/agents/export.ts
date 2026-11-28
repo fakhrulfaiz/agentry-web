@@ -4,6 +4,7 @@
  * are left out. Client-safe and pure.
  */
 import type { OAIAgent } from '@/api/types'
+import { descriptionOf } from './form'
 
 /** Host tool names to Claude Code tool names (the reverse of the API's import map). */
 const CLAUDE_TOOLS: Readonly<Record<string, string>> = {
@@ -26,11 +27,12 @@ export function toAgentJson(agent: OAIAgent): string {
 export function toAgentMarkdown(agent: {
   name?: string | null
   instructions?: string | null
+  description?: string | null
   metadata?: Record<string, string> | null
   host_tools?: OAIAgent['host_tools']
   multi_agent?: OAIAgent['multi_agent']
 }): string {
-  const description = (agent.metadata?.description ?? (agent.instructions ?? '').split('\n').find((l) => l.trim()) ?? '').trim()
+  const description = descriptionOf(agent)
   const lines = ['---', `name: ${slugOf(agent.name)}`, `description: ${JSON.stringify(description)}`]
   const allow = agent.host_tools?.allow
   const tools = [...new Set([...(allow ?? []).map((t) => CLAUDE_TOOLS[t]).filter(Boolean), ...(agent.multi_agent?.enabled ? ['Task'] : [])])]

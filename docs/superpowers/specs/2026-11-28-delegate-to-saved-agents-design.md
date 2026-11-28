@@ -1,6 +1,6 @@
 # Delegate to saved agents — design
 
-Status: proposed (awaiting approval). Date: 2026-11-28.
+Status: accepted and implemented 2026-11-29 (web + API `feat/delegate-to-saved-agents` branches). Date: 2026-11-28.
 
 ## Intent
 

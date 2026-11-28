@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent, SandboxEnvironment, SandboxProvider, SandboxTemplate } from '@/api/types'
 import { seedText } from '@/artifacts/seed'
+import { descriptionOf } from '@/agents/form'
 import { chooseEffort, chooseModel, type AppCommandHandlers } from '@/commands/app-commands'
 import { promptText } from '@/connectors/catalog'
 import { scheduleSeedText } from '@/schedule/seed'
@@ -204,7 +205,7 @@ function NewChatInner() {
     [model, models, effort],
   )
   const noModels = models !== null && models.length === 0 && !failure
-  const settings: ComposerSettings = { models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '', ...(a.built_in ? { builtIn: true, description: a.metadata?.description ?? '' } : {}) })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }
+  const settings: ComposerSettings = { models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '', ...(a.built_in ? { builtIn: true, description: descriptionOf(a) } : {}) })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }
   const composer = (
     <VStack gap={2}>
       <Composer

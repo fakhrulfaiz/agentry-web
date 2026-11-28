@@ -89,6 +89,13 @@ export interface AgentSkillSelection {
   library: string[]
 }
 
+/** Which saved agents an agent may delegate to. `any` needs no ids; `off` never mounts the tool. */
+export type AgentDelegationMode = 'any' | 'choose' | 'off'
+export interface AgentDelegation {
+  mode: AgentDelegationMode
+  agent_ids: string[]
+}
+
 /** Composio app grants: app slug to `all` or exact tool slugs. */
 export type AgentAppGrants = Record<string, 'all' | string[]>
 
@@ -145,6 +152,8 @@ export interface OAIAgent {
   updated_at: number
   name: string | null
   instructions: string | null
+  /** One-line summary for menus, cards and the delegation catalog; legacy records fall back to metadata/instructions. */
+  description?: string
   model: string
   metadata: Record<string, string>
   tools: OAIToolConfig[]
@@ -158,6 +167,8 @@ export interface OAIAgent {
   send_policy?: 'ask' | 'auto' | null
   /** The web browser (sandbox chats only); `true` always, `false` never, absent or `null` auto (when the chat's sandbox has the browser). */
   browser?: boolean | null
+  /** Which saved agents this one may delegate to; absent means Any with no ids. */
+  delegation?: AgentDelegation | null
 }
 
 /** Body for `POST /v1/agents` (and, with every field optional, `POST /v1/agents/{id}`). */
@@ -173,6 +184,8 @@ export interface CreateAgentParams {
   apps?: AgentAppGrants | null
   send_policy?: 'ask' | 'auto' | null
   browser?: boolean | null
+  description?: string | null
+  delegation?: AgentDelegation | null
 }
 export type UpdateAgentParams = Partial<CreateAgentParams>
 
