@@ -26,7 +26,7 @@ import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Text } from '@astryxdesign/core/Text'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ArrowDownTrayIcon, PencilIcon } from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon, ArrowUpTrayIcon, ChatBubbleLeftEllipsisIcon, EyeIcon, EyeSlashIcon, PencilIcon, PlayIcon, StopIcon } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
@@ -314,10 +314,20 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
     <VStack gap={3}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <StackItem size="fill">
-          {hiddenCount > 0 ? <Button label={showHidden ? 'Hide hidden files' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'file' : 'files'}`} size="sm" variant="ghost" onClick={() => setShowHidden((v) => !v)} /> : null}
+          {showHidden && hiddenCount > 0 ? <Text type="supporting" color="secondary">{`Showing ${hiddenCount} hidden ${hiddenCount === 1 ? 'file' : 'files'}`}</Text> : null}
         </StackItem>
+        {hiddenCount > 0 && (
+          <IconButton
+            label={showHidden ? 'Hide hidden files' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'file' : 'files'}`}
+            tooltip={showHidden ? 'Hide hidden files' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'file' : 'files'}`}
+            size="sm"
+            variant="ghost"
+            icon={<Icon icon={showHidden ? EyeSlashIcon : EyeIcon} />}
+            onClick={() => setShowHidden((v) => !v)}
+          />
+        )}
         <input ref={fileInput} type="file" hidden aria-label="Add a file" onChange={(e) => { void upload(e.target.files?.[0] ?? null); e.target.value = '' }} />
-        <Button label="Upload file" size="sm" isLoading={uploading} isDisabled={uploading || (state !== undefined && state !== 'running')} onClick={() => fileInput.current?.click()} />
+        <IconButton label="Upload file" tooltip="Upload file" size="sm" variant="ghost" icon={<Icon icon={ArrowUpTrayIcon} />} isLoading={uploading} isDisabled={!uploading && state !== undefined && state !== 'running'} onClick={() => fileInput.current?.click()} />
       </HStack>
       {picked && uploading && <Text type="supporting" color="secondary">{`Uploading ${picked.name}`}</Text>}
       {state !== undefined && state !== 'running' && <Text type="supporting" color="secondary">Uploads need a running environment.</Text>}
@@ -393,9 +403,9 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
           </StackItem>
           {env && (
             <HStack gap={2} vAlign="center" role="group" aria-label="Environment actions">
-              {canChat && <Button label="New chat here" variant="primary" onClick={startChat} />}
-              {state === 'stopped' && <Button label="Start" isLoading={acting === 'start'} isDisabled={acting !== null} onClick={() => void act('start')} />}
-              {state === 'running' && <Button label="Stop" isLoading={acting === 'stop'} isDisabled={acting !== null} onClick={() => void act('stop')} />}
+              {canChat && <IconButton label="New chat here" tooltip="New chat here" variant="primary" icon={<Icon icon={ChatBubbleLeftEllipsisIcon} />} onClick={startChat} />}
+              {state === 'stopped' && <IconButton label="Start" tooltip="Start" variant="ghost" icon={<Icon icon={PlayIcon} />} isLoading={acting === 'start'} isDisabled={acting !== null && acting !== 'start'} onClick={() => void act('start')} />}
+              {state === 'running' && <IconButton label="Stop" tooltip="Stop" variant="ghost" icon={<Icon icon={StopIcon} />} isLoading={acting === 'stop'} isDisabled={acting !== null && acting !== 'stop'} onClick={() => void act('stop')} />}
               <MoreMenu label="More actions" alignment="end" isDisabled={acting !== null} items={menu} />
             </HStack>
           )}

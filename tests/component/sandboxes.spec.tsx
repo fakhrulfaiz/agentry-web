@@ -128,13 +128,12 @@ describe('SandboxesPage', () => {
     await waitFor(() => expect(apiMock.renameSandboxEnvironment).toHaveBeenCalledWith('env_sbx', 'Notebook'))
     expect(await screen.findByText('Notebook')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'More options for Notebook' }))
-    expect(screen.queryByRole('menuitem', { name: 'Stop' })).not.toBeInTheDocument()
-    await user.click(await screen.findByRole('menuitem', { name: 'Start' }))
+    // Start and Stop are icon buttons on the card, not menu items.
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() => expect(apiMock.startSandboxEnvironment).toHaveBeenCalledWith('env_sbx'))
 
-    await user.click(await screen.findByRole('button', { name: 'More options for Notebook' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'Stop' }))
+    await user.click(await screen.findByRole('button', { name: 'Stop' }))
     await waitFor(() => expect(apiMock.stopSandboxEnvironment).toHaveBeenCalledWith('env_sbx'))
 
     await user.click(await screen.findByRole('button', { name: 'More options for Notebook' }))

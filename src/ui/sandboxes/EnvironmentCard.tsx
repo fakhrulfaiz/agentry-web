@@ -4,7 +4,8 @@
  * One machine in the rack: name, a live status line, what it is, a row of facts
  * and its actions, built on the shared entity card (the name link covers the card).
  */
-import { Button } from '@astryxdesign/core/Button'
+import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { HStack } from '@astryxdesign/core/HStack'
 import { MoreMenu } from '@astryxdesign/core/MoreMenu'
 import { Spinner } from '@astryxdesign/core/Spinner'
@@ -12,6 +13,7 @@ import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Text } from '@astryxdesign/core/Text'
 import { Tooltip } from '@astryxdesign/core/Tooltip'
 import { VStack } from '@astryxdesign/core/VStack'
+import { ChatBubbleLeftEllipsisIcon, PlayIcon, StopIcon } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import type { SandboxEnvironment, SandboxPlace, SandboxTemplate } from '@/api/types'
@@ -46,8 +48,6 @@ export function EnvironmentCard({ env, template, places, chats, busy, onRename, 
   const menu = [
     { label: 'Open', onClick: () => router.push(open) },
     { label: 'Rename', onClick: onRename },
-    ...(stopped ? [{ label: 'Start', onClick: () => onLifecycle('start') }] : []),
-    ...(live ? [{ label: 'Stop', onClick: () => onLifecycle('stop') }] : []),
     { type: 'divider' as const },
     { label: 'Delete', variant: 'destructive' as const, onClick: onDelete },
   ]
@@ -56,13 +56,14 @@ export function EnvironmentCard({ env, template, places, chats, busy, onRename, 
     <EntityCard
       href={open}
       title={name}
-      trailing={<MoreMenu label={`More options for ${name}`} size="sm" alignment="end" isDisabled={busy} items={menu} />}
-      footer={
-        <>
-          {canChatIn(env) && <Button label="New chat here" size="sm" variant="primary" onClick={() => router.push(`/?environment=${encodeURIComponent(env.id)}`)} />}
-          {stopped && <Button label="Start" size="sm" isLoading={busy} isDisabled={busy} onClick={() => onLifecycle('start')} />}
-          {live && <Button label="Stop" size="sm" isLoading={busy} isDisabled={busy} onClick={() => onLifecycle('stop')} />}
-        </>
+      trailing={
+        // Quiet icon actions with tooltips instead of a row of text buttons.
+        <HStack gap={1} vAlign="center">
+          {canChatIn(env) && <IconButton label="New chat here" tooltip="New chat here" size="sm" variant="ghost" icon={<Icon icon={ChatBubbleLeftEllipsisIcon} />} onClick={() => router.push(`/?environment=${encodeURIComponent(env.id)}`)} />}
+          {stopped && <IconButton label="Start" tooltip="Start" size="sm" variant="ghost" icon={<Icon icon={PlayIcon} />} isLoading={busy} onClick={() => onLifecycle('start')} />}
+          {live && <IconButton label="Stop" tooltip="Stop" size="sm" variant="ghost" icon={<Icon icon={StopIcon} />} isLoading={busy} onClick={() => onLifecycle('stop')} />}
+          <MoreMenu label={`More options for ${name}`} size="sm" alignment="end" isDisabled={busy} items={menu} />
+        </HStack>
       }
     >
       <VStack gap={2}>
