@@ -23,7 +23,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, PlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, PlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, SparklesIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
@@ -529,6 +529,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         <StackItem size="fill">
           <Text weight="semibold">Workspace</Text>
         </StackItem>
+        {/* Ask Agentry: a new chat with the built-in setup assistant. */}
+        <IconButton label="Ask Agentry" tooltip="Ask Agentry" icon={<Icon icon={SparklesIcon} size="sm" />} size="sm" variant="ghost" href="/?agent=agentry" />
         <IconButton
           label={searching ? 'Close search' : 'Search chats'}
           icon={<Icon icon={searching ? XMarkIcon : MagnifyingGlassIcon} size="sm" />}

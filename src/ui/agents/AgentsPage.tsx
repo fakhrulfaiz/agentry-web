@@ -82,7 +82,8 @@ export function AgentsPage() {
 
   const load = useCallback(async () => {
     try {
-      setAgents((await api.listAgents()).data)
+      // Built-in agents (the Agentry assistant) are not editable; they show in the new-chat Agent menu instead.
+      setAgents((await api.listAgents()).data.filter((a) => !a.built_in))
       setError(null)
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()

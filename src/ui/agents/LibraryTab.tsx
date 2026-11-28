@@ -22,7 +22,7 @@ import { api, ApiError, isSignedOut } from '@/api/client'
 import type { AgentDraft, LibraryCandidate, LibrarySource, OAIAgent } from '@/api/types'
 import type { PendingDraft } from '@/agents/draft'
 import { download, toAgentMarkdown } from '@/agents/export'
-import { BUILTIN_LIBRARY, BUILTIN_SOURCE, builtinDraft, libraryDraft, mergeLibrary, type ListedItem } from '@/agents/library/library'
+import { BUILTIN_SOURCE, libraryDraft, mergeLibrary, type LibraryItem, type ListedItem } from '@/agents/library/library'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid } from '@/ui/cards/EntityCard'
 import { useCachedState } from '@/ui/page-cache'
@@ -48,6 +48,7 @@ export function LibraryTab({ agents, onDraft }: {
   onDraft(draft: PendingDraft): void
 }) {
   const [sources, setSources] = useCachedState<LoadedSource[]>('agents.library.sources')
+  const [builtins, setBuiltins] = useCachedState<LibraryItem[]>('agents.library.builtin')
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<string>(ALL)
@@ -68,6 +69,15 @@ export function LibraryTab({ agents, onDraft }: {
   }, [])
 
   const load = useCallback(async () => {
+    // The built-in Library comes from the API; a failure shows the error and leaves it empty.
+    api.listBuiltinLibrary().then(
+      (list) => setBuiltins(list.data),
+      (err: unknown) => {
+        if (isSignedOut(err)) return goToLogin()
+        setError(messageOf(err, 'Could not load the built-in Library.'))
+        setBuiltins((cur) => cur ?? [])
+      },
+    )
     try {
       const list = (await api.listLibrarySources()).data
       setSources(list.map((source) => ({ source, candidates: null, error: null })))
@@ -91,17 +101,17 @@ export function LibraryTab({ agents, onDraft }: {
   }
 
   const items = useMemo(
-    () => mergeLibrary(BUILTIN_LIBRARY, (sources ?? []).map((s) => ({ source: s.source, candidates: s.candidates ?? [] })), agents),
-    [sources, agents],
+    () => mergeLibrary(builtins ?? [], (sources ?? []).map((s) => ({ source: s.source, candidates: s.candidates ?? [] })), agents),
+    [builtins, sources, agents],
   )
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     return items.filter((i) => (filter === ALL || i.source === filter) && (!q || `${i.name} ${i.slug} ${i.description} ${i.source}`.toLowerCase().includes(q)))
   }, [items, query, filter])
 
-  /** The item's draft: bundled for built-ins, read through import for remote ones. */
+  /** The item's draft: served with built-ins, read through import for remote ones. */
   const draftOf = async (item: ListedItem): Promise<{ draft: AgentDraft; notes: string[] }> => {
-    if (!item.url) return { draft: builtinDraft(item) ?? {}, notes: [] }
+    if (!item.url) return { draft: item.draft ?? {}, notes: [] }
     const known = drafts.get(item.ref)
     if (known) return known
     const result = await api.importAgent({ url: item.url })
@@ -149,7 +159,7 @@ export function LibraryTab({ agents, onDraft }: {
   const failed = (sources ?? []).filter((s) => s.error !== null)
   const loading = (sources ?? []).some((s) => s.candidates === null && s.error === null)
   const sourceStates: SourceState[] = (sources ?? []).map((s) => ({ source: s.source, count: s.candidates?.length ?? null, error: s.error }))
-  const previewDraft = preview ? (preview.url ? drafts.get(preview.ref)?.draft ?? null : builtinDraft(preview) ?? null) : null
+  const previewDraft = preview ? (preview.url ? drafts.get(preview.ref)?.draft ?? null : preview.draft ?? null) : null
 
   return (
     <VStack gap={3}>
@@ -184,7 +194,7 @@ export function LibraryTab({ agents, onDraft }: {
             <LibraryCard
               key={item.ref}
               item={item}
-              draft={item.url ? drafts.get(item.ref)?.draft : builtinDraft(item)}
+              draft={item.url ? drafts.get(item.ref)?.draft : item.draft}
               isAdding={adding === item.ref}
               onPreview={() => open(item)}
               onAdd={() => void add(item)}
@@ -205,6 +215,7 @@ export function LibraryTab({ agents, onDraft }: {
       <LibrarySourcesDialog
         isOpen={managing}
         onClose={() => setManaging(false)}
+        builtinCount={builtins?.length ?? null}
         sources={sourceStates}
         onAdded={(source) => {
           setSources((cur) => [...(cur ?? []), { source, candidates: null, error: null }])

@@ -22,7 +22,7 @@ import { useState, type FormEvent } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { LibrarySource } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
-import { BUILTIN_LIBRARY, BUILTIN_SOURCE } from '@/agents/library/library'
+import { BUILTIN_SOURCE } from '@/agents/library/library'
 
 const ui = stylex.create({ label: { width: 140 } })
 
@@ -38,8 +38,10 @@ export interface SourceState {
 
 const plural = (n: number) => `${String(n)} ${n === 1 ? 'agent' : 'agents'}`
 
-export function LibrarySourcesDialog({ isOpen, onClose, sources, onAdded, onRemoved, onRefresh }: {
+export function LibrarySourcesDialog({ isOpen, onClose, builtinCount, sources, onAdded, onRemoved, onRefresh }: {
   isOpen: boolean
+  /** How many built-in agents there are; `null` while loading. */
+  builtinCount: number | null
   onClose(): void
   sources: readonly SourceState[]
   onAdded(source: LibrarySource): void
@@ -88,7 +90,7 @@ export function LibrarySourcesDialog({ isOpen, onClose, sources, onAdded, onRemo
       <DialogHeader title="Library sources" subtitle="Folders of agent files on GitHub, or gists. Agents you add stay when a source is removed." />
       <VStack gap={4} padding={4}>
         <List density="compact" hasDividers aria-label="Sources">
-          <ListItem label={BUILTIN_SOURCE} description="Built in: agents adapted from ECC" endContent={<Text type="supporting" color="secondary">{plural(BUILTIN_LIBRARY.length)}</Text>} />
+          <ListItem label={BUILTIN_SOURCE} description="Built in: agents adapted from ECC" endContent={builtinCount === null ? undefined : <Text type="supporting" color="secondary">{plural(builtinCount)}</Text>} />
           {sources.map(({ source, count, error: sourceError }) => (
             <ListItem
               key={source.id}

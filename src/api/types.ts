@@ -139,6 +139,8 @@ export interface OAIToolConfig {
 export interface OAIAgent {
   id: string
   object: 'agent'
+  /** Agentry extension: a built-in agent (`agentry`, the setup assistant): read-only, listed first. */
+  built_in?: boolean
   created_at: number
   updated_at: number
   name: string | null

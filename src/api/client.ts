@@ -5,6 +5,7 @@
  * `<meta name="agentry-csrf">`, in `x-agentry-csrf`.
  */
 import { sessionEnvironment } from '@/ui/sandboxes/format'
+import type { LibraryItem } from '@/agents/library/library'
 import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
@@ -638,7 +639,11 @@ export const api = {
   importAgent(input: { url: string } | { text: string }): Promise<AgentImportResult> {
     return request('POST', `${AGENTRY}/agents/import`, input)
   },
-  /** The user's Library sources (the built-in "Agentry" source lives in the web app). */
+  /** The built-in Library ("Agentry" source), with each agent's draft. */
+  listBuiltinLibrary(): Promise<{ object: 'list'; data: LibraryItem[] }> {
+    return request('GET', `${AGENTRY}/agents/library/builtin`)
+  },
+  /** The user's Library sources (the built-in "Agentry" source is `listBuiltinLibrary`). */
   listLibrarySources(): Promise<{ object: 'list'; data: LibrarySource[] }> {
     return request('GET', `${AGENTRY}/agents/library/sources`)
   },

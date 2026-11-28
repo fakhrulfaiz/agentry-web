@@ -29,6 +29,7 @@ import { Message } from './Message'
 import { RecentFiles } from './RecentFiles'
 import { Thinking } from './Thinking'
 import { Composer, ContextMenus, type ComposerSettings, type EffortChoice } from './Composer'
+import { PromptChips } from '@/ui/shared/PromptChips'
 import { canChatIn, environmentMenuLabel, NEW_SANDBOX, templateSummary } from '@/ui/sandboxes/format'
 import { pickModel, readModelCookie } from './model-cookie'
 
@@ -38,6 +39,11 @@ const styles = stylex.create({
 })
 
 type Failure = { message: string; unavailable: boolean; retry: () => void }
+
+/** The built-in setup assistant's id (Ask Agentry). */
+const AGENTRY_AGENT = 'agentry'
+/** Starter prompts shown while the Agentry assistant is the chosen agent. */
+const AGENTRY_STARTERS = ['Set up a project for ', 'I don\'t know what to build. Help me pick a project.', 'Remind me every ']
 
 function NewChatInner() {
   const router = useRouter()
@@ -52,13 +58,15 @@ function NewChatInner() {
   const [wantedEnvironment] = useState(() => params.get('environment'))
   // `?project=` (a Project's "New chat here") files the chat under the Project and inherits its defaults.
   const [wantedProject] = useState(() => params.get('project'))
+  // `?agent=` (the sidebar's Ask Agentry) preselects that agent in the agent menu.
+  const [wantedAgent] = useState(() => params.get('agent'))
   const [initialValue] = useState(() => seedText(seed) ?? (schedule === '1' ? scheduleSeedText() : promptText(prompt)))
   useEffect(() => {
     // Clean the URL so presets don't linger; the outer wrapper ignores this cleanup navigation.
-    if (seed !== null || schedule !== null || prompt !== null || fresh !== null || wantedEnvironment !== null || wantedProject !== null) {
+    if (seed !== null || schedule !== null || prompt !== null || fresh !== null || wantedEnvironment !== null || wantedProject !== null || wantedAgent !== null) {
       router.replace('/', { scroll: false })
     }
-  }, [seed, schedule, prompt, fresh, wantedEnvironment, wantedProject, router])
+  }, [seed, schedule, prompt, fresh, wantedEnvironment, wantedProject, wantedAgent, router])
   const commands = useSkillCommands()
   const [models, setModels] = useState<string[] | null>(null)
   const [model, setModel] = useState('')
@@ -115,7 +123,10 @@ function NewChatInner() {
         wantedProject ? api.getProject(wantedProject).catch(() => null) : Promise.resolve(null),
       ]))
       .then(([agentList, envData, project]) => {
-        if (agentList) setAgents(agentList.data)
+        if (agentList) {
+          setAgents(agentList.data)
+          if (wantedAgent && agentList.data.some((a) => a.id === wantedAgent)) setAgentId(wantedAgent)
+        }
         let usable: SandboxEnvironment[] = []
         if (envData) {
           const [list, providers, templates] = envData
@@ -150,7 +161,7 @@ function NewChatInner() {
           }
         }
       })
-  }, [wantedEnvironment, wantedProject])
+  }, [wantedEnvironment, wantedProject, wantedAgent])
 
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })
@@ -193,7 +204,7 @@ function NewChatInner() {
     [model, models, effort],
   )
   const noModels = models !== null && models.length === 0 && !failure
-  const settings: ComposerSettings = { models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '' })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }
+  const settings: ComposerSettings = { models, model, onModelChange: setModel, effort, onEffortChange: setEffort, agents: agents.map((a) => ({ id: a.id, name: a.name ?? '', ...(a.built_in ? { builtIn: true, description: a.metadata?.description ?? '' } : {}) })), agentId, onAgentChange: setAgentId, environments, environmentId, onEnvironmentChange: setEnvironmentId }
   const composer = (
     <VStack gap={2}>
       <Composer
@@ -218,6 +229,9 @@ function NewChatInner() {
       {/* Who runs the chat and where: under the input, so a long sandbox name does not crowd it. */}
       {!pending && <ContextMenus settings={settings} />}
       {!pending && directory && <Text type="supporting">in /workspace/{directory}</Text>}
+      {!pending && agentId === AGENTRY_AGENT && (
+        <PromptChips label="Starter prompts" prompts={AGENTRY_STARTERS} onPick={(text) => setRestore((r) => ({ text, n: (r?.n ?? 0) + 1 }))} />
+      )}
     </VStack>
   )
   return (
@@ -257,8 +271,9 @@ function actionKeyFrom(params: { get(name: string): string | null }): string | n
   const environment = params.get('environment')
   const project = params.get('project')
   const fresh = params.get('fresh')
-  if (seed || schedule || prompt || environment || project) {
-    return `preset:${seed ?? ''}|${schedule ?? ''}|${prompt ?? ''}|${environment ?? ''}|${project ?? ''}`
+  const agent = params.get('agent')
+  if (seed || schedule || prompt || environment || project || agent) {
+    return `preset:${seed ?? ''}|${schedule ?? ''}|${prompt ?? ''}|${environment ?? ''}|${project ?? ''}|${agent ?? ''}`
   }
   if (fresh) return `fresh:${fresh}`
   return null

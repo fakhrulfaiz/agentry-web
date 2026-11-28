@@ -44,6 +44,8 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'import'] },
   // Agent Library sources (label + GitHub folder or gist) and their agent files; adding one goes through import.
   { methods: ['GET', 'POST'], segments: ['agents', 'library', 'sources'] },
+  // The built-in Library (served by the API).
+  { methods: ['GET'], segments: ['agents', 'library', 'builtin'] },
   { methods: ['DELETE'], segments: ['agents', 'library', 'sources', SOURCE] },
   { methods: ['GET'], segments: ['agents', 'library', 'sources', SOURCE, 'agents'] },
   { methods: ['GET'], segments: ['agents', 'skills'] },

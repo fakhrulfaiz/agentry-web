@@ -80,8 +80,8 @@ export interface ComposerSettings {
   efforts?: EffortChoice[]
   /** Why the menus without a change handler are disabled. */
   hint?: string
-  /** Saved agents for the agent menu (new chats only); the menu is hidden without any. */
-  agents?: { id: string; name: string }[]
+  /** Saved agents for the agent menu (new chats only); the menu is hidden without any. Built-in ones (with a description) lead it. */
+  agents?: { id: string; name: string; builtIn?: boolean; description?: string }[]
   /** The chosen saved agent's id; `''` is the default agent. */
   agentId?: string
   onAgentChange?(id: string): void
@@ -112,7 +112,11 @@ export function ContextMenus({ settings }: { settings: ComposerSettings }) {
           variant="ghost"
           startIcon={UserGroupIcon}
           containerXstyle={contextStyles.menu}
-          options={[{ value: '', label: 'Default agent' }, ...agents.map((a) => ({ value: a.id, label: a.name || 'Untitled agent' }))]}
+          options={[
+            ...agents.filter((a) => a.builtIn).map((a) => ({ value: a.id, label: a.name, ...(a.description ? { description: a.description } : {}) })),
+            { value: '', label: 'Default agent' },
+            ...agents.filter((a) => !a.builtIn).map((a) => ({ value: a.id, label: a.name || 'Untitled agent' })),
+          ]}
           value={agentId}
           onChange={onAgentChange}
         />
