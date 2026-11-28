@@ -66,3 +66,45 @@ the file already does.
 ## Done when
 
 Both repos: typecheck and tests green (API: `DSH_ROOT=$HOME/code/dsh-pinned`), committed on `develop`.
+
+## Follow-up (2026-11-28): Finder-style folder picker
+
+The user does not want the quick-pick chips under the Folder field (with many folders it gets ugly).
+Instead: a button that opens a macOS Finder–style **column view** of the environment's folders.
+
+### API: list one folder's sub-folders
+`GET /agents/environments/{environment_id}/folders?path=<relative folder>` (owner-scoped like the
+files routes). `path` empty or missing = workspace root; validated with `normalizeWorkspaceSubdir`
+(400 on a bad path). Answers `{ object: 'list', path: '<normalized>', data: [{ name, path }] }` with the
+immediate sub-directories only, sorted by name (case-insensitive), at most 500 (`has_more: true` beyond).
+Dot-folders are included; the web hides them. A missing folder → 404 `resource_not_found`.
+- `agentry-sandbox`/remote providers: start a stopped sandbox like `ensureFolder` does, then `exec`
+  a script such as `cd -- '<dir>' && find . -mindepth 1 -maxdepth 1 -type d -printf '%f\n'` (shell-quote; check
+  `find -printf` exists in the image, else use a portable loop). Exit code ≠ 0 because the folder is missing → 404.
+- `local` provider: `readdir(dir, { withFileTypes: true })`, directories only (no symlink following).
+- OpenAPI, contract test, `docs/http-api.md`, CHANGELOG. Tests: root listing, nested path, bad path 400,
+  missing 404, local provider on a temp dir.
+
+### Web
+- Proxy allow-list: `GET agents/environments/{env_…}/folders` (+ unit test). Client
+  `listEnvironmentFolders(id, path)`.
+- Remove the quick-pick chips (and `topLevelFolders` if unused). The Folder field becomes a row:
+  a button showing the choice — folder icon + `/workspace/biology/notes`, or "Whole workspace" when empty —
+  that opens the picker, plus a small "Clear" icon button when a folder is set.
+- New `FolderPicker` dialog (`src/ui/sandboxes/FolderPicker.tsx`), astryx components only:
+  - Title "Choose a folder"; under it the current path as a breadcrumb (`/workspace › biology › notes`),
+    each crumb clickable to go back up.
+  - Column view: columns side by side, horizontally scrollable; column 1 = root's sub-folders. Clicking a
+    folder selects it (highlighted) and opens its sub-folders as the next column (columns to the right of it
+    are replaced). Each column loads lazily from the API, shows a spinner while loading, "No folders" when
+    empty, and an inline error with Retry on failure. Hide dot-folders. Rows: folder icon + name, chevron
+    on the right (as Finder).
+  - "New folder" button: an inline text input in the selected column (validated with
+    `normalizeWorkspaceFolder` on the full path); on Enter the new name is added to that column and selected
+    (it is created for real when the first chat starts; nothing is written now).
+  - Footer: "Use whole workspace" (choose empty), Cancel, and "Choose" (selected path; disabled until a
+    folder is selected). Keyboard: arrow keys move within/between columns if cheap; Esc closes.
+  - On a narrow screen the columns still scroll horizontally; the dialog fits the width.
+- Tests: picker lists root, opens a sub-folder column, breadcrumb goes back, new folder adds and selects,
+  whole workspace returns '', choose returns nested path; project dialog shows the button label and saves
+  the picked folder.
