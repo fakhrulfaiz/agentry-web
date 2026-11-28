@@ -1,15 +1,17 @@
 'use client'
 
 /**
- * Conversation sidebar: New chat, title search, Project sections (pinned first,
- * then active), the Starred smart view, the user's unfiled sessions grouped by
- * local date, star/rename/delete/move and Project actions, then Settings and
- * the user menu. Project session pages load only for expanded sections; the
+ * Conversation sidebar: New chat and the page links, then the Workspace (title search and
+ * view options in its header; by default the Projects section, Starred, and the unfiled
+ * chats as one Recents list; or chats grouped by environment, or one list), star/rename/
+ * delete/move and Project actions, then the user menu. Project session pages load only for expanded sections; the
  * global paged list stays the source for Recent/Unfiled and search. Collapsing
  * is remembered in `localStorage`; below 768px AppShell moves the whole sidebar
  * into a drawer.
  */
 import { Button } from '@astryxdesign/core/Button'
+import { DropdownMenu, DropdownMenuDivider, DropdownMenuGroup, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@astryxdesign/core/DropdownMenu'
+import { StackItem } from '@astryxdesign/core/Layout'
 import { IconButton } from '@astryxdesign/core/IconButton'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
@@ -20,7 +22,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, PlusIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
@@ -34,6 +36,7 @@ import { announceProjects, useProjectChanges } from './project-events'
 import { groupSessionsForSidebar, type SidebarSection } from './project-groups'
 import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChanges, useStarToggle } from './session-actions'
 import { UserMenu, type ShellIdentity } from './UserMenu'
+import { DEFAULT_VIEW, groupByEnvironment, orderProjects, orderSessions, readView, writeView, type GroupBy, type OrderBy, type ShowChats, type SidebarView } from './sidebar-view'
 
 const styles = stylex.create({
   // A row's menu takes no space until the row is under the pointer or focused, so titles use the full width.
@@ -141,6 +144,36 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const [deletingProject, setDeletingProject] = useState<OAIProject | null>(null)
   const [moving, setMoving] = useState<Session | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
+  // Workspace view options (Group by / Order by / Show), remembered per browser.
+  const [view, setView] = useState<SidebarView>(DEFAULT_VIEW)
+  useEffect(() => setView(readView()), [])
+  const changeView = (patch: Partial<SidebarView>) =>
+    setView((prev) => {
+      const next = { ...prev, ...patch }
+      writeView(next)
+      return next
+    })
+  // Search opens from the Workspace header; closing it clears the query.
+  const [searching, setSearching] = useState(false)
+  const closeSearch = () => {
+    setSearching(false)
+    setQuery('')
+  }
+  // Sandbox names for "Group by environment", read only when that view is on.
+  const [environmentNames, setEnvironmentNames] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (view.group !== 'environment') return
+    let alive = true
+    api
+      .listSandboxEnvironments()
+      .then((page) => {
+        if (alive) setEnvironmentNames(Object.fromEntries(page.data.map((e) => [e.id, e.name || 'Untitled sandbox'])))
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [view.group])
   // Folding Recents away is remembered per browser; storage can be unavailable, so it is best-effort.
   const [recentsHidden, setRecentsHidden] = useState(false)
   useEffect(() => {
@@ -326,7 +359,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   const projectSections = grouped.filter((section): section is ProjectSection => section.type === 'project')
   const dateSections = grouped.filter((section): section is DateSection => section.type === 'date')
   // One flat Recents list (newest first, as the date groups were ordered), without the starred chats shown above it.
-  const recents = dateSections.flatMap((section) => section.sessions).filter((s) => !isStarred(s) && matches(s))
+  const recents = orderSessions(dateSections.flatMap((section) => section.sessions).filter((s) => !isStarred(s) && matches(s)), view.order)
   const loadedProjectRows = Object.values(projectSessions).flat()
 
   // Search is a flat list: partial Project sections would be confusing while filtering.
@@ -409,17 +442,75 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   }
 
   const projectsSection = (
-    <SideNavSection
-      title="Projects"
-      endContent={
-        <HStack gap={1}>
-          <IconButton label="New project" icon={<Icon icon={PlusIcon} size="sm" />} size="sm" variant="ghost" onClick={() => setProjectDialog({ isOpen: true, project: null })} />
-          <MoreMenu label="Project options" size="sm" items={[{ label: 'Archived projects', onClick: () => setArchivedOpen(true) }]} />
-        </HStack>
-      }
-    >
-      {projectSections.map((section) => projectItem(section.project))}
+    <SideNavSection title="Projects">
+      {orderProjects(projectSections.map((section) => section.project), view.order).map(projectItem)}
     </SideNavSection>
+  )
+
+  const viewMenu = (
+    <DropdownMenu
+      renderTrigger={(props) => <IconButton {...props} label="View options" icon={<Icon icon={AdjustmentsHorizontalIcon} size="sm" />} size="sm" variant="ghost" />}
+      menuWidth={220}
+    >
+      <DropdownMenuGroup title="Group by">
+        <DropdownMenuRadioGroup label="Group by" value={view.group} onChange={(group) => changeView({ group: group as GroupBy })}>
+          <DropdownMenuRadioItem value="project" label="Projects" icon={FolderIcon} />
+          <DropdownMenuRadioItem value="environment" label="Environment" icon={ServerStackIcon} />
+          <DropdownMenuRadioItem value="list" label="In one list" icon={QueueListIcon} />
+        </DropdownMenuRadioGroup>
+      </DropdownMenuGroup>
+      <DropdownMenuDivider />
+      <DropdownMenuGroup title="Order by">
+        <DropdownMenuRadioGroup label="Order by" value={view.order} onChange={(order) => changeView({ order: order as OrderBy })}>
+          <DropdownMenuRadioItem value="updated" label="Last updated" icon={ClockIcon} />
+          <DropdownMenuRadioItem value="name" label="Name" icon={BarsArrowDownIcon} />
+        </DropdownMenuRadioGroup>
+      </DropdownMenuGroup>
+      <DropdownMenuDivider />
+      <DropdownMenuGroup title="Show">
+        <DropdownMenuRadioGroup label="Show" value={view.show} onChange={(show) => changeView({ show: show as ShowChats })}>
+          <DropdownMenuRadioItem value="all" label="All chats" icon={ChatBubbleLeftIcon} />
+          <DropdownMenuRadioItem value="starred" label="Starred only" icon={StarIcon} />
+        </DropdownMenuRadioGroup>
+      </DropdownMenuGroup>
+      <DropdownMenuDivider />
+      <DropdownMenuItem label="Archived projects…" icon={ArchiveBoxIcon} onClick={() => setArchivedOpen(true)} />
+    </DropdownMenu>
+  )
+
+  // The Workspace header: parent of Projects and Recents, with search and the view options.
+  const workspaceHeader = (
+    <VStack gap={2} paddingInline={2} paddingBlockStart={2}>
+      <HStack gap={1} vAlign="center">
+        <StackItem size="fill">
+          <Text weight="semibold">Workspace</Text>
+        </StackItem>
+        <IconButton
+          label={searching ? 'Close search' : 'Search chats'}
+          icon={<Icon icon={searching ? XMarkIcon : MagnifyingGlassIcon} size="sm" />}
+          size="sm"
+          variant="ghost"
+          onClick={() => (searching ? closeSearch() : setSearching(true))}
+        />
+        {viewMenu}
+        <IconButton label="New project" icon={<Icon icon={FolderPlusIcon} size="sm" />} size="sm" variant="ghost" onClick={() => setProjectDialog({ isOpen: true, project: null })} />
+      </HStack>
+      {searching && (
+        <TextInput
+          label="Search chats"
+          isLabelHidden
+          type="search"
+          size="sm"
+          placeholder="Search chats"
+          startIcon={MagnifyingGlassIcon}
+          value={query}
+          onChange={setQuery}
+          onKeyDown={(e: React.KeyboardEvent) => e.key === 'Escape' && closeSearch()}
+          hasAutoFocus
+          hasClear
+        />
+      )}
+    </VStack>
   )
 
   return (
@@ -460,29 +551,27 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
               href="/sandboxes"
               isSelected={pathname.startsWith('/sandboxes')}
             />
-            <TextInput
-              label="Search chats"
-              isLabelHidden
-              type="search"
-              size="sm"
-              placeholder="Search chats"
-              startIcon={MagnifyingGlassIcon}
-              value={query}
-              onChange={setQuery}
-              hasClear
-            />
           </VStack>
         }
         footer={
           <UserMenu identity={identity} />
         }
       >
+        {workspaceHeader}
         {query.trim() ? (
-          <SideNavSection title="Search results">{rows(searchRows)}</SideNavSection>
+          <SideNavSection title="Search results">{rows(orderSessions(searchRows, view.order))}</SideNavSection>
+        ) : view.show === 'starred' ? (
+          <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>
+        ) : view.group === 'list' ? (
+          <SideNavSection title="All chats" isHeaderHidden>{rows(orderSessions(visible, view.order))}</SideNavSection>
+        ) : view.group === 'environment' ? (
+          groupByEnvironment(visible, environmentNames, view.order).map((group) => (
+            <SideNavSection key={group.key} title={group.title}>{rows(group.sessions)}</SideNavSection>
+          ))
         ) : (
           <>
-            {projectsSection}
-            {starred.length > 0 && <SideNavSection title="Starred">{rows(starred)}</SideNavSection>}
+            {projectSections.length > 0 && projectsSection}
+            {starred.length > 0 && <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>}
             {recents.length > 0 && (
               <SideNavSection
                 title="Recents"

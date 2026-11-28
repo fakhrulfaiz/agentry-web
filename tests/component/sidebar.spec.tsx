@@ -178,6 +178,38 @@ describe('Sidebar', () => {
     expect(apiMock.listSessions).toHaveBeenCalledWith({ limit: 30 })
   })
 
+  it('groups chats by environment from the view options, and remembers the choice', async () => {
+    window.localStorage.removeItem('agentry_sidebar_view')
+    apiMock.listSandboxEnvironments.mockResolvedValue({ object: 'list', data: [{ id: 'env_1', name: 'GPU box' }], has_more: false })
+    apiMock.listSessions.mockResolvedValue(
+      page([
+        { ...session('s1', 'On the GPU'), environment: { type: 'sandbox', environment_id: 'env_1' } },
+        { ...session('s2', 'On the server'), environment: { type: 'local', workspace_directory: '/w' } },
+      ]),
+    )
+    const user = userEvent.setup()
+    const { unmount } = render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'On the GPU' })
+    await user.click(screen.getByRole('button', { name: 'View options' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Environment' }))
+    expect(await within(await screen.findByRole('group', { name: 'GPU box' })).findByRole('link', { name: 'On the GPU' })).toBeInTheDocument()
+    expect(within(group('Server')).getByRole('link', { name: 'On the server' })).toBeInTheDocument()
+    unmount()
+    render(<Sidebar identity={IDENTITY} />)
+    expect(await screen.findByRole('group', { name: 'GPU box' })).toBeInTheDocument()
+    window.localStorage.removeItem('agentry_sidebar_view')
+  })
+
+  it('shows only starred chats, sorted by name, from the view options', async () => {
+    window.localStorage.setItem('agentry_sidebar_view', JSON.stringify({ group: 'project', order: 'name', show: 'starred' }))
+    apiMock.listSessions.mockResolvedValue(page([starred('s1', 'Zebra notes'), starred('s2', 'Alpha plan'), session('s3', 'Plain chat')]))
+    render(<Sidebar identity={IDENTITY} />)
+    await screen.findByRole('link', { name: 'Alpha plan' })
+    expect(within(group('Starred')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Alpha plan', 'Zebra notes'])
+    expect(screen.queryByRole('link', { name: 'Plain chat' })).not.toBeInTheDocument()
+    window.localStorage.removeItem('agentry_sidebar_view')
+  })
+
   it('folds Recents away and remembers it', async () => {
     window.localStorage.removeItem('agentry_recents_hidden')
     apiMock.listSessions.mockResolvedValue(page([session('s1', 'Plan the launch')]))
@@ -203,6 +235,7 @@ describe('Sidebar', () => {
     render(<Sidebar identity={IDENTITY} />)
     await screen.findByRole('link', { name: 'Plan the launch' })
 
+    await user.click(screen.getByRole('button', { name: 'Search chats' }))
     await user.type(screen.getByRole('searchbox', { name: 'Search chats' }), 'launch')
     expect(screen.getByRole('link', { name: 'Plan the launch' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Fix the build' })).not.toBeInTheDocument()
@@ -472,8 +505,8 @@ describe('Sidebar', () => {
     await waitFor(() => expect(projectRow('Active work')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'Archived work' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Project options' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'Archived projects' }))
+    await user.click(screen.getByRole('button', { name: 'View options' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Archived projects…' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Archived work')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Unarchive' }))
@@ -565,8 +598,8 @@ describe('Sidebar', () => {
     apiMock.listSessions.mockResolvedValue(page([]))
     const user = userEvent.setup()
     render(<Sidebar identity={IDENTITY} />)
-    await user.click(await screen.findByRole('button', { name: 'Project options' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'Archived projects' }))
+    await user.click(await screen.findByRole('button', { name: 'View options' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Archived projects…' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('Old three')).toBeInTheDocument()
@@ -642,6 +675,7 @@ describe('Sidebar', () => {
     await user.click(projectRow('Website work'))
     expect(await screen.findByRole('link', { name: 'Website chat' })).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Search chats' }))
     const search = screen.getByRole('searchbox', { name: 'Search chats' })
     await user.type(search, 'no such chat')
     expect(group('Search results')).toBeInTheDocument()
