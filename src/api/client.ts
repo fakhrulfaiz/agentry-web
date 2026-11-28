@@ -26,6 +26,8 @@ import type {
   EnvironmentFile,
   EnvironmentFolderList,
   SandboxEnvironment,
+  EnvironmentSnapshot,
+  SnapshotLevel,
   SandboxPage,
   SandboxProvider,
   SandboxRuntimes,
@@ -494,12 +496,13 @@ export const api = {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}`)
   },
   /** Provisions an environment; `templateId` and `provider` are optional (the default provider is used without them). */
-  createSandboxEnvironment(input: { templateId?: string; provider?: string; name?: string; place?: string } = {}): Promise<SandboxEnvironment> {
+  createSandboxEnvironment(input: { templateId?: string; provider?: string; name?: string; place?: string; snapshotId?: string } = {}): Promise<SandboxEnvironment> {
     return request('POST', `${AGENTRY}/agents/environments`, {
       ...(input.templateId ? { template_id: input.templateId } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.name ? { name: input.name } : {}),
       ...(input.place ? { place: input.place } : {}),
+      ...(input.snapshotId ? { snapshot_id: input.snapshotId } : {}),
     })
   },
   /** Renames an environment; an empty name clears it. Answers the environment. */
@@ -516,8 +519,28 @@ export const api = {
   resetSandboxEnvironment(id: string, keepWorkspace: boolean): Promise<SandboxEnvironment> {
     return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/reset`, { keep_workspace: keepWorkspace })
   },
-  async deleteSandboxEnvironment(id: string): Promise<void> {
-    await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}`)
+  /** Deletes an environment. Its snapshots are kept unless `deleteSnapshots`. */
+  async deleteSandboxEnvironment(id: string, opts: { deleteSnapshots?: boolean } = {}): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}${opts.deleteSnapshots ? '?delete_snapshots=true' : ''}`)
+  },
+  /** Starts saving a snapshot; answers it as `saving` (poll `listEnvironmentSnapshots` until it settles). */
+  saveEnvironmentSnapshot(id: string, input: { name?: string; level?: SnapshotLevel; stopFirst?: boolean } = {}): Promise<EnvironmentSnapshot> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/snapshots`, {
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.level ? { level: input.level } : {}),
+      ...(input.stopFirst ? { stop_first: true } : {}),
+    })
+  },
+  /** An environment's snapshots, newest first. */
+  listEnvironmentSnapshots(id: string): Promise<SandboxPage<EnvironmentSnapshot>> {
+    return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/snapshots`)
+  },
+  async deleteEnvironmentSnapshot(snapshotId: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/environments/snapshots/${seg(snapshotId)}`)
+  },
+  /** Puts a snapshot back into the environment; answers the environment. */
+  restoreEnvironmentSnapshot(id: string, snapshotId: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/restore`, { snapshot_id: snapshotId })
   },
   /** Opens an interactive shell in a sandbox environment; read its output from `terminalStreamUrl`. */
   openTerminal(id: string, cols: number, rows: number): Promise<{ id: string }> {

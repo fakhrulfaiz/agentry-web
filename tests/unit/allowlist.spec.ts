@@ -42,6 +42,10 @@ describe('isAllowed', () => {
     ['GET', '/agents/environments/env_1/files'],
     ['POST', '/agents/environments/env_1/files'],
     ['GET', '/agents/environments/env_1/folders'],
+    ['GET', '/agents/environments/env_1/snapshots'],
+    ['POST', '/agents/environments/env_1/snapshots'],
+    ['POST', '/agents/environments/env_1/restore'],
+    ['DELETE', '/agents/environments/snapshots/snap_0123456789abcdef0123456789abcdef'],
     ['POST', '/agents/environments/env_1/terminals'],
     ['DELETE', '/agents/environments/env_1/terminals/term_ab12'],
     ['POST', '/agents/environments/env_1/terminals/term_ab12/input'],
@@ -214,6 +218,12 @@ describe('sandbox routes', () => {
   it('keep file bytes off the proxy and refuse methods the page does not use', () => {
     expect(isAllowed('GET', '/agents/environments/env_1/files/a.txt')).toBe(false)
     expect(isAllowed('POST', '/agents/environments/providers')).toBe(false)
+    // Snapshot ids are `snap_<32 hex>`; the all-snapshots list and per-snapshot reads are not used by the page.
+    expect(isAllowed('DELETE', '/agents/environments/snapshots/snap_1')).toBe(false)
+    expect(isAllowed('DELETE', '/agents/environments/snapshots/env_1')).toBe(false)
+    expect(isAllowed('GET', '/agents/environments/snapshots')).toBe(false)
+    expect(isAllowed('PUT', '/agents/environments/env_1/snapshots')).toBe(false)
+    expect(isAllowed('DELETE', '/agents/environments/env_1/restore')).toBe(false)
     expect(isAllowed('POST', '/agents/environments/runtimes')).toBe(false)
     expect(isAllowed('DELETE', '/agents/environments')).toBe(false)
   })

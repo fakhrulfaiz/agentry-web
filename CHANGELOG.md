@@ -4,6 +4,8 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-28: Sandbox snapshots. A **Snapshots** tab on the environment page (next to Files, Terminal and Chats) lists the sandbox's snapshots (name, level, size, age, a spinner while saving; polls every 2 s while any is saving). A camera icon opens a small dialog to save one (optional name; level in plain words, only what the place supports: Files only, Whole sandbox including installed software, Running state; a "Stop the sandbox while saving" tick for the last two). The row menu has Restore (confirms what is replaced), New environment from this snapshot, and Delete (confirms). Deleting an environment (page menu and Sandboxes card) now shows "Also delete its N snapshots", unticked: snapshots are kept unless ticked (`?delete_snapshots=true`). Allow-list entries for the snapshot routes, client methods and tests. Not yet: a snapshot picker in the Sandboxes "New environment" dialog and a list of snapshots of deleted environments (a snapshot can start a new environment only from an existing environment's Snapshots tab), download and upload of snapshots.
+
 ## 0.4.0 — 2026-11-28
 
 - 2026-11-28: Hover backgrounds are back across the app (sidebar links and chats, menus, rows). Our own StyleX classes shared atomic class names with astryx's prebuilt CSS; our unlayered copy of e.g. `background-color: transparent` beat astryx's layered `:hover` rule. Our classes now use their own prefix (`classNamePrefix: 'a'` in `next.config.ts` and `postcss.config.mjs`, which must match).

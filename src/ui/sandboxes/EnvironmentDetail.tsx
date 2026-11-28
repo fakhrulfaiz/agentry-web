@@ -4,7 +4,6 @@
  * One environment: its status, where it came from, and a file browser (list,
  * download, upload). Deleting it removes its workspace.
  */
-import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
@@ -38,7 +37,9 @@ import { FileTree } from '@/ui/preview/FileTree'
 import { CopyButton } from '@/ui/shared/CopyButton'
 import { DefinitionRow } from '@/ui/shared/DefinitionRow'
 import { buildTree } from '@/preview/tree'
+import { DeleteEnvironmentDialog } from './DeleteEnvironmentDialog'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
+import { SnapshotsPanel } from './SnapshotsPanel'
 import { ago, cardName, statusLine, templateFacts } from './overview'
 import { useEnvironmentChats } from './use-environment-chats'
 import { canChatIn, formatBytes, gpuLabel, providerTitle, setupProgressText, shortDate, shortId, toBase64 } from './format'
@@ -96,7 +97,8 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const [places, setPlaces] = useState<SandboxPlace[]>([])
   const [acting, setActing] = useState<'start' | 'stop' | 'reset' | null>(null)
   const [renaming, setRenaming] = useState(false)
-  const [tab, setTab] = useState<'files' | 'terminal' | 'chats'>('files')
+  const [tab, setTab] = useState<'files' | 'terminal' | 'snapshots' | 'chats'>('files')
+  const [snapshotCount, setSnapshotCount] = useState<number | null>(null)
   const [templates, setTemplates] = useState<SandboxTemplate[]>([])
   const [showAllSoftware, setShowAllSoftware] = useState(false)
   const fileInput = useRef<HTMLInputElement | null>(null)
@@ -229,9 +231,9 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
     }
   }
 
-  async function remove() {
+  async function remove(deleteSnapshots: boolean) {
     try {
-      await api.deleteSandboxEnvironment(environmentId)
+      await api.deleteSandboxEnvironment(environmentId, { deleteSnapshots })
       router.push('/sandboxes')
     } catch (err) {
       setConfirmDelete(false)
@@ -263,7 +265,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const canChat = env ? canChatIn(env) : false
   const tabs = [
     { value: 'files', label: 'Files' },
-    ...(env?.provider === 'sandbox' ? [{ value: 'terminal', label: 'Terminal' }] : []),
+    ...(env?.provider === 'sandbox' ? [{ value: 'terminal', label: 'Terminal' }, { value: 'snapshots', label: 'Snapshots' }] : []),
     { value: 'chats', label: 'Chats' },
   ]
   const startChat = () => router.push(`/?environment=${encodeURIComponent(environmentId)}`)
@@ -363,6 +365,19 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
     </VStack>
   )
 
+  // Without the place's levels (providers did not load) offer files only, which every place takes.
+  const snapshotLevels = place ? (place.snapshot_levels ?? []) : (['workspace'] as const)
+  const snapshotsPanel = (
+    <SnapshotsPanel
+      environmentId={environmentId}
+      levels={snapshotLevels}
+      canSave={state === 'running' || state === 'stopped'}
+      onCount={setSnapshotCount}
+      onRestored={(updated) => { setEnv(updated); void loadFiles() }}
+      onNewEnvironment={() => router.push('/sandboxes')}
+    />
+  )
+
   const chatsPanel = chats.length === 0 ? (
     <EmptyState title="No chats here yet." description={chatsByEnv ? 'Chats you start in this environment are listed here.' : 'Chats on this environment will show here once they load.'} actions={canChat ? <Button label="New chat here" onClick={startChat} /> : undefined} />
   ) : (
@@ -434,11 +449,11 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
               <VStack gap={3}>
                 <TabList value={tab} onChange={(v) => setTab(v as typeof tab)} role="tablist" hasDivider aria-label="Environment">
                   {tabs.map((t) => (
-                    <Tab key={t.value} value={t.value} label={t.label} panelId="environment-panel" endContent={t.value === 'chats' && chats.length > 0 ? <Text type="supporting" color="secondary">{chats.length}</Text> : undefined} />
+                    <Tab key={t.value} value={t.value} label={t.label} panelId="environment-panel" endContent={t.value === 'chats' && chats.length > 0 ? <Text type="supporting" color="secondary">{chats.length}</Text> : t.value === 'snapshots' && snapshotCount ? <Text type="supporting" color="secondary">{snapshotCount}</Text> : undefined} />
                   ))}
                 </TabList>
                 <div role="tabpanel" id="environment-panel" aria-label={tabs.find((t) => t.value === tab)?.label}>
-                  {tab === 'terminal' && env?.provider === 'sandbox' ? terminalPanel : tab === 'chats' ? chatsPanel : filesPanel}
+                  {tab === 'terminal' && env?.provider === 'sandbox' ? terminalPanel : tab === 'snapshots' && env?.provider === 'sandbox' ? snapshotsPanel : tab === 'chats' ? chatsPanel : filesPanel}
                 </div>
               </VStack>
             )}
@@ -463,13 +478,12 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
         </VStack>
       </Dialog>
       <RenameEnvironmentDialog environment={renaming ? env : null} onClose={() => setRenaming(false)} onRenamed={setEnv} />
-      <AlertDialog
+      <DeleteEnvironmentDialog
+        environmentId={environmentId}
+        name={env ? cardName(env) : 'this environment'}
         isOpen={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title="Delete this environment?"
-        description="Its workspace and every file in it are removed. Chats that used it keep their history."
-        actionLabel="Delete environment"
-        onAction={() => void remove()}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={(deleteSnapshots) => void remove(deleteSnapshots)}
       />
     </div>
   )

@@ -47,6 +47,7 @@ import { TemplateEditorDialog } from './TemplateEditorDialog'
 import { EnvironmentCard, Section } from './EnvironmentCard'
 import { groupEnvironments, summarize } from './overview'
 import { useEnvironmentChats } from './use-environment-chats'
+import { DeleteEnvironmentDialog } from './DeleteEnvironmentDialog'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
 import { useCachedState } from '@/ui/page-cache'
 
@@ -218,13 +219,13 @@ export function SandboxesPage() {
     }
   }
 
-  async function removeEnvironment() {
+  async function removeEnvironment(deleteSnapshots: boolean) {
     const env = deletingEnv
     if (!env) return
     setDeletingEnv(null)
     setActing(env.id)
     try {
-      await api.deleteSandboxEnvironment(env.id)
+      await api.deleteSandboxEnvironment(env.id, { deleteSnapshots })
       setEnvironments((cur) => (cur ?? []).filter((e) => e.id !== env.id))
     } catch (err) {
       if (isSignedOut(err)) return goToLogin()
@@ -403,13 +404,12 @@ export function SandboxesPage() {
 
       <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreate={startCreate} />
       <RenameEnvironmentDialog environment={renaming} onClose={() => setRenaming(null)} onRenamed={replaceEnvironment} />
-      <AlertDialog
+      <DeleteEnvironmentDialog
+        environmentId={deletingEnv?.id ?? ''}
+        name={deletingEnv ? environmentName(deletingEnv) : 'this environment'}
         isOpen={deletingEnv !== null}
-        onOpenChange={(open: boolean) => !open && setDeletingEnv(null)}
-        title={`Delete ${deletingEnv ? environmentName(deletingEnv) : 'this environment'}?`}
-        description="Its workspace and every file in it are removed. Chats that used it keep their history."
-        actionLabel="Delete environment"
-        onAction={() => void removeEnvironment()}
+        onClose={() => setDeletingEnv(null)}
+        onConfirm={(deleteSnapshots) => void removeEnvironment(deleteSnapshots)}
       />
       <TemplateDetailsDialog template={viewing} onClose={() => setViewing(null)} />
       <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onSaved={() => void load()} />

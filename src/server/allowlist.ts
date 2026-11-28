@@ -4,7 +4,7 @@ export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 /** Names under `/agents/` that are routes, never an agent id. */
 const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files', 'projects'])
 
-type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'job' | 'project' }
+type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'job' | 'project' | 'snapshot' }
 interface Rule {
   methods: readonly string[]
   segments: readonly Segment[]
@@ -18,6 +18,7 @@ const FILE = { id: 'file' } as const
 const TEMPLATE = { id: 'template' } as const
 const ENVIRONMENT = { id: 'environment' } as const
 const SKILL = { id: 'skill' } as const
+const SNAPSHOT = { id: 'snapshot' } as const
 const PROJECT = { id: 'project' } as const
 const TERMINAL = { id: 'terminal' } as const
 const TURN = { id: 'turn' } as const
@@ -27,6 +28,8 @@ const INDEX = { id: 'index' } as const
 const INDEX_SEGMENT = /^[0-9]{1,5}$/
 /** Installed skill ids Agentry issues. */
 const SKILL_ID = /^skill_[a-f0-9]{32}$/
+/** Sandbox snapshot ids. */
+const SNAPSHOT_ID = /^snap_[a-f0-9]{32}$/
 
 /**
  * F1's allow-list, relative to the upstream `/v1` prefix (spec §5), plus the
@@ -61,6 +64,10 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'reset'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'files'] },
   { methods: ['GET'], segments: ['agents', 'environments', ENVIRONMENT, 'folders'] },
+  // Snapshots of a sandbox: save, list, restore; a snapshot has its own id (`snap_…`) and outlives its environment.
+  { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'snapshots'] },
+  { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'restore'] },
+  { methods: ['DELETE'], segments: ['agents', 'environments', 'snapshots', SNAPSHOT] },
   // Interactive shell in a sandbox: open, type, resize, close. The output stream has its own route (SSE).
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals'] },
   { methods: ['DELETE'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL] },
@@ -109,6 +116,7 @@ function matches(rule: Segment, part: string): boolean {
   if (typeof rule === 'string') return rule === part
   if (!ID_SEGMENT.test(part)) return false
   if (rule.id === 'skill') return SKILL_ID.test(part)
+  if (rule.id === 'snapshot') return SNAPSHOT_ID.test(part)
   if (rule.id === 'index') return INDEX_SEGMENT.test(part)
   // Environment ids are `env_…`, so `providers`, `runtimes` and `templates` never pass as one.
   if (rule.id === 'environment') return part.startsWith('env_')

@@ -22,6 +22,7 @@ const apiMock = vi.hoisted(() => ({
   uploadEnvironmentFile: vi.fn(),
   listSandboxTemplates: vi.fn(),
   listSessions: vi.fn(),
+  listEnvironmentSnapshots: vi.fn(),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), api: apiMock }))
 vi.mock('@/chat/use-conversation', () => ({ goToLogin: vi.fn() }))
@@ -38,6 +39,7 @@ beforeEach(() => {
   apiMock.listEnvironmentFiles.mockResolvedValue({ object: 'list', data: [], has_more: false })
   apiMock.listSandboxProviders.mockRejectedValue(new Error('no places'))
   apiMock.listSandboxTemplates.mockResolvedValue({ object: 'list', data: [], has_more: false })
+  apiMock.listEnvironmentSnapshots.mockResolvedValue({ object: 'list', data: [], has_more: false })
   apiMock.listSessions.mockResolvedValue({ object: 'list', data: [], has_more: false, first_id: null, last_id: null })
 })
 afterEach(() => {
@@ -216,5 +218,20 @@ describe('EnvironmentDetail', () => {
     expect(links.map((l) => l.textContent)).toEqual(['Plot the sales', 'Fix the parser'])
     expect(links[0]).toHaveAttribute('href', '/c/s1')
     expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument()
+  })
+
+  it('has a Snapshots tab that lists snapshots, and delete offers to remove them too', async () => {
+    const snaps = [{ id: `snap_${'a'.repeat(32)}`, object: 'snapshot', environment_id: 'env_sbx', place: 'service', level: 'workspace', name: 'Before the refactor', state: 'ready', size_bytes: 10, error: null, created_at: 1_700_000_000, expires_at: null }]
+    apiMock.listEnvironmentSnapshots.mockResolvedValue({ object: 'list', data: snaps, has_more: false })
+    apiMock.deleteSandboxEnvironment.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    await user.click(await screen.findByRole('tab', { name: /Snapshots/ }))
+    expect(await screen.findByText('Before the refactor')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete environment' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Also delete its 1 snapshot' }))
+    await user.click(screen.getByRole('button', { name: 'Delete environment' }))
+    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_sbx', { deleteSnapshots: true }))
   })
 })

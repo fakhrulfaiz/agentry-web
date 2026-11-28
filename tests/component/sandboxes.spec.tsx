@@ -20,6 +20,7 @@ const apiMock = vi.hoisted(() => ({
   startSandboxEnvironment: vi.fn(),
   stopSandboxEnvironment: vi.fn(),
   deleteSandboxEnvironment: vi.fn(),
+  listEnvironmentSnapshots: vi.fn(),
   createSandboxTemplate: vi.fn(),
   updateSandboxTemplate: vi.fn(),
   deleteSandboxTemplate: vi.fn(),
@@ -41,6 +42,7 @@ const provider = { object: 'sandbox.provider', name: 'local', default: true, cap
 beforeEach(() => {
   apiMock.listSessions.mockResolvedValue({ object: 'list', data: [], has_more: false, first_id: null, last_id: null })
   apiMock.listSandboxEnvironments.mockResolvedValue(page([env]))
+  apiMock.listEnvironmentSnapshots.mockResolvedValue(page([]))
   apiMock.listSandboxTemplates.mockResolvedValue(page([template]))
   apiMock.listSandboxProviders.mockResolvedValue(page([provider]))
   apiMock.listSandboxRuntimes.mockResolvedValue({ object: 'sandbox.runtimes', available: true, node: '24.21.0', python: '3.12.14', pnpm: '11.28.5', python_packages: { pandas: '3.0.1' } })
@@ -140,7 +142,7 @@ describe('SandboxesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'More options for Notebook' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete environment' }))
-    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_sbx'))
+    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_sbx', { deleteSnapshots: false }))
     await waitFor(() => expect(screen.queryByText('Notebook')).not.toBeInTheDocument())
   })
 
@@ -181,7 +183,7 @@ describe('SandboxesPage', () => {
     await user.click(screen.getByRole('button', { name: 'More options for Data box' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete environment' }))
-    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_bad'))
+    await waitFor(() => expect(apiMock.deleteSandboxEnvironment).toHaveBeenCalledWith('env_bad', { deleteSnapshots: false }))
     await waitFor(() => expect(screen.queryByText(/limit 5/)).not.toBeInTheDocument())
   })
 

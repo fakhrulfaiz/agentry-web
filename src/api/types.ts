@@ -773,6 +773,28 @@ export interface SandboxProvider {
   default_image?: { name: string; runtimes?: Record<string, string>; python_packages?: string[]; tools?: string[] }
   /** Agentry Sandbox: the places a sandbox can run, default first. */
   places?: SandboxPlace[]
+  /** Agentry Sandbox: the snapshot levels any available place can take (empty or absent: snapshots are off). */
+  snapshot_levels?: SnapshotLevel[]
+}
+
+/** What a snapshot keeps: workspace files, the whole disk (installed software too), or the disk plus running programs. */
+export type SnapshotLevel = 'workspace' | 'disk' | 'memory'
+
+/** A saved copy of a sandbox (`GET /agents/environments/{id}/snapshots`). It outlives its environment. */
+export interface EnvironmentSnapshot {
+  id: string
+  object: 'snapshot'
+  /** The environment it was taken from; null once that environment was deleted. */
+  environment_id: string | null
+  /** `service` for files kept on the sandbox service, else the place that holds it. */
+  place: string
+  level: SnapshotLevel
+  name: string
+  state: 'saving' | 'ready' | 'failed'
+  size_bytes: number | null
+  error: string | null
+  created_at: number
+  expires_at: number | null
 }
 
 /** One place an Agentry Sandbox can run (a Docker host). */
@@ -786,6 +808,8 @@ export interface SandboxPlace {
   reason?: string
   gpus?: { count: number; models: string[] }
   capabilities: { reset: boolean; keepFilesOnReset?: boolean; isolated: boolean; gpu: boolean }
+  /** The snapshot levels a sandbox here can take. */
+  snapshot_levels?: SnapshotLevel[]
 }
 
 /** An environment template (`agent.environment.template`). */
