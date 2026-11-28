@@ -3,6 +3,7 @@
 import { AppShell } from '@astryxdesign/core/AppShell'
 import type { ReactNode } from 'react'
 import { useSkillsLoader } from '@/skills/skills-store'
+import { AskAgentryLauncher } from './AskAgentryLauncher'
 import { Sidebar } from './Sidebar'
 import type { ShellIdentity } from './UserMenu'
 
@@ -10,8 +11,11 @@ import type { ShellIdentity } from './UserMenu'
 export function Shell({ identity, children }: { identity: ShellIdentity; children: ReactNode }) {
   useSkillsLoader()
   return (
-    <AppShell sideNav={<Sidebar identity={identity} />} variant="elevated" contentPadding={0}>
-      {children}
-    </AppShell>
+    <>
+      <AppShell sideNav={<Sidebar identity={identity} />} variant="elevated" contentPadding={0}>
+        {children}
+      </AppShell>
+      <AskAgentryLauncher />
+    </>
   )
 }

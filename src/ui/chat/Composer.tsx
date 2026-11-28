@@ -85,22 +85,26 @@ export interface ComposerSettings {
   /** The chosen saved agent's id; `''` is the default agent. */
   agentId?: string
   onAgentChange?(id: string): void
-  /** Ready sandbox environments for the environment menu (new chats only); hidden without any. */
+  /** Environment choices for the environment menu (new chats only); the menu shows "Default workspace" until they load. */
   environments?: { id: string; name: string; group?: 'new'; description?: string }[]
   /** The chosen environment's id; `''` is the default workspace. */
   environmentId?: string
   onEnvironmentChange?(id: string): void
+  /** The environment choices are still loading (the trigger shows a spinner, but stays usable). */
+  environmentLoading?: boolean
 }
 
 /**
  * Who runs the chat and where (new chats only), in a row under the composer
  * so a long agent or sandbox name never crowds the input's footer; each menu
- * is capped and truncates its value. Renders nothing without any choice.
+ * is capped and truncates its value. Renders nothing when neither menu has a
+ * change handler; the environment menu stays available while its list loads.
  */
 export function ContextMenus({ settings }: { settings: ComposerSettings }) {
-  const { agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange } = settings
+  const { agents, agentId = '', onAgentChange, environments, environmentId = '', onEnvironmentChange, environmentLoading } = settings
   const hasAgents = agents && agents.length > 0 && onAgentChange
-  const hasEnvironments = environments && environments.length > 0 && onEnvironmentChange
+  // The baseline "Default workspace" is always selectable, even before the lists arrive.
+  const hasEnvironments = environments && onEnvironmentChange
   if (!hasAgents && !hasEnvironments) return null
   return (
     <HStack gap={1} vAlign="center" wrap="wrap" data-testid="composer-context">
@@ -121,7 +125,7 @@ export function ContextMenus({ settings }: { settings: ComposerSettings }) {
           onChange={onAgentChange}
         />
       )}
-      {environments && environments.length > 0 && onEnvironmentChange && (
+      {environments && onEnvironmentChange && (
         <Selector
           label="Environment"
           isLabelHidden
@@ -132,6 +136,7 @@ export function ContextMenus({ settings }: { settings: ComposerSettings }) {
           options={environmentOptions(environments)}
           value={environmentId}
           onChange={onEnvironmentChange}
+          isLoading={environmentLoading}
         />
       )}
     </HStack>

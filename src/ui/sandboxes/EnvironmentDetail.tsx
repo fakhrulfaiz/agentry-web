@@ -40,7 +40,7 @@ import { buildTree } from '@/preview/tree'
 import { DeleteEnvironmentDialog } from './DeleteEnvironmentDialog'
 import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
 import { SnapshotsPanel } from './SnapshotsPanel'
-import { ago, cardName, statusLine, templateFacts } from './overview'
+import { ago, cardName, statusLine, templateFacts, unavailablePlace } from './overview'
 import { useEnvironmentChats } from './use-environment-chats'
 import { canChatIn, formatBytes, gpuLabel, providerTitle, setupProgressText, shortDate, shortId, toBase64 } from './format'
 
@@ -169,6 +169,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
     })()
   }, [])
   const place = places.find((pl) => pl.id === env?.sandbox?.place)
+  const placeDown = env ? unavailablePlace(env, places) : undefined
   const placeName = place?.name ?? env?.sandbox?.place ?? ''
   const gpuText = gpuLabel(typeof env?.sandbox?.gpus === 'number' ? env.sandbox.gpus : undefined) ?? (env?.sandbox?.gpus === 'all' ? 'All GPUs' : null)
   const canReset = place?.capabilities.reset !== false
@@ -262,7 +263,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   const image = env?.sandbox?.image ?? template?.image
   const software = template ? [...template.packages.system, ...template.packages.python, ...template.packages.npm] : []
   const visibleSoftware = showAllSoftware ? software : software.slice(0, 8)
-  const canChat = env ? canChatIn(env) : false
+  const canChat = env ? canChatIn(env) && !placeDown : false
   const tabs = [
     { value: 'files', label: 'Files' },
     ...(env?.provider === 'sandbox' ? [{ value: 'terminal', label: 'Terminal' }, { value: 'snapshots', label: 'Snapshots' }] : []),
@@ -270,7 +271,7 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
   ]
   const startChat = () => router.push(`/?environment=${encodeURIComponent(environmentId)}`)
   const menu = [
-    ...(state !== undefined && state !== 'gone' && !settingUp && canReset ? [{ label: 'Reset', onClick: () => setConfirmReset(true) }] : []),
+    ...(state !== undefined && state !== 'gone' && !settingUp && canReset && !placeDown ? [{ label: 'Reset', onClick: () => setConfirmReset(true) }] : []),
     { label: 'Rename', onClick: () => setRenaming(true) },
     ...(state !== 'gone' ? [{ type: 'divider' as const }, { label: 'Delete environment', variant: 'destructive' as const, onClick: () => setConfirmDelete(true) }] : []),
   ]
@@ -419,14 +420,15 @@ export function EnvironmentDetail({ environmentId }: { environmentId: string }) 
           {env && (
             <HStack gap={2} vAlign="center" role="group" aria-label="Environment actions">
               {canChat && <IconButton label="New chat here" tooltip="New chat here" variant="primary" icon={<Icon icon={ChatBubbleLeftEllipsisIcon} />} onClick={startChat} />}
-              {state === 'stopped' && <IconButton label="Start" tooltip="Start" variant="ghost" icon={<Icon icon={PlayIcon} />} isLoading={acting === 'start'} isDisabled={acting !== null && acting !== 'start'} onClick={() => void act('start')} />}
-              {state === 'running' && <IconButton label="Stop" tooltip="Stop" variant="ghost" icon={<Icon icon={StopIcon} />} isLoading={acting === 'stop'} isDisabled={acting !== null && acting !== 'stop'} onClick={() => void act('stop')} />}
+              {state === 'stopped' && !placeDown && <IconButton label="Start" tooltip="Start" variant="ghost" icon={<Icon icon={PlayIcon} />} isLoading={acting === 'start'} isDisabled={acting !== null && acting !== 'start'} onClick={() => void act('start')} />}
+              {state === 'running' && !placeDown && <IconButton label="Stop" tooltip="Stop" variant="ghost" icon={<Icon icon={StopIcon} />} isLoading={acting === 'stop'} isDisabled={acting !== null && acting !== 'stop'} onClick={() => void act('stop')} />}
               <MoreMenu label="More actions" alignment="end" isDisabled={acting !== null} items={menu} />
             </HStack>
           )}
         </HStack>
         {env?.error && state !== 'failed' && <Banner status="error" title={env.error} />}
         {state === 'unknown' && <Banner status="warning" title="Agentry Sandbox is not answering, so this environment's state is unknown." />}
+        {placeDown && <Banner status="warning" title={`${placeDown.name} is unavailable`} description={`${placeDown.reason ? `${placeDown.reason}. ` : ''}Its stored state may be out of date, so Start, Stop and Reset are hidden until it answers again.`} />}
         {error !== null && <Banner status="error" title={error} endContent={<Button label="Retry" size="sm" onClick={() => void load()} />} />}
 
         <div {...stylex.props(layout.columns)}>

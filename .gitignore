@@ -1,5 +1,7 @@
 # Local agent workflow state
 .superpowers/
+/research_notes/
+/reports/
 
 # dependencies
 /node_modules

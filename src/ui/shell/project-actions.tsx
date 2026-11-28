@@ -121,11 +121,15 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
 
   return (
     <Dialog isOpen={isOpen} onOpenChange={(open) => !open && onClose()} purpose="form">
-      <DialogHeader title={project ? 'Edit project' : 'New project'} />
+      <DialogHeader
+        title={project ? 'Edit project' : 'New project'}
+        subtitle="A home for a group of chats, with its own defaults."
+      />
       <form onSubmit={save}>
         <VStack gap={4}>
           <TextInput
             label="Name"
+            description="Shown in the sidebar and above every chat in this project."
             value={name}
             onChange={(value) => {
               setName(value)
@@ -137,6 +141,7 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
           />
           <Selector
             label="Default agent"
+            description="Used for new chats started in this project; you can change it per chat."
             value={agentId}
             onChange={(value) => setAgentId(value ?? '')}
             options={[
@@ -146,6 +151,7 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
           />
           <Selector
             label="Environment"
+            description="Pick a sandbox to give this project its own workspace and files."
             value={environmentId}
             onChange={(value) => {
               // A folder belongs to one environment's workspace.
@@ -198,7 +204,7 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
               />
             </VStack>
           )}
-          <Switch label="Pinned" value={pinned} onChange={setPinned} />
+          <Switch label="Pinned" description="Keep this project at the top of the sidebar." value={pinned} onChange={setPinned} />
           <HStack gap={2} hAlign="end">
             <Button label="Cancel" variant="ghost" onClick={onClose} />
             <Button label="Save" variant="primary" type="submit" isLoading={saving} />

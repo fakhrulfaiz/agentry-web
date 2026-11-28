@@ -203,8 +203,8 @@
     --color-overlay: light-dark(#00000080, #000000CC);
     --color-overlay-hover: light-dark(#0000000D, #ffffff0D);
     --color-overlay-pressed: light-dark(#0000001A, #ffffff1A);
-    --color-text-primary: light-dark(#333333, #e5e5e5);
-    --color-text-secondary: light-dark(#6b7280, #a3a3a3);
+    --color-text-primary: light-dark(#262626, #e5e5e5);
+    --color-text-secondary: light-dark(#4b5563, #a3a3a3);
     --color-text-disabled: light-dark(#919191, #525252);
     --color-text-accent: light-dark(#2563eb, #60a5fa);
     --color-on-dark: #ffffff;

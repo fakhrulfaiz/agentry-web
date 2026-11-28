@@ -125,6 +125,21 @@ describe('SandboxesPage', () => {
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   })
 
+  it('a running sandbox on an unavailable place says why and offers no lifecycle actions', async () => {
+    const gpuEnv = { ...env, id: 'env_gpu', name: 'GPU research', provider: 'sandbox', type: 'openai_hosted', template_id: undefined, sandbox: { state: 'running', image: 'python:3.13', place: 'place_gpu', gpus: 1 } }
+    apiMock.listSandboxEnvironments.mockResolvedValue(page([gpuEnv]))
+    apiMock.listSandboxProviders.mockResolvedValue(page([provider, {
+      object: 'sandbox.provider', name: 'sandbox', default: false, available: true,
+      places: [{ id: 'place_gpu', name: 'GPU box', kind: 'docker-ssh', default: true, available: false, reason: 'no answer within 5000 ms', capabilities: { reset: true, isolated: true, gpu: true } }],
+      capabilities: { templateFields: [], files: true, exec: true },
+    }]))
+    render(<SandboxesPage />)
+    expect(await screen.findByText('Place unavailable: GPU box (no answer within 5000 ms)')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Place unavailable' })).toBeInTheDocument()
+    for (const name of ['Stop', 'Start', 'New chat here']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    expect(screen.queryByText('Running')).not.toBeInTheDocument()
+  })
+
   it('renames, starts, stops and deletes an environment from its card menu', async () => {
     const sandboxEnv = { ...env, id: 'env_sbx', name: 'Data box', provider: 'sandbox', type: 'openai_hosted', template_id: undefined, sandbox: { state: 'stopped' } }
     apiMock.listSandboxEnvironments.mockResolvedValue(page([sandboxEnv]))

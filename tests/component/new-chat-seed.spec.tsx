@@ -103,6 +103,17 @@ describe('New chat send', () => {
   })
 }, 15_000)
 
+describe('New chat starter prompts', () => {
+  it('does not show starter chips for the built-in Agentry assistant', async () => {
+    nav.query = 'agent=agentry'
+    apiMock.listAgents.mockResolvedValue({ object: 'list', data: [{ id: 'agentry', object: 'agent', created_at: 1, updated_at: 1, name: 'Agentry', instructions: null, model: 'm1', metadata: { description: 'Setup helper' }, tools: [], built_in: true }], has_more: false })
+    render(<NewChat />)
+    await waitFor(() => expect(apiMock.listAgents).toHaveBeenCalled())
+    expect(screen.queryByText('Starter prompts')).not.toBeInTheDocument()
+    expect(screen.queryByText(/I don't know what to build/)).not.toBeInTheDocument()
+  })
+})
+
 describe('New chat first prompt', () => {
   it('docks the composer under the sent message while the chat is created, like an open chat', async () => {
     nav.query = ''
@@ -143,6 +154,25 @@ describe('New chat environment menu', () => {
     await user.click(input())
     await user.keyboard('hello{Enter}')
     await waitFor(() => expect(apiMock.createSession).toHaveBeenCalledWith(expect.objectContaining({ environmentId: 'new:tpl_1' })))
+  })
+
+  it('shows the environment menu while provider and template lists are still loading', async () => {
+    let releaseProviders!: (value: unknown) => void
+    let releaseTemplates!: (value: unknown) => void
+    apiMock.listSandboxProviders.mockReturnValue(new Promise((resolve) => { releaseProviders = resolve }))
+    apiMock.listSandboxTemplates.mockReturnValue(new Promise((resolve) => { releaseTemplates = resolve }))
+    const user = userEvent.setup()
+    render(<NewChat />)
+
+    // The menu is usable as soon as the environment list arrives, without waiting for the slow reads.
+    const menu = await screen.findByRole('combobox', { name: 'Environment' })
+    await user.click(menu)
+    expect(await screen.findByText('Data box (Isolated sandbox, stopped)')).toBeInTheDocument()
+    expect(screen.queryByText('New sandbox for this chat')).not.toBeInTheDocument()
+
+    releaseProviders(page([{ object: 'sandbox.provider', name: 'sandbox', default: false, available: true, capabilities: { templateFields: ['image'], files: true, exec: true } }]))
+    releaseTemplates(page([{ id: 'tpl_1', object: 'agent.environment.template', name: 'Python data', provider: 'sandbox', files: [], packages: { npm: [], python: ['pandas'], system: [] }, network: { access: 'enabled', allowed_domains: [] }, unsupported_fields: [], created_at: 1, updated_at: 1 }]))
+    expect(await screen.findByText('New sandbox for this chat')).toBeInTheDocument()
   })
 
   it('offers no fresh sandbox while the isolated sandbox is down', async () => {

@@ -89,6 +89,18 @@ describe('EnvironmentDetail', () => {
     expect(screen.getByText('Stopped')).toBeInTheDocument()
   })
 
+  it('a running sandbox on an unavailable place says why and hides lifecycle actions', async () => {
+    const user = userEvent.setup()
+    apiMock.getSandboxEnvironment.mockResolvedValue({ ...base, sandbox: { state: 'running', image: 'python:3.13', place: 'gpu1', gpus: 1 } })
+    apiMock.listSandboxProviders.mockResolvedValue({ object: 'list', data: [{ name: 'sandbox', places: [{ id: 'gpu1', name: 'GPU box', kind: 'docker-ssh', default: true, available: false, reason: 'no answer within 5000 ms', capabilities: { reset: true, isolated: true, gpu: true } }] }] })
+    render(<EnvironmentDetail environmentId="env_sbx" />)
+    expect(await screen.findByText('Place unavailable: GPU box (no answer within 5000 ms)')).toBeInTheDocument()
+    expect(screen.getByText('GPU box is unavailable')).toBeInTheDocument()
+    for (const name of ['Stop', 'Start', 'New chat here']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Reset' })).not.toBeInTheDocument()
+  })
+
   it('resets after confirmation, wiping files only when asked', async () => {
     apiMock.resetSandboxEnvironment.mockResolvedValue(running)
     const user = userEvent.setup()

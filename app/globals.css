@@ -9,6 +9,21 @@
   min-height: 4.5rem;
 }
 
+/*
+ * Ask Agentry's drawer header has text buttons beside its title. Astryx's
+ * DrawerHeader offsets are tuned for an icon-only close button, which put the
+ * title above the panel edge; reset them on the inner row and give the header
+ * its own padding so the title, buttons and close control share one line.
+ */
+.ask-agentry-header > div {
+  padding-block: var(--spacing-2);
+  padding-inline: var(--spacing-3);
+}
+.ask-agentry-header > div > div {
+  --_drawer-header-title-offset: var(--spacing-0-5);
+  --_drawer-header-end-offset: 0px;
+}
+
 /* The composer's `/` and `@` suggestion menus size to their longest description; keep them about as wide as the composer. */
 .astryx-popover:has(> .astryx-trigger-menu),
 .astryx-trigger-menu {

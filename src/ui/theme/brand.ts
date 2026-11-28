@@ -24,8 +24,9 @@ const CARD: [string, string] = ['#ffffff', '#262626']
 const SURFACE: [string, string] = ['#f9fafb', '#1f1f1f']
 const MUTED: [string, string] = ['#f3f4f6', '#262626']
 const BORDER: [string, string] = ['#e5e7eb', '#404040']
-const TEXT: [string, string] = ['#333333', '#e5e5e5']
-const TEXT_SECONDARY: [string, string] = ['#6b7280', '#a3a3a3']
+/** Body text; the light values are deliberately dark for comfortable reading on white. */
+const TEXT: [string, string] = ['#262626', '#e5e5e5']
+const TEXT_SECONDARY: [string, string] = ['#4b5563', '#a3a3a3']
 
 /**
  * Input controls sit one step lower on the radius scale than astryx's

@@ -26,6 +26,18 @@ export const cardName = (env: Pick<SandboxEnvironment, 'name' | 'provider'>): st
 
 export const isLocal = (env: SandboxEnvironment): boolean => env.provider === 'local'
 
+/** A known place that is down: its sandboxes keep their last stored state and cannot be acted on. */
+export function unavailablePlace(env: SandboxEnvironment, places: SandboxPlace[]): SandboxPlace | undefined {
+  const place = places.find((p) => p.id === env.sandbox?.place)
+  return place && !place.available ? place : undefined
+}
+
+/** Why a sandbox is shown as unavailable, with the place's own reason when it has one. */
+export function unavailableText(env: SandboxEnvironment, places: SandboxPlace[]): string | null {
+  const place = unavailablePlace(env, places)
+  return place ? `Place unavailable: ${place.name}${place.reason ? ` (${place.reason})` : ''}` : null
+}
+
 /** Running, setting up or being deleted. */
 export const isLive = (env: SandboxEnvironment): boolean => {
   const state = env.sandbox?.state
@@ -34,10 +46,11 @@ export const isLive = (env: SandboxEnvironment): boolean => {
 }
 
 /** The sections of the list, in order; empty ones are left out by the caller. */
-export function groupEnvironments(envs: SandboxEnvironment[]): { running: SandboxEnvironment[]; stopped: SandboxEnvironment[]; server: SandboxEnvironment[] } {
-  const out = { running: [] as SandboxEnvironment[], stopped: [] as SandboxEnvironment[], server: [] as SandboxEnvironment[] }
+export function groupEnvironments(envs: SandboxEnvironment[], places: SandboxPlace[] = []): { running: SandboxEnvironment[]; stopped: SandboxEnvironment[]; server: SandboxEnvironment[]; unavailable: SandboxEnvironment[] } {
+  const out = { running: [] as SandboxEnvironment[], stopped: [] as SandboxEnvironment[], server: [] as SandboxEnvironment[], unavailable: [] as SandboxEnvironment[] }
   for (const env of envs) {
     if (isLocal(env)) out.server.push(env)
+    else if (unavailablePlace(env, places)) out.unavailable.push(env)
     else if (isLive(env)) out.running.push(env)
     else out.stopped.push(env)
   }
@@ -45,10 +58,11 @@ export function groupEnvironments(envs: SandboxEnvironment[]): { running: Sandbo
 }
 
 /** "3 running, 1 stopped, 1 on this server"; only the non-zero parts. */
-export function summarize(envs: SandboxEnvironment[]): string {
-  const g = groupEnvironments(envs)
+export function summarize(envs: SandboxEnvironment[], places: SandboxPlace[] = []): string {
+  const g = groupEnvironments(envs, places)
   return [
     g.running.length > 0 ? `${g.running.length} running` : '',
+    g.unavailable.length > 0 ? `${g.unavailable.length} on an unavailable place` : '',
     g.stopped.length > 0 ? `${g.stopped.length} stopped` : '',
     g.server.length > 0 ? `${g.server.length} on this server` : '',
   ].filter(Boolean).join(', ')
@@ -68,6 +82,8 @@ export function statusLine(env: SandboxEnvironment, places: SandboxPlace[], now 
   const state = sb?.state
   const at = withWhere && !isLocal(env) ? whereText(env, places) : null
   const where = at ? `, on ${at}` : ''
+  const down = unavailableText(env, places)
+  if (down) return { variant: 'error', text: down, busy: false }
   if (state === 'provisioning' || (state === undefined && env.status === 'pending')) {
     const detail = sb?.progress ? `: ${setupProgressText(sb.progress).replace(/…$/u, '')}` : ''
     return { variant: look.variant, text: `Setting up${detail}${where}`, busy: true }

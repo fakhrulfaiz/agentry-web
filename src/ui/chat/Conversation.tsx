@@ -61,6 +61,7 @@ import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
+import { StreamScrollButton } from './StreamScrollButton'
 import { DeliveredFiles, useSessionDeliverables } from './SessionArtifacts'
 import { SessionFilesContext } from './session-files'
 import { PanelRightIcon } from '@/ui/icons/PanelRightIcon'
@@ -457,6 +458,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           <ChatLayout
             xstyle={styles.chat}
             density="spacious"
+            scrollButton={<StreamScrollButton />}
             composer={
               <Composer
                 onSend={onSend}

@@ -32,6 +32,7 @@ import { api, ApiError, isSignedOut, STARRED_KEY } from '@/api/client'
 import type { OAIAgentSession, OAIProject } from '@/api/types'
 import { AgentryMark } from '@/ui/brand/Wordmark'
 import { sessionTitle } from './group'
+import { askAgentryStore } from './ask-agentry-store'
 import { ArchivedProjectsDialog, DeleteProjectDialog, MoveProjectDialog, ProjectDialog, useSessionMove } from './project-actions'
 import { announceProjects, useProjectChanges } from './project-events'
 import { groupSessionsForSidebar, type SidebarSection } from './project-groups'
@@ -529,8 +530,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         <StackItem size="fill">
           <Text weight="semibold">Workspace</Text>
         </StackItem>
-        {/* Ask Agentry: a new chat with the built-in setup assistant. */}
-        <IconButton label="Ask Agentry" tooltip="Ask Agentry" icon={<Icon icon={SparklesIcon} size="sm" />} size="sm" variant="ghost" href="/?agent=agentry" />
+        {/* Ask Agentry: opens the global helper drawer, without leaving this page. */}
+        <IconButton label="Ask Agentry" tooltip="Ask Agentry (Ctrl/⌘+Shift+A)" icon={<Icon icon={SparklesIcon} size="sm" />} size="sm" variant="ghost" onClick={() => askAgentryStore.open()} />
         <IconButton
           label={searching ? 'Close search' : 'Search chats'}
           icon={<Icon icon={searching ? XMarkIcon : MagnifyingGlassIcon} size="sm" />}

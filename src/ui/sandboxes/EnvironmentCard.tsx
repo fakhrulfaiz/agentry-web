@@ -19,7 +19,7 @@ import type { ReactNode } from 'react'
 import type { SandboxEnvironment, SandboxPlace, SandboxTemplate } from '@/api/types'
 import { CardGrid, EntityCard } from '@/ui/cards/EntityCard'
 import { canChatIn } from './format'
-import { cardName, imageShort, statusLine, templateFacts } from './overview'
+import { cardName, imageShort, statusLine, templateFacts, unavailablePlace } from './overview'
 
 export interface EnvironmentCardProps {
   env: SandboxEnvironment
@@ -37,8 +37,9 @@ export function EnvironmentCard({ env, template, places, chats, busy, onRename, 
   const name = cardName(env)
   const line = statusLine(env, places)
   const state = env.sandbox?.state
-  const live = state === 'running'
-  const stopped = state === 'stopped'
+  const down = Boolean(unavailablePlace(env, places))
+  const live = state === 'running' && !down
+  const stopped = state === 'stopped' && !down
   const facts = templateFacts(template)
   const image = env.sandbox?.image ?? template?.image
   const gpus = env.sandbox?.gpus ?? template?.gpus
@@ -59,7 +60,7 @@ export function EnvironmentCard({ env, template, places, chats, busy, onRename, 
       trailing={
         // Quiet icon actions with tooltips instead of a row of text buttons.
         <HStack gap={1} vAlign="center">
-          {canChatIn(env) && <IconButton label="New chat here" tooltip="New chat here" size="sm" variant="ghost" icon={<Icon icon={ChatBubbleLeftEllipsisIcon} />} onClick={() => router.push(`/?environment=${encodeURIComponent(env.id)}`)} />}
+          {canChatIn(env) && !down && <IconButton label="New chat here" tooltip="New chat here" size="sm" variant="ghost" icon={<Icon icon={ChatBubbleLeftEllipsisIcon} />} onClick={() => router.push(`/?environment=${encodeURIComponent(env.id)}`)} />}
           {stopped && <IconButton label="Start" tooltip="Start" size="sm" variant="ghost" icon={<Icon icon={PlayIcon} />} isLoading={busy} onClick={() => onLifecycle('start')} />}
           {live && <IconButton label="Stop" tooltip="Stop" size="sm" variant="ghost" icon={<Icon icon={StopIcon} />} isLoading={busy} onClick={() => onLifecycle('stop')} />}
           <MoreMenu label={`More options for ${name}`} size="sm" alignment="end" isDisabled={busy} items={menu} />
@@ -68,7 +69,7 @@ export function EnvironmentCard({ env, template, places, chats, busy, onRename, 
     >
       <VStack gap={2}>
         <HStack gap={2} vAlign="center">
-          {busy || line.busy ? <Spinner size="sm" /> : <StatusDot variant={line.variant} label={line.variant === 'success' ? 'Running' : line.variant === 'error' ? 'Failed' : 'Not running'} />}
+          {busy || line.busy ? <Spinner size="sm" /> : <StatusDot variant={line.variant} label={down ? 'Place unavailable' : line.variant === 'success' ? 'Running' : line.variant === 'error' ? 'Failed' : 'Not running'} />}
           <Text type="supporting" weight={live || line.busy || line.variant === 'error' ? 'medium' : 'normal'} color={live || line.busy ? 'primary' : 'secondary'} maxLines={2}>{line.text}</Text>
         </HStack>
         <Text type="supporting" color="secondary" maxLines={1}>{origin}</Text>

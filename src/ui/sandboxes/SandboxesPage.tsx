@@ -289,9 +289,9 @@ export function SandboxesPage() {
     return () => clearInterval(timer)
   }, [anySettling])
 
-  const groups = groupEnvironments(environments ?? [])
-  const orphans = snapshots.filter((x) => x.environment_id === null || !(environments ?? []).some((e) => e.id === x.environment_id))
   const places = (providers ?? []).flatMap((p) => p.places ?? [])
+  const groups = groupEnvironments(environments ?? [], places)
+  const orphans = snapshots.filter((x) => x.environment_id === null || !(environments ?? []).some((e) => e.id === x.environment_id))
   const chatsByEnv = useEnvironmentChats()
   // Coming back to the tab shows the machines' current state.
   useEffect(() => {
@@ -340,7 +340,7 @@ export function SandboxesPage() {
         <VStack gap={1}>
           <Heading level={1} type="display-2">Sandboxes</Heading>
           <Text color="secondary">Where your agents run their commands and keep their files.</Text>
-          {view === 'environments' && environments && environments.length > 0 && <Text type="supporting" color="secondary">{summarize(environments)}</Text>}
+          {view === 'environments' && environments && environments.length > 0 && <Text type="supporting" color="secondary">{summarize(environments, places)}</Text>}
         </VStack>
         <HStack gap={3} vAlign="center" wrap="wrap">
           <StackItem size="fill">
@@ -367,7 +367,7 @@ export function SandboxesPage() {
             />
           ) : (
             <VStack gap={5}>
-              {([['Running', groups.running], ['Stopped', groups.stopped], ['This server', groups.server]] as const).map(([title, list]) =>
+              {([['Running', groups.running], ['Place unavailable', groups.unavailable], ['Stopped', groups.stopped], ['This server', groups.server]] as const).map(([title, list]) =>
                 list.length === 0 ? null : (
                   <Section key={title} title={title} count={list.length}>
                     {list.map((env) => (
