@@ -9,6 +9,7 @@
  * session; Discard and Save changes in the footer). Save posts title, prompt,
  * timing and the record's revision; Discard throws the draft away and closes.
  */
+import * as stylex from '@stylexjs/stylex'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
@@ -73,6 +74,13 @@ function isDraftChanged(a: ScheduleFormValues, b: ScheduleFormValues): boolean {
   for (const key of dirtyKeys) if (a[key] !== b[key]) return true
   return [...a.weekdays].sort().join(',') !== [...b.weekdays].sort().join(',')
 }
+
+const styles = stylex.create({
+  // History beside the task's details; stacked on a phone.
+  cols: { display: 'flex', gap: 24, alignItems: 'flex-start', flexDirection: { default: 'row', '@media (max-width: 767px)': 'column' } },
+  main: { flex: 1, minWidth: 0, width: { default: 'auto', '@media (max-width: 767px)': '100%' } },
+  side: { width: { default: 300, '@media (max-width: 767px)': '100%' }, flexShrink: 0 },
+})
 
 export function ScheduleDetail({ id, initialEdit = false }: { id: string; initialEdit?: boolean }) {
   const router = useRouter()
@@ -369,8 +377,8 @@ export function ScheduleDetail({ id, initialEdit = false }: { id: string; initia
       {actionError !== null && (
         <Banner status="error" title={actionError} isDismissable onDismiss={() => setActionError(null)} />
       )}
-      <HStack gap={6} vAlign="start">
-        <StackItem size="fill">
+      <div {...stylex.props(styles.cols)}>
+        <div {...stylex.props(styles.main)}>
           <VStack gap={2}>
             <Heading level={2}>History</Heading>
             {runs !== null && runs.length === 0 ? (
@@ -422,9 +430,10 @@ export function ScheduleDetail({ id, initialEdit = false }: { id: string; initia
               </VStack>
             ) : null}
           </VStack>
-        </StackItem>
+        </div>
         {task !== null && (
-          <VStack width={300} gap={4}>
+          <div {...stylex.props(styles.side)}>
+          <VStack gap={4}>
             <VStack gap={1}>
               <Text weight="medium">Instructions</Text>
               <Text color="secondary">{task.prompt}</Text>
@@ -442,8 +451,9 @@ export function ScheduleDetail({ id, initialEdit = false }: { id: string; initia
               <Link href={`/c/${encodeURIComponent(task.session_id)}`}>Open chat</Link>
             </VStack>
           </VStack>
+          </div>
         )}
-      </HStack>
+      </div>
     </VStack>
   )
 
@@ -485,7 +495,7 @@ export function ScheduleDetail({ id, initialEdit = false }: { id: string; initia
                 </HStack>
               </VStack>
               {task !== null && (
-                <HStack gap={3} vAlign="center">
+                <HStack gap={3} vAlign="center" wrap="wrap">
                   {task.status !== 'ended' && (
                     <Switch
                       label={`${task.status === 'active' ? 'Pause' : 'Resume'} ${task.title}`}
