@@ -100,6 +100,10 @@ Not in this piece: letting a chat delegate to a saved agent by name (for example
 
 Delegating to saved agents by name; sharing agents between users; agent versioning; per-agent Composio accounts (one key per owner); importing whole folders at once; Composio's own per-session toolkit limits (the API guard already enforces grants).
 
+## Decisions (user, 2026-11-28)
+
+All four recommendations accepted: 1. import from GitHub and gists only; 2. delegating to saved agents is later, not in this piece; 3. new `AGENTRY_SECRETS_KEY` (required for stored keys; without it the key routes answer 501); 4. keep the profile-wide `COMPOSIO_API_KEY` as the single-user fallback.
+
 ## Open questions for the user
 
 1. **Import hosts:** only GitHub and gists (recommended), or any `https` URL (needs a private-address block on DNS results)?
