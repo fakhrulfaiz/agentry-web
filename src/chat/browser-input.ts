@@ -69,10 +69,10 @@ export function modifiersOf(e: { altKey: boolean; ctrlKey: boolean; metaKey: boo
 
 const BUTTON = ['left', 'middle', 'right'] as const
 
-/** A key press or release as an input event. A key that types (one character, Enter) carries its text. */
-export function keyEvent(e: { key: string; code: string; keyCode: number; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }, action: 'down' | 'up'): BrowserInputEvent {
+/** A key press or release as an input event. A key that types (one character, Enter) carries its text, unless it belongs to an IME composition. */
+export function keyEvent(e: { key: string; code: string; keyCode: number; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }, action: 'down' | 'up', composing = false): BrowserInputEvent {
   const modifiers = modifiersOf(e)
-  const types = action === 'down' && !e.ctrlKey && !e.metaKey
+  const types = action === 'down' && !e.ctrlKey && !e.metaKey && !composing
   const text = !types ? undefined : e.key === 'Enter' ? '\r' : [...e.key].length === 1 ? e.key : undefined
   return {
     type: 'key', action, key: e.key.slice(0, 32),
@@ -96,6 +96,21 @@ export function mouseEvent(e: { clientX: number; clientY: number; button: number
     ...(action !== 'move' ? { click_count: Math.min(3, Math.max(1, e.detail || 1)) } : {}),
     ...(modifiers ? { modifiers } : {}),
   }
+}
+
+/** The committed text of an IME composition as one input event; nothing when the composition was cancelled. */
+export function composedTextEvent(data: string): { type: 'text'; text: string } | undefined {
+  if (data === '') return undefined
+  return { type: 'text', text: data.slice(0, 2000) }
+}
+
+/** A one-finger drag as a wheel event in page pixels; nothing when either point is outside the drawn frame. */
+export function wheelFromTouch(from: { clientX: number; clientY: number }, to: { clientX: number; clientY: number }, box: FrameBox): BrowserInputEvent | undefined {
+  const a = toPagePoint(from.clientX, from.clientY, box)
+  const b = toPagePoint(to.clientX, to.clientY, box)
+  if (!a || !b) return undefined
+  const round = (n: number) => Math.round(n * 100) / 100
+  return { type: 'wheel', x: b.x, y: b.y, delta_x: round(a.x - b.x), delta_y: round(a.y - b.y) }
 }
 
 /** Keeps the newest of consecutive moves (and sums consecutive wheels at one point), so a batch stays small. */

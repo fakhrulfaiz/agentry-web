@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coalesce, keyEvent, modifiersOf, mouseEvent, toFramePoint, toPagePoint, type FrameBox } from '@/chat/browser-input'
+import { coalesce, composedTextEvent, keyEvent, modifiersOf, mouseEvent, toFramePoint, toPagePoint, wheelFromTouch, type FrameBox } from '@/chat/browser-input'
 
 const box: FrameBox = { left: 100, top: 50, width: 640, height: 360, pageWidth: 1280, pageHeight: 720 }
 const noMods = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
@@ -62,5 +62,21 @@ describe('browser take-over input', () => {
       { type: 'mouse', action: 'down', x: 2, y: 2 },
       { type: 'mouse', action: 'move', x: 3, y: 3 },
     ])
+  })
+
+  it('omits typed text from keys pressed during IME composition', () => {
+    expect(keyEvent({ key: 'か', code: 'KeyK', keyCode: 75, ...noMods }, 'down', true)).toEqual({ type: 'key', action: 'down', key: 'か', code: 'KeyK', key_code: 75 })
+    expect(keyEvent({ key: 'a', code: 'KeyA', keyCode: 65, ...noMods }, 'down')).toHaveProperty('text', 'a')
+  })
+
+  it('turns committed composition data into one capped text event', () => {
+    expect(composedTextEvent('日')).toEqual({ type: 'text', text: '日' })
+    expect(composedTextEvent('')).toBeUndefined()
+    expect(composedTextEvent('x'.repeat(2100))).toEqual({ type: 'text', text: 'x'.repeat(2000) })
+  })
+
+  it('maps a touch drag to wheel deltas in page pixels and drops points outside the frame', () => {
+    expect(wheelFromTouch({ clientX: 420, clientY: 230 }, { clientX: 320, clientY: 180 }, box)).toEqual({ type: 'wheel', x: 440, y: 260, delta_x: 200, delta_y: 100 })
+    expect(wheelFromTouch({ clientX: 0, clientY: 230 }, { clientX: 320, clientY: 180 }, box)).toBeUndefined()
   })
 })
