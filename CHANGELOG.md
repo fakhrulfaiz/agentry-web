@@ -4,6 +4,7 @@ All notable changes to Agentry Web are recorded here.
 
 ## Unreleased
 
+- 2026-11-28: Chat headers now identify the current environment: `Server` for local and legacy chats, or the sandbox name with its live state (for example, `Data box · Running`) with a status dot. The chip reads the sandbox once when the chat opens and refreshes on window focus or tab visibility, with no polling; a removed sandbox reads `Removed sandbox`, and other errors fall back to a neutral label. No API change.
 - 2026-11-28: The bundled agent starters are gone: no Starters tab on the Agents page and no "Start from" menu in the agent form. New agents start empty or come from Import (a GitHub/gist link or pasted text); the empty state offers Import. Old `/agents/new?starter=…` and `/agents?starter=…` links just open a new, empty agent.
 - 2026-11-28: The proxy no longer rewrites session-create bodies: the soft "Use only these connected apps" note is gone, because the API enforces each agent's app grants itself.
 - 2026-11-28: Save a subagent as an agent. A finished subagent card has a Save as agent icon: it opens the agent editor prefilled with the card's name, its prompt under "You handle tasks like this one:" (edit it to describe the kind of task), and the model it ran; nothing is saved until Create agent.

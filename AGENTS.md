@@ -98,6 +98,7 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: Keycloak live check, README steps 1–7 all pass against a local Keycloak 26 (`agentry-keycloak` container on 127.0.0.1:8180, realm `agentry`, user `tester`; API accepts it with `AGENTRY_KEYCLOAK_ISSUER`, web in Keycloak mode on :3020).
 
 **P1 (largest user-facing wins)**
+- [x] DONE 2026-11-28: chat header environment chip (`Server` or named sandbox + live state, focus/visibility refresh, removed-sandbox handling; plan `docs/superpowers/plans/2026-11-28-chat-environment-chip.md`). S.
 - [x] DONE 2026-11-28: compact live steps while a turn runs (default; "Always show steps" keeps full detail). Not yet looked at in a live chat.
 - [x] DONE 2026-11-28: open the chat stream in parallel with the history load (read only after items + snapshot).
 - [x] DONE 2026-11-28: Sandboxes redesign (sections, status line, icon actions incl. New chat here, refresh on focus, detail page with Files tree / Terminal / Chats tabs and About panel).
