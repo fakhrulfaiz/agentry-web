@@ -10,16 +10,20 @@ import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { HStack } from '@astryxdesign/core/HStack'
+import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
+import { FolderIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent, OAIEnvironmentConfig, OAIProject, SandboxEnvironment } from '@/api/types'
-import { normalizeWorkspaceFolder, topLevelFolders } from '@/ui/sandboxes/workspace-folder'
+import { FolderPicker } from '@/ui/sandboxes/FolderPicker'
+import { normalizeWorkspaceFolder } from '@/ui/sandboxes/workspace-folder'
 import { announceProjects } from './project-events'
 import { announceSessions, type SessionRef } from './session-actions'
 
@@ -58,7 +62,7 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
   const [environmentId, setEnvironmentId] = useState('')
   const [folder, setFolder] = useState('')
   const [folderError, setFolderError] = useState<string | null>(null)
-  const [folderPicks, setFolderPicks] = useState<string[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [agents, setAgents] = useState<OAIAgent[]>([])
   const [environments, setEnvironments] = useState<SandboxEnvironment[]>([])
@@ -85,19 +89,6 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
       .then(() => api.listSandboxEnvironments())
       .then((list) => setEnvironments(list.data), () => undefined)
   }, [isOpen])
-
-  // Quick picks: the environment's existing top-level folders. A failed list just shows none.
-  useEffect(() => {
-    setFolderPicks([])
-    if (!isOpen || !environmentId) return
-    let current = true
-    Promise.resolve()
-      .then(() => api.listEnvironmentFiles(environmentId))
-      .then((page) => current && setFolderPicks(topLevelFolders(page.data.map((file) => file.path))), () => undefined)
-    return () => {
-      current = false
-    }
-  }, [isOpen, environmentId])
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -168,34 +159,39 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
             ]}
           />
           {environmentId && (
-            <VStack gap={2}>
-              <TextInput
-                label="Folder"
-                description="Inside /workspace. Chats in this project start here; it is created if missing. Leave empty for the whole workspace."
+            <VStack gap={1}>
+              <Text type="label">Folder</Text>
+              <HStack gap={2}>
+                <Button
+                  label={folder ? `/workspace/${folder}` : 'Whole workspace'}
+                  icon={<Icon icon={FolderIcon} />}
+                  onClick={() => setPickerOpen(true)}
+                />
+                {folder && (
+                  <IconButton
+                    label="Clear folder"
+                    icon={<Icon icon={XMarkIcon} />}
+                    variant="ghost"
+                    onClick={() => {
+                      setFolder('')
+                      setFolderError(null)
+                    }}
+                  />
+                )}
+              </HStack>
+              <Text type="supporting" color="secondary">Inside /workspace. Chats in this project start here; it is created if missing. Leave it on the whole workspace for no folder.</Text>
+              {folderError && <Text type="supporting" role="alert">{folderError}</Text>}
+              <FolderPicker
+                environmentId={environmentId}
                 value={folder}
-                onChange={(value) => {
-                  setFolder(value)
+                isOpen={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                onChoose={(chosen) => {
+                  setFolder(chosen)
                   setFolderError(null)
+                  setPickerOpen(false)
                 }}
-                status={folderError ? { type: 'error', message: folderError } : undefined}
-                statusVariant="detached"
               />
-              {folderPicks.length > 0 && (
-                <HStack gap={2} wrap="wrap">
-                  {folderPicks.map((pick) => (
-                    <Button
-                      key={pick}
-                      label={pick}
-                      size="sm"
-                      variant={folder === pick ? 'primary' : 'secondary'}
-                      onClick={() => {
-                        setFolder(pick)
-                        setFolderError(null)
-                      }}
-                    />
-                  ))}
-                </HStack>
-              )}
             </VStack>
           )}
           <Switch label="Pinned" value={pinned} onChange={setPinned} />

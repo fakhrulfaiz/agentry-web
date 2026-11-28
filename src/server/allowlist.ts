@@ -60,6 +60,7 @@ const RULES: readonly Rule[] = [
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'stop'] },
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'reset'] },
   { methods: ['GET', 'POST'], segments: ['agents', 'environments', ENVIRONMENT, 'files'] },
+  { methods: ['GET'], segments: ['agents', 'environments', ENVIRONMENT, 'folders'] },
   // Interactive shell in a sandbox: open, type, resize, close. The output stream has its own route (SSE).
   { methods: ['POST'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals'] },
   { methods: ['DELETE'], segments: ['agents', 'environments', ENVIRONMENT, 'terminals', TERMINAL] },

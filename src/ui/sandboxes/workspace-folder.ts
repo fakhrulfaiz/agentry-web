@@ -22,14 +22,3 @@ export function normalizeWorkspaceFolder(input: string): { value: string } | { e
   if (segments.length > 8) return { error: 'The folder can have at most 8 levels.' }
   return { value }
 }
-
-/** Top-level folder names of an environment's files (absolute `/workspace/...` paths), A to Z, skipping dot-folders. */
-export function topLevelFolders(paths: string[]): string[] {
-  const names = new Set<string>()
-  for (const path of paths) {
-    const rel = path.replace(/^\/workspace\//, '')
-    const slash = rel.indexOf('/')
-    if (slash > 0 && !rel.startsWith('.')) names.add(rel.slice(0, slash))
-  }
-  return [...names].sort()
-}

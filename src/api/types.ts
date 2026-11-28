@@ -861,6 +861,14 @@ export interface EnvironmentFile {
 }
 
 /** A token page as the Agents API returns it for environment files. */
+/** One workspace folder's immediate sub-folders (`path` is relative to the workspace root). */
+export interface EnvironmentFolderList {
+  object: 'list'
+  path: string
+  data: Array<{ name: string; path: string }>
+  has_more: boolean
+}
+
 export interface SandboxPage<T> {
   object: 'list'
   data: T[]

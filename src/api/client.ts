@@ -24,6 +24,7 @@ import type {
   CreateScheduleParams,
   CreateTemplateParams,
   EnvironmentFile,
+  EnvironmentFolderList,
   SandboxEnvironment,
   SandboxPage,
   SandboxProvider,
@@ -548,6 +549,10 @@ export const api = {
   /** One page of an environment's files, A to Z. */
   listEnvironmentFiles(id: string, page?: string): Promise<SandboxPage<EnvironmentFile>> {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/files?limit=100&order=asc${page ? `&page=${encodeURIComponent(page)}` : ''}`)
+  },
+  /** The sub-folders of one workspace folder (`path` relative; empty = the workspace root). */
+  listEnvironmentFolders(id: string, path = ''): Promise<EnvironmentFolderList> {
+    return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/folders${path ? `?path=${encodeURIComponent(path)}` : ''}`)
   },
   /** Writes one file (UTF-8 text or base64 bytes) at an absolute `/workspace/...` path. */
   uploadEnvironmentFile(id: string, path: string, base64: string): Promise<EnvironmentFile> {

@@ -40,6 +40,7 @@ describe('isAllowed', () => {
     ['DELETE', '/agents/environments/env_1'],
     ['GET', '/agents/environments/env_1/files'],
     ['POST', '/agents/environments/env_1/files'],
+    ['GET', '/agents/environments/env_1/folders'],
     ['POST', '/agents/environments/env_1/terminals'],
     ['DELETE', '/agents/environments/env_1/terminals/term_ab12'],
     ['POST', '/agents/environments/env_1/terminals/term_ab12/input'],
