@@ -8,6 +8,8 @@ const config = {
         dev: process.env.NODE_ENV === 'development',
         aliases: { '@/*': [`${import.meta.dirname}/src/*`] },
         unstable_moduleResolution: { type: 'commonJS' },
+        // Must match next.config: keeps our classes distinct from astryx's (see the note there).
+        classNamePrefix: 'a',
       },
     },
   },
