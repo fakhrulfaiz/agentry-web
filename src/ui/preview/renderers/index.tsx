@@ -15,6 +15,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { RendererId } from '@/preview/renderers'
 import { fileUrl, useFileText } from '@/preview/use-file-bytes'
 import { Markdown } from '@/ui/chat/Markdown'
+import { OfficePdfView } from './OfficePdfView'
+import { VideoView } from './VideoView'
 
 const TABLE_ROW_LIMIT = 2000
 
@@ -240,10 +242,14 @@ export function RendererBody(props: RendererProps) {
     case 'image':
       // eslint-disable-next-line @next/next/no-img-element -- BFF bytes of unknown size; next/image does not apply
       return <img src={fileUrl(sessionId, path)} alt={path} style={{ maxWidth: '100%', objectFit: 'contain', display: 'block', margin: '0 auto', padding: 16 }} />
+    case 'video':
+      return <VideoView sessionId={sessionId} path={path} reloadKey={props.reloadKey} />
     case 'pdf':
       return <iframe title={path} src={fileUrl(sessionId, path)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
     case 'docx':
       return <DocxView {...props} />
+    case 'officePdf':
+      return <OfficePdfView sessionId={sessionId} path={path} reloadKey={props.reloadKey} onMissing={props.onMissing} onRetry={props.onRetry} />
     case 'download':
       return <DownloadCard sessionId={sessionId} path={path} />
     case 'source':

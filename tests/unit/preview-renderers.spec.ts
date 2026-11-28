@@ -9,10 +9,16 @@ describe('renderersFor', () => {
     ['a.csv', 'table', ['table', 'text']],
     ['a.json', 'json', ['json', 'code']],
     ['a.py', 'code', ['code', 'text']],
-    ['a.docx', 'docx', ['docx']],
-    ['a.xlsx', 'download', ['download']],
+    ['a.docx', 'officePdf', ['officePdf', 'docx']],
+    ['a.DOC', 'officePdf', ['officePdf']],
+    ['a.pptx', 'officePdf', ['officePdf']],
+    ['a.ppt', 'officePdf', ['officePdf']],
+    ['a.xlsx', 'officePdf', ['officePdf', 'download']],
+    ['a.xls', 'officePdf', ['officePdf', 'download']],
     ['a.bin', 'download', ['download']],
     ['a.PDF', 'pdf', ['pdf']],
+    ['recordings/demo.webm', 'video', ['video', 'download']],
+    ['clip.MP4', 'video', ['video', 'download']],
   ])('%s', (name, def, options) => {
     expect(renderersFor(name)).toEqual({ default: def, options })
   })

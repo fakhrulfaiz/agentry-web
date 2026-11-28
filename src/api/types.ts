@@ -154,6 +154,8 @@ export interface OAIAgent {
   skills?: AgentSkillSelection | null
   apps?: AgentAppGrants | null
   send_policy?: 'ask' | 'auto' | null
+  /** The web browser (sandbox chats only); `true` always, `false` never, absent or `null` auto (when the chat's sandbox has the browser). */
+  browser?: boolean | null
 }
 
 /** Body for `POST /v1/agents` (and, with every field optional, `POST /v1/agents/{id}`). */
@@ -168,6 +170,7 @@ export interface CreateAgentParams {
   skills?: AgentSkillSelection | null
   apps?: AgentAppGrants | null
   send_policy?: 'ask' | 'auto' | null
+  browser?: boolean | null
 }
 export type UpdateAgentParams = Partial<CreateAgentParams>
 
@@ -180,8 +183,36 @@ export interface HostToolInfo {
 /** Environment on a session. F1 never edits it. */
 export interface OAIEnvironmentConfig {
   type: string
+  /** Sandbox environments: a folder inside the workspace the chat starts in. */
+  directory?: string
   [key: string]: unknown
 }
+
+/** An owner-scoped grouping of chats (`GET /v1/agents/projects`). */
+export interface OAIProject {
+  id: string
+  object: 'project'
+  name: string
+  status: 'active' | 'archived'
+  pinned: boolean
+  agent_id: string | null
+  /** `null` means the default workspace. */
+  environment: OAIEnvironmentConfig | null
+  archived_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+/** Body for `POST /v1/agents/projects`. */
+export interface CreateProjectParams {
+  name: string
+  agent_id?: string | null
+  environment?: OAIEnvironmentConfig | null
+  pinned?: boolean
+}
+
+/** Body for `POST /v1/agents/projects/{id}`; omitted fields are left alone. */
+export type UpdateProjectParams = Partial<CreateProjectParams>
 
 /** One selectable answer offered to the user (DSH `AskUserQuestionOption`). */
 export interface AskUserQuestionOption {
@@ -210,6 +241,8 @@ export interface OAIApprovalAction {
   tool_name?: string
   call_id?: string
   questions?: AskUserQuestionItem[]
+  /** Set when a subagent of this session asked (its id in `/subagents`); answer it on this session as usual. */
+  subagent_id?: string
 }
 
 /** Action the application must complete before work can continue. */
@@ -239,6 +272,8 @@ export interface OAIAgentSession {
   vault_ids: string[]
   agent: OAIAgent
   environment: OAIEnvironmentConfig
+  /** `null` means Unfiled. */
+  project_id: string | null
   required_actions: OAIRequiredAction[]
   usage: OAITokenUsage | null
 }
@@ -270,6 +305,41 @@ export interface OAISubagent {
   status: 'active' | 'closed'
   created_at: number
   closed_at?: number
+  /** Model of the child's latest model request; `null` before its first (absent from older backends). */
+  model?: string | null
+}
+
+/** The newest retained output of a background job (bounded by the route: 16 KiB in the list, 64 KiB for one job). */
+export interface OAIJobOutput {
+  text: string
+  total_bytes: number
+  /** Earlier output is not included. */
+  truncated: boolean
+}
+
+/**
+ * A background job of this session (`GET .../jobs`): a command the agent runs
+ * in the background (or a foreground one while it runs), or a workflow.
+ * Live changes come as ephemeral `agent.session.job.*` events; jobs live in
+ * the API's memory only.
+ */
+export interface OAIJob {
+  id: string
+  object: 'agent.session.job'
+  session_id: string
+  /** Producer kind: `bash`, `workflow`, ... */
+  kind: string
+  /** The command line for shell jobs. */
+  command: string
+  status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+  /** Live progress while running; the terminal reason once settled (`exit code: 0`). */
+  detail: string | null
+  exit_code: number | null
+  /** Epoch seconds. */
+  started_at: number
+  finished_at: number | null
+  /** Absent on stream events and kill answers. */
+  output?: OAIJobOutput
 }
 
 /** Text part on a message item. */
@@ -352,6 +422,19 @@ export interface OAIFunctionCallOutputItem {
   timing?: OAIItemTiming
   /** A sign-in link for a connected app; shown as a Connect button. */
   connect_request?: ConnectRequest
+  /** Images the tool returned; bytes via `GET /agents/files/{file_id}/content`. */
+  images?: OAIOutputImagePart[]
+}
+
+/** One image a tool returned (a screenshot, `read_image`). */
+export interface OAIOutputImagePart {
+  type: 'output_image'
+  file_id?: string
+  filename?: string
+  media_type: string
+  bytes: number
+  width?: number
+  height?: number
 }
 
 /** Saved MCP tool call. */
@@ -449,8 +532,8 @@ export type OAIInputEvent =
       input: OAIInputMessage[]
       /** Switches the session's model before the message is queued. */
       model?: string
-      /** Switches the session's reasoning effort before the message is queued. */
-      reasoning?: { effort: ReasoningEffort }
+      /** Switches the session's reasoning effort before the message is queued; `null` clears it back to the agent's default. */
+      reasoning?: { effort: ReasoningEffort | null }
     }
   | { type: 'agent.session.input.cancel' }
   | OAIApprovalResponseInputEvent
@@ -462,6 +545,8 @@ export interface CreateSessionParams {
   metadata?: Record<string, string> | null
   input?: string | OAIInputMessage[]
   stream?: boolean
+  /** Attaches the chat to this Project and inherits its agent and environment unless overridden. */
+  project_id?: string | null
 }
 
 /**
@@ -551,6 +636,14 @@ export type OAISessionEvent =
   | { type: 'agent.session.turn.output_text.delta'; event_id: string; item_id: string; output_index: number; content_index: number; session_id: string; turn_id: string; delta: string }
   | { type: 'agent.session.turn.output_text.done'; event_id: string; item_id: string; output_index: number; content_index: number; session_id: string; turn_id: string; text: string }
   | { type: 'error'; event_id: string; session_id?: string; error: { message: string; type?: string; code?: string } }
+  // Subagent activity (live only: no SSE id, never replayed; re-read `/subagents` on open and reconnect).
+  | { type: 'agent.session.subagent.created'; event_id: string; session_id: string; subagent: OAISubagent }
+  | { type: 'agent.session.subagent.updated'; event_id: string; session_id: string; subagent: OAISubagent; turn: OAITurn }
+  | { type: 'agent.session.subagent.closed'; event_id: string; session_id: string; subagent: OAISubagent }
+  | { type: 'agent.session.subagent.item.added'; event_id: string; session_id: string; subagent_id: string; turn_id: string; item: StoredSessionItem }
+  | { type: 'agent.session.subagent.item.done'; event_id: string; session_id: string; subagent_id: string; turn_id: string; item: StoredSessionItem }
+  | { type: 'agent.session.job.updated'; event_id: string; session_id: string; job: OAIJob }
+  | { type: 'agent.session.job.removed'; event_id: string; session_id: string; job_id: string }
 
 /** Session-status events: each carries the full session resource. */
 export type OAISessionStatusEvent = Extract<OAISessionEvent, { session: OAIAgentSession }>
@@ -582,6 +675,61 @@ export interface SessionDeliverableEntry {
 export interface SessionDeliverableList {
   object: 'list'
   data: SessionDeliverableEntry[]
+}
+
+/** One file a turn changed (`GET /v1/agents/sessions/{id}/turns/{turn_id}/changes`). */
+export interface TurnChangedFile {
+  /** Index for the diff route. */
+  index: number
+  /** Workspace-relative. */
+  path: string
+  display: string
+  added: number
+  deleted: number
+  binary?: true
+  oversized?: true
+}
+
+/** The files a turn changed; `available: false` when nothing was recorded or the API restarted (kept in memory only). */
+export interface TurnChanges {
+  object: 'agent.session.turn.changes'
+  turn_id: string
+  available: boolean
+  total: number
+  added: number
+  deleted: number
+  /** Changed files outside the workspace: counted, never listed. */
+  outside: number
+  files: TurnChangedFile[]
+}
+
+export interface TurnChangesListEntry {
+  turn_id: string
+  total: number
+  added: number
+  deleted: number
+  outside: number
+}
+
+export interface TurnChangeHunk {
+  old_start: number
+  old_lines: number
+  new_start: number
+  new_lines: number
+  /** Each line keeps its `+`, `-` or space prefix. */
+  lines: string[]
+}
+
+/** One changed file before and after a turn. */
+export interface TurnChangeDiff {
+  object: 'agent.session.turn.change'
+  kind: 'text' | 'binary' | 'oversized'
+  path: string
+  display: string
+  before?: boolean
+  after?: boolean
+  hunks?: TurnChangeHunk[]
+  coarse?: boolean
 }
 
 export interface SessionArtifactList {
@@ -660,6 +808,8 @@ export interface SandboxTemplate {
   gpus?: number | 'all'
   /** Fields the provider cannot apply; provisioning fails while any remain. */
   unsupported_fields: string[]
+  /** A template every owner has; it cannot be changed or deleted. */
+  built_in?: boolean
 }
 
 /** An environment (`agent.environment`). */
@@ -679,6 +829,17 @@ export interface SandboxEnvironment {
   sandbox?: SandboxState
 }
 
+/** Where a sandbox's setup is, while its state is `provisioning`. */
+export interface SandboxProgress {
+  stage: 'pulling_image' | 'starting' | 'preparing' | 'installing_packages' | 'copying_runtime' | 'writing_files' | 'running_setup' | 'finishing'
+  /** `running_setup` only: the command being run, of `steps`. */
+  step?: number
+  steps?: number
+  /** `running_setup` only: the command, cut to 120 characters. */
+  detail?: string
+  updated_at: number
+}
+
 export interface SandboxState {
   state: 'provisioning' | 'running' | 'stopped' | 'failed' | 'deleting' | 'gone' | 'unknown'
   image?: string
@@ -686,6 +847,8 @@ export interface SandboxState {
   gpus?: number | 'all'
   started_at?: number | null
   last_used_at?: number | null
+  /** Only while `state` is `provisioning`. */
+  progress?: SandboxProgress
 }
 
 /** A file in an environment (`agent.environment.file`). */
@@ -698,6 +861,14 @@ export interface EnvironmentFile {
 }
 
 /** A token page as the Agents API returns it for environment files. */
+/** One workspace folder's immediate sub-folders (`path` is relative to the workspace root). */
+export interface EnvironmentFolderList {
+  object: 'list'
+  path: string
+  data: Array<{ name: string; path: string }>
+  has_more: boolean
+}
+
 export interface SandboxPage<T> {
   object: 'list'
   data: T[]

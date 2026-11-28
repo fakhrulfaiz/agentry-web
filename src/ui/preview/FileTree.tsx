@@ -6,7 +6,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import { ChevronDownIcon, ChevronRightIcon, DocumentIcon, FolderIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
-import { useMemo, useState, type KeyboardEvent } from 'react'
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { TreeNode } from '@/preview/tree'
 
 const styles = stylex.create({
@@ -28,6 +28,7 @@ const styles = stylex.create({
   selected: { backgroundColor: colorVars['--color-background-muted'] },
   indent: (px: number) => ({ paddingInlineStart: 8 + px }),
   lead: { flexShrink: 0, display: 'inline-flex', color: colorVars['--color-text-secondary'] },
+  name: { flex: 1, minWidth: 0 },
   spacer: { flexShrink: 0, width: 16 },
 })
 
@@ -43,14 +44,24 @@ function flatten(nodes: TreeNode[], open: Set<string>, depth = 0): Row[] {
   ])
 }
 
-export function FileTree({ tree, current, onOpen }: { tree: TreeNode[]; current?: string; onOpen(path: string): void }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set())
+export function FileTree({ tree, current, onOpen, renderEnd, emptyText, expandTop = false }: {
+  tree: TreeNode[]
+  current?: string
+  onOpen(path: string): void
+  /** Extra content at the end of a row (a size, a download link). */
+  renderEnd?(node: TreeNode): ReactNode
+  /** Shown when there is nothing to list. */
+  emptyText?: string
+  /** Start with the top-level folders open. */
+  expandTop?: boolean
+}) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(expandTop ? tree.filter((n) => n.kind === 'dir').map((n) => n.path) : []))
   const [focus, setFocus] = useState(0)
   const rows = useMemo(() => flatten(tree, open), [tree, open])
   if (tree.length === 0)
     return (
       <Text type="supporting" color="secondary" role="status">
-        No files yet. Files the agent creates will show up here.
+        {emptyText ?? 'No files yet. Files the agent creates will show up here.'}
       </Text>
     )
   const toggle = (path: string, to?: boolean) =>
@@ -104,7 +115,8 @@ export function FileTree({ tree, current, onOpen }: { tree: TreeNode[]; current?
               </span>
             </>
           )}
-          <Text maxLines={1}>{node.name}</Text>
+          <span {...stylex.props(styles.name)}><Text maxLines={1}>{node.name}</Text></span>
+          {renderEnd?.(node)}
         </li>
       ))}
     </ul>

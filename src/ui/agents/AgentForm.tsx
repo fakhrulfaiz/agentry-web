@@ -19,6 +19,7 @@ import { StackItem } from '@astryxdesign/core/Layout'
 import { Popover } from '@astryxdesign/core/Popover'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
+import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { Switch } from '@astryxdesign/core/Switch'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Text } from '@astryxdesign/core/Text'
@@ -116,6 +117,10 @@ const ui = stylex.create({
     borderBlockStartColor: 'var(--color-border)',
   },
   checks: { flexGrow: 1, minInlineSize: 0 },
+  // On wide screens the instructions fill the rest of the profile column instead of leaving a gap under them.
+  // Field = label + control wrapper; the grid's 1fr row stretches the wrapper, the control fills it, the textarea stretches.
+  instructions: { flexGrow: { default: 0, [WIDE]: 1 }, display: 'grid', gridTemplateRows: 'auto 1fr' },
+  instructionsControl: { flexGrow: { default: 0, [WIDE]: 1 }, display: 'flex', alignItems: 'stretch' },
   avatarButton: { padding: 0, borderWidth: 0, backgroundColor: 'transparent', cursor: 'pointer', borderRadius: 14, display: 'block', flexShrink: 0 },
 })
 
@@ -336,6 +341,8 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
               label="Instructions"
               description="What this agent is for and how it should work. It reads this at the start of every chat."
               rows={16}
+              containerXstyle={ui.instructions}
+              controlXstyle={ui.instructionsControl}
               value={form.instructions}
               onChange={(instructions) => set({ instructions })}
               placeholder={'You keep my inbox under control.\nEach morning, sort new mail into Reply, Read later and Ignore, then draft replies for the first group.'}
@@ -359,7 +366,20 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
             <div {...stylex.props(ui.panel)} role="tabpanel" id="agent-capability-panel" aria-label={SECTIONS.find((s) => s.value === section)?.label}>
               <VStack gap={5}>
               <Text type="supporting" color="secondary">{INTROS[section]}</Text>
-              {section === 'tools' && <ToolsPicker tools={tools} allTools={form.allTools} value={form.tools} onChange={(next) => set(next)} />}
+              {section === 'tools' && (
+                <VStack gap={4}>
+                  <VStack gap={2}>
+                    <Text type="label">Web browser</Text>
+                    <Text type="supporting" color="secondary">Open web pages in a headless Chromium, read them, click, type and take screenshots. Runs in sandbox chats only, inside the sandbox; chats on the server get no browser. Auto turns it on when the chat's sandbox has one (the Web and browser template does).</Text>
+                    <SegmentedControl label="Web browser" value={form.browser} onChange={(browser) => set({ browser: browser as 'auto' | 'on' | 'off' })}>
+                      <SegmentedControlItem value="auto" label="Auto (when the sandbox has a browser)" />
+                      <SegmentedControlItem value="on" label="On" />
+                      <SegmentedControlItem value="off" label="Off" />
+                    </SegmentedControl>
+                  </VStack>
+                  <ToolsPicker tools={tools} allTools={form.allTools} value={form.tools} onChange={(next) => set(next)} />
+                </VStack>
+              )}
               {section === 'skills' && <SkillsSection agentId={agentId} value={form.skills} onChange={(skills) => set({ skills })} />}
               {section === 'apps' && (
                 <AppsSection connected={apps} value={form.apps} onChange={(grants) => set({ apps: grants })} sendPolicy={form.sendPolicy} onSendPolicy={(sendPolicy) => set({ sendPolicy })} />

@@ -78,5 +78,9 @@ export default withStylex({
     dev: process.env.NODE_ENV === 'development',
     aliases: { '@/*': [path.join(root, 'src/*')] },
     unstable_moduleResolution: { type: 'commonJS' },
+    // Our atomic classes get their own prefix so they never share a name with astryx's prebuilt
+    // (layered) classes: an unlayered copy of e.g. `background-color: transparent` used to beat
+    // astryx's layered :hover rule and removed hover backgrounds app-wide. Must match postcss.config.mjs.
+    classNamePrefix: 'a',
   },
 })(nextConfig)

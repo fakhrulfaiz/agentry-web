@@ -97,7 +97,7 @@ export function Message({
     case 'subagent':
       return (
         <AssistantRow anchor={anchor} highlighted={highlighted}>
-          <SubagentCard view={view} depth={depth} />
+          <SubagentCard view={view} depth={depth} answer={answer} />
         </AssistantRow>
       )
     case 'command':

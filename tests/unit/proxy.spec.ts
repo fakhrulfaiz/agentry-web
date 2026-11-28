@@ -219,3 +219,32 @@ describe('stream /api/agentry/sessions/[id]/stream', () => {
     expect(await res.json()).toEqual({ error: { type: 'not_found_error' } })
   })
 })
+
+describe('stream /api/agentry/agents/sessions/[id]/browser/live', () => {
+  it('pipes the live browser view with Agentry auth and no browser credentials', async () => {
+    const live = await import('../../app/api/agentry/agents/sessions/[id]/browser/live/route')
+    const body = 'event: idle\ndata: {"reason":"not_started"}\n\nevent: frame\ndata: {"data":"/9j/"}\n\n'
+    fetchMock.mockResolvedValue(new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }))
+    const controller = new AbortController()
+    const res = await live.GET(sameOriginRequest(`${BASE}/agents/sessions/s_1/browser/live`, { headers: { cookie: 'agentry_session=x' }, signal: controller.signal }) as never, ctx({ id: 's_1' }))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('text/event-stream')
+    expect(res.headers.get('cache-control')).toContain('no-transform')
+    expect(await res.text()).toBe(body)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toBe('http://agentry.test/v1/agents/sessions/s_1/browser/live')
+    const headers = new Headers(init?.headers)
+    expect(headers.get('authorization')).toBe(`Bearer ${KEY}`)
+    expect(headers.get('cookie')).toBeNull()
+    controller.abort()
+    expect(init?.signal?.aborted).toBe(true)
+  })
+
+  it('rejects a bad id and passes upstream errors through', async () => {
+    const live = await import('../../app/api/agentry/agents/sessions/[id]/browser/live/route')
+    expect((await live.GET(sameOriginRequest(`${BASE}/agents/sessions/x/browser/live`) as never, ctx({ id: '../x' }))).status).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+    fetchMock.mockResolvedValue(Response.json({ error: { code: 'not_found' } }, { status: 404 }))
+    expect((await live.GET(sameOriginRequest(`${BASE}/agents/sessions/s_2/browser/live`) as never, ctx({ id: 's_2' }))).status).toBe(404)
+  })
+})

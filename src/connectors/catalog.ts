@@ -40,10 +40,15 @@ export const logoUrl = (slug: string): string =>
   `https://logos.composio.dev/api/${encodeURIComponent(slug)}`;
 
 /** Sentence-case label for a lowercase category such as "developer tools". */
+const ACRONYMS = new Set(["crm", "ai", "api", "hr", "seo", "sms", "erp", "cms", "it"]);
+
+/** "crm" → "CRM", "developer tools" → "Developer tools", "" → "Other". */
 export function categoryLabel(category: string): string {
-  return category
-    ? category.charAt(0).toUpperCase() + category.slice(1)
-    : "Other";
+  if (!category) return "Other";
+  const words = category.split(" ").map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w));
+  const first = words[0] ?? "";
+  words[0] = ACRONYMS.has(first.toLowerCase()) ? first : first.charAt(0).toUpperCase() + first.slice(1);
+  return words.join(" ");
 }
 
 /** The most common categories, most populated first. */

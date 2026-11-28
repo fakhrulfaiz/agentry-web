@@ -8,6 +8,7 @@ import { sessionEnvironment } from '@/ui/sandboxes/format'
 import { isImageType, type UserFile } from '@/chat/attachments'
 import type {
   AgentSchedule,
+  OAIJob,
   InstalledSkill,
   SkillManifest,
   SkillView,
@@ -17,15 +18,22 @@ import type {
   CommandRunResponse,
   SessionArtifactList,
   SessionDeliverableList,
+  TurnChangeDiff,
+  TurnChanges,
+  TurnChangesListEntry,
   CreateScheduleParams,
   CreateTemplateParams,
   EnvironmentFile,
+  EnvironmentFolderList,
   SandboxEnvironment,
   SandboxPage,
   SandboxProvider,
   SandboxRuntimes,
   SandboxTemplate,
   CreateSessionParams,
+  OAIProject,
+  CreateProjectParams,
+  UpdateProjectParams,
   OAIAgentSession,
   OAIInputEvent,
   CreateAgentParams,
@@ -41,6 +49,7 @@ import type {
   UpdateAgentParams,
   UpdateScheduleParams,
 } from './types'
+import type { BrowserControlGrant, BrowserInputEvent } from '@/chat/browser-input'
 
 export const CSRF_HEADER = 'x-agentry-csrf'
 const AGENTRY = '/api/agentry'
@@ -50,7 +59,8 @@ const ITEMS_PAGE = 100
 /** Model and reasoning effort changed for the next message; absent fields keep the session's. */
 export interface SettingsChange {
   model?: string
-  effort?: ReasoningEffort
+  /** `null` clears the stored effort back to the agent's default (Auto). */
+  effort?: ReasoningEffort | null
 }
 
 /** Agentry's answer when a model or effort change cannot reach the running agent. */
@@ -203,10 +213,12 @@ async function listAll<T extends { id: string }>(url: string, from?: string): Pr
 }
 
 export const api = {
-  listSessions(q: { after?: string; limit?: number } = {}): Promise<OAIListResponse<OAIAgentSession>> {
+  listSessions(q: { after?: string; limit?: number; metadata?: Record<string, string>; projectId?: string } = {}): Promise<OAIListResponse<OAIAgentSession>> {
     const params = new URLSearchParams()
     if (q.after) params.set('after', q.after)
     if (q.limit !== undefined) params.set('limit', String(q.limit))
+    if (q.projectId) params.set('project_id', q.projectId)
+    for (const [key, value] of Object.entries(q.metadata ?? {})) params.set(`metadata[${key}]`, value)
     const query = params.size > 0 ? `?${params}` : ''
     return request('GET', `${AGENTRY}/agents/sessions${query}`)
   },
@@ -216,12 +228,14 @@ export const api = {
   },
 
   /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string }): Promise<OAIAgentSession> {
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string; directory?: string; projectId?: string }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
+      ...(input.projectId ? { project_id: input.projectId } : {}),
       ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
       // An environment id, or `new:` / `new:<template id>` for a fresh sandbox that belongs to this chat.
-      ...(sessionEnvironment(input.environmentId ?? '') ? { environment: sessionEnvironment(input.environmentId ?? '') } : {}),
+      // `directory` is a starting folder inside an existing environment's workspace (from a Project).
+      ...(sessionEnvironment(input.environmentId ?? '') ? { environment: { ...sessionEnvironment(input.environmentId ?? ''), ...(input.directory ? { directory: input.directory } : {}) } } : {}),
       input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
       metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
     }
@@ -239,7 +253,7 @@ export const api = {
         type: 'agent.session.input.message',
         input: [{ role: 'user', content: contentParts(text, files) }],
         ...(change.model ? { model: change.model } : {}),
-        ...(change.effort ? { reasoning: { effort: change.effort } } : {}),
+        ...(change.effort !== undefined ? { reasoning: { effort: change.effort } } : {}),
       },
     ])
   },
@@ -332,14 +346,12 @@ export const api = {
 
   /**
    * Changes some session metadata keys (a string sets one, `null` removes it)
-   * and returns the map saved. Agentry replaces the whole map on update, so
-   * the current one is read first and the other keys are kept.
+   * with `metadata_merge`, which Agentry applies atomically, so concurrent
+   * writers of other keys are not lost. Returns the map saved.
    */
   async updateMetadata(id: string, patch: Record<string, string | null>): Promise<Record<string, string>> {
-    const current = await api.getSession(id)
-    const metadata = mergeMetadata(current.metadata, patch)
-    await request('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { metadata })
-    return metadata
+    const saved = await request<OAIAgentSession>('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { metadata_merge: patch })
+    return { ...saved.metadata }
   },
 
   /** Sets the chat's title; returns the whole metadata map saved. */
@@ -354,6 +366,11 @@ export const api = {
 
   async deleteSession(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/sessions/${seg(id)}`)
+  },
+
+  /** Moves a chat into a Project, or to Unfiled with `null`. */
+  setSessionProject(id: string, projectId: string | null): Promise<OAIAgentSession> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(id)}`, { project_id: projectId })
   },
 
   /**
@@ -380,6 +397,22 @@ export const api = {
   async subagents(id: string): Promise<OAISubagent[]> {
     const page = await request<OAIListResponse<OAISubagent>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/subagents`)
     return page.data
+  },
+
+  /** The session's background jobs, oldest first, each with the newest 16 KiB of output. */
+  async jobs(id: string): Promise<OAIJob[]> {
+    const page = await request<OAIListResponse<OAIJob>>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/jobs`)
+    return page.data
+  },
+
+  /** One background job with the newest 64 KiB of output. */
+  job(id: string, jobId: string, signal?: AbortSignal): Promise<OAIJob> {
+    return request<OAIJob>('GET', `${AGENTRY}/agents/sessions/${seg(id)}/jobs/${seg(jobId)}`, undefined, signal)
+  },
+
+  /** Stops a background job; a finished one answers `already_finished`. */
+  killJob(id: string, jobId: string): Promise<{ outcome: 'cancellation_requested' | 'already_finished'; job: OAIJob }> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(id)}/jobs/${seg(jobId)}/kill`, {})
   },
 
   /** One subagent's turns (its status and timing). */
@@ -419,6 +452,21 @@ export const api = {
     return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/deliverables`, undefined, signal)
   },
 
+  /** Turns of a chat that changed files, newest first. */
+  sessionChanges(id: string, signal?: AbortSignal): Promise<{ object: 'list'; data: TurnChangesListEntry[] }> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/changes`, undefined, signal)
+  },
+
+  /** The files one turn changed. */
+  turnChanges(id: string, turnId: string, signal?: AbortSignal): Promise<TurnChanges> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/turns/${seg(turnId)}/changes`, undefined, signal)
+  },
+
+  /** One changed file's diff. */
+  turnChangeDiff(id: string, turnId: string, index: number, signal?: AbortSignal): Promise<TurnChangeDiff> {
+    return request('GET', `${AGENTRY}/agents/sessions/${seg(id)}/turns/${seg(turnId)}/changes/${String(index)}`, undefined, signal)
+  },
+
   /** Sandbox providers and what each supports. */
   listSandboxProviders(): Promise<SandboxPage<SandboxProvider>> {
     return request('GET', `${AGENTRY}/agents/environments/providers`)
@@ -431,6 +479,10 @@ export const api = {
   },
   createSandboxTemplate(params: CreateTemplateParams): Promise<SandboxTemplate> {
     return request('POST', `${AGENTRY}/agents/environments/templates`, params)
+  },
+  /** Replaces the fields it carries on a custom template and keeps the rest (built-in templates answer 400). */
+  updateSandboxTemplate(id: string, params: Partial<CreateTemplateParams>): Promise<SandboxTemplate> {
+    return request('POST', `${AGENTRY}/agents/environments/templates/${seg(id)}`, params)
   },
   async deleteSandboxTemplate(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/templates/${seg(id)}`)
@@ -450,6 +502,10 @@ export const api = {
       ...(input.place ? { place: input.place } : {}),
     })
   },
+  /** Renames an environment; an empty name clears it. Answers the environment. */
+  renameSandboxEnvironment(id: string, name: string): Promise<SandboxEnvironment> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}`, { name })
+  },
   /** Starts, stops or rebuilds an Agentry Sandbox environment; answers the environment. */
   startSandboxEnvironment(id: string): Promise<SandboxEnvironment> {
     return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/start`, {})
@@ -463,9 +519,44 @@ export const api = {
   async deleteSandboxEnvironment(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}`)
   },
+  /** Opens an interactive shell in a sandbox environment; read its output from `terminalStreamUrl`. */
+  openTerminal(id: string, cols: number, rows: number): Promise<{ id: string }> {
+    return request('POST', `${AGENTRY}/agents/environments/${seg(id)}/terminals`, { cols, rows })
+  },
+  async terminalInput(id: string, terminalId: string, data: string): Promise<void> {
+    await request('POST', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}/input`, { data })
+  },
+  async terminalResize(id: string, terminalId: string, cols: number, rows: number): Promise<void> {
+    await request('POST', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}/resize`, { cols, rows })
+  },
+  async closeTerminal(id: string, terminalId: string): Promise<void> {
+    await request('DELETE', `${AGENTRY}/agents/environments/${seg(id)}/terminals/${seg(terminalId)}`)
+  },
+  /** Takes control of a chat's browser from the agent (`force` takes it from another tab). */
+  takeBrowserControl(sessionId: string, force = false): Promise<BrowserControlGrant> {
+    return request('POST', `${AGENTRY}/agents/sessions/${seg(sessionId)}/browser/control`, { action: 'take', ...(force ? { force: true } : {}) })
+  },
+  /** Hands the browser back to the agent; `keepalive` so it still goes out while the page unloads. */
+  async releaseBrowserControl(sessionId: string, controlId: string): Promise<void> {
+    await fetch(`${AGENTRY}/agents/sessions/${seg(sessionId)}/browser/control`, {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/json', [CSRF_HEADER]: csrfToken() },
+      body: JSON.stringify({ action: 'release', control_id: controlId }),
+      credentials: 'same-origin',
+      keepalive: true,
+    }).catch(() => undefined)
+  },
+  /** The user's input to the browser while they have control (page CSS pixels, at most 50 events). */
+  async browserInput(sessionId: string, controlId: string, events: BrowserInputEvent[]): Promise<void> {
+    await request('POST', `${AGENTRY}/agents/sessions/${seg(sessionId)}/browser/input`, { control_id: controlId, events })
+  },
   /** One page of an environment's files, A to Z. */
   listEnvironmentFiles(id: string, page?: string): Promise<SandboxPage<EnvironmentFile>> {
     return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/files?limit=100&order=asc${page ? `&page=${encodeURIComponent(page)}` : ''}`)
+  },
+  /** The sub-folders of one workspace folder (`path` relative; empty = the workspace root). */
+  listEnvironmentFolders(id: string, path = ''): Promise<EnvironmentFolderList> {
+    return request('GET', `${AGENTRY}/agents/environments/${seg(id)}/folders${path ? `?path=${encodeURIComponent(path)}` : ''}`)
   },
   /** Writes one file (UTF-8 text or base64 bytes) at an absolute `/workspace/...` path. */
   uploadEnvironmentFile(id: string, path: string, base64: string): Promise<EnvironmentFile> {
@@ -488,6 +579,41 @@ export const api = {
   async deleteAgent(id: string): Promise<void> {
     await request('DELETE', `${AGENTRY}/agents/${seg(id)}`)
   },
+
+  /** The user's Projects; `status` defaults to `active`, older pages via `after`. */
+  listProjects(q: { status?: 'active' | 'archived' | 'all'; after?: string; limit?: number } = {}): Promise<OAIListResponse<OAIProject>> {
+    const params = new URLSearchParams()
+    if (q.status) params.set('status', q.status)
+    if (q.after) params.set('after', q.after)
+    if (q.limit !== undefined) params.set('limit', String(q.limit))
+    const query = params.size > 0 ? `?${params}` : ''
+    return request('GET', `${AGENTRY}/agents/projects${query}`)
+  },
+
+  getProject(id: string): Promise<OAIProject> {
+    return request('GET', `${AGENTRY}/agents/projects/${seg(id)}`)
+  },
+
+  createProject(params: CreateProjectParams): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects`, params)
+  },
+
+  updateProject(id: string, params: UpdateProjectParams): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects/${seg(id)}`, params)
+  },
+
+  archiveProject(id: string): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects/${seg(id)}/archive`, {})
+  },
+
+  unarchiveProject(id: string): Promise<OAIProject> {
+    return request('POST', `${AGENTRY}/agents/projects/${seg(id)}/unarchive`, {})
+  },
+
+  deleteProject(id: string): Promise<{ id: string; object: 'project.deleted'; deleted: true }> {
+    return request('DELETE', `${AGENTRY}/agents/projects/${seg(id)}`)
+  },
+
   /** The Host's tool catalog, for an agent's allow list. Tolerates the common list shapes. */
   async listHostTools(): Promise<HostToolInfo[]> {
     const body = await request<unknown>('GET', `${AGENTRY}/agents/tools`)

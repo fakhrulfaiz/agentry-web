@@ -1,0 +1,39 @@
+/*
+ * The agent's cursor in the Browser tab's live view: a ring that expands and fades on a press, and an
+ * outline that fades on the field the agent focused. Static (no ring, no fade) under reduced motion.
+ */
+[data-cursor-ring] {
+  animation: agentry-cursor-ring 400ms ease-out forwards;
+}
+
+[data-cursor-focus] {
+  animation: agentry-cursor-focus 1.2s ease-out forwards;
+}
+
+@keyframes agentry-cursor-ring {
+  from {
+    opacity: 0.7;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes agentry-cursor-focus {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-cursor-ring],
+  [data-cursor-focus] {
+    animation: none;
+  }
+}

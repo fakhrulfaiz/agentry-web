@@ -69,7 +69,15 @@ export function RecentFiles() {
           : [],
       )
       found.sort((a, b) => (a.at < b.at ? 1 : -1))
-      if (alive) setItems(found.slice(0, SHOWN))
+      // A file delivered again (a new version) is one entry per delivery: show it once, newest first.
+      const seen = new Set<string>()
+      const unique = found.filter((item) => {
+        const key = `${item.sessionId}:${item.path}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      if (alive) setItems(unique.slice(0, SHOWN))
     })().catch(() => undefined)
     return () => {
       alive = false

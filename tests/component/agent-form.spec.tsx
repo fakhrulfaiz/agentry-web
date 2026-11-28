@@ -84,6 +84,23 @@ describe('AgentForm skills and apps', () => {
 })
 
 describe('AgentForm', () => {
+  it.each([
+    ['On', true],
+    ['Off', false],
+    [/^Auto/, null],
+  ] as const)('saves the web browser choice %s from the Tools tab', async (label, expected) => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: [] })))
+    render(<AgentForm />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /Name/ }), 'Researcher')
+    await userEvent.click(screen.getByRole('tab', { name: /^Tools/ }))
+    expect(await screen.findByRole('radio', { name: /^Auto/ })).toBeChecked()
+    expect(screen.getByText(/Runs in sandbox chats only/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('radio', { name: label }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
+    expect((apiMock.createAgent.mock.calls[0] as unknown[])[0]).toMatchObject({ browser: expected })
+  })
+
   it('creates an agent from the form', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: ['gmail'] })))
     render(<AgentForm />)
@@ -92,7 +109,7 @@ describe('AgentForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create agent' }))
     await waitFor(() => expect(apiMock.createAgent).toHaveBeenCalled())
     expect(apiMock.createAgent).toHaveBeenCalledWith({
-      model: 'm1', name: 'Reviewer', instructions: '', metadata: { icon: expect.any(String), color: expect.any(String) }, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask',
+      model: 'm1', name: 'Reviewer', instructions: '', metadata: { icon: expect.any(String), color: expect.any(String) }, host_tools: null, multi_agent: { enabled: false }, reasoning: null, apps: null, skills: null, send_policy: 'ask', browser: null,
     })
     expect(nav.push).toHaveBeenCalledWith('/agents')
   })

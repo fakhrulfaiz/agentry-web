@@ -8,7 +8,13 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState } from "react";
 import type { MessageView } from "@/chat/reducer";
-import { ConnectCard } from "./ConnectCard";
+import { ConnectCard, ConnectSettingsLink } from "./ConnectCard";
+import { ToolImages } from "./ToolImages";
+import { notConnectedApp } from "@/chat/not-connected";
+import { browserToolTitle, pageOf, recordingCard, shortUrl } from "@/chat/browser-tools";
+import { Button } from "@astryxdesign/core/Button";
+import { FilmIcon } from "@heroicons/react/24/outline";
+import { usePreviewPanel } from "@/preview/store";
 import "./shimmer.css";
 
 type ToolView = Extract<MessageView, { kind: "tool" }>;
@@ -103,15 +109,27 @@ export function ToolCard({ view }: { view: ToolView }) {
     full !== null && full.length > OUTPUT_MAX
       ? `${full.slice(0, OUTPUT_MAX)}\n… (${full.length - OUTPUT_MAX} more characters)`
       : full;
+  // Browser calls read as actions ("Opened example.com"), with the page they left the browser on.
+  const recording = recordingCard(view);
+  const browserTitle = browserToolTitle(view.name, view.args) ?? recording?.title ?? null;
+  const page = browserTitle === null || recording !== null ? null : pageOf(view);
+  const { actions } = usePreviewPanel();
   return (
     <div data-shimmer={view.status === "running" ? "row" : undefined}>
       <ChatToolCalls
         calls={[
           {
             key: view.id,
-            name: view.name,
+            name: browserTitle ?? view.name,
             status: STATUS[view.status],
-            target: summarizeArgs(view.args) || undefined,
+            target:
+              browserTitle === null
+                ? summarizeArgs(view.args) || undefined
+                : recording !== null
+                  ? undefined
+                : page && !browserTitle.startsWith("Opened")
+                  ? shortUrl(page.url)
+                  : undefined,
             ...(view.status === "failed" && output
               ? { errorMessage: output.slice(0, 200) }
               : {}),
@@ -141,12 +159,33 @@ export function ToolCard({ view }: { view: ToolView }) {
                     isWrapped
                   />
                 )}
+                {view.images && view.images.length > 0 && (
+                  <ToolImages images={view.images} />
+                )}
               </VStack>
             ),
           },
         ]}
       />
-      {view.connect && <ConnectCard request={view.connect} />}
+      {recording?.file !== undefined && (
+        <HStack gap={2} vAlign="center" paddingBlock={1}>
+          <Button
+            label={`Open ${recording.file.split("/").pop() ?? recording.file}`}
+            variant="secondary"
+            size="sm"
+            icon={<FilmIcon width={16} height={16} aria-hidden />}
+            onClick={() => actions.openFile(recording.file!)}
+          />
+        </HStack>
+      )}
+      {view.connect ? (
+        <ConnectCard request={view.connect} />
+      ) : (
+        (() => {
+          const app = notConnectedApp(view.name, view.args, full ?? undefined, view.status === "failed");
+          return app ? <ConnectSettingsLink toolkit={app} /> : null;
+        })()
+      )}
     </div>
   );
 }

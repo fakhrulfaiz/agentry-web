@@ -3,10 +3,10 @@
 /**
  * Assistant prose. Rendered by astryx `Markdown` (GFM tables, fenced code in a
  * copyable `CodeBlock`, safe links; raw HTML in the model's text is shown as
- * text, never parsed). `$…$` / `$$…$$` math is typeset with KaTeX. Images are
- * never loaded: `![alt](url)` becomes a link labelled with its alt text, so a
+ * text, never parsed). `$…$` / `$$…$$` math is typeset with KaTeX. Remote images
+ * are never loaded: `![alt](url)` becomes a link labelled with its alt text, so a
  * prompt-injected image URL cannot send conversation data anywhere without a
- * click.
+ * click. Only files of the chat's own workspace render inline.
  */
 import { ArrowUpRightIcon } from '@heroicons/react/16/solid'
 import { Button } from '@astryxdesign/core/Button'
@@ -15,7 +15,16 @@ import { Link } from '@astryxdesign/core/Link'
 import { Markdown as AstryxMarkdown, type MarkdownComponents } from '@astryxdesign/core/Markdown'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import * as stylex from '@stylexjs/stylex'
 import { Children, isValidElement, type ReactNode, useMemo } from 'react'
+import { artifactUrl } from '@/artifacts/kind'
+import { artifactContentUrl } from '@/artifacts/artifact'
+import { workspaceImagePath } from '@/chat/workspace-image'
+import { useSessionFilesId } from './session-files'
+
+const imageStyles = stylex.create({
+  image: { display: 'block', maxWidth: '100%', height: 'auto', maxHeight: 480 },
+})
 
 function MathView({ value, display }: { value: string; display: 'inline' | 'block' }) {
   const html = useMemo(
@@ -31,8 +40,19 @@ function CodeView({ code, language }: { code: string; language?: string }) {
   return <CodeBlock code={code} language={language || 'plaintext'} width="100%" hasCopyButton />
 }
 
-/** A remote image as a plain link (opens in a new tab only when clicked). */
+/**
+ * An image in this chat's own workspace (a relative path, or an absolute path inside the chat's
+ * folder) shows inline through the BFF; any other image is a plain link (opens in a new tab only
+ * when clicked).
+ */
 function ImageView({ src, alt }: { src: string; alt: string }) {
+  const sessionId = useSessionFilesId()
+  const path = sessionId ? workspaceImagePath(src, sessionId) : null
+  if (sessionId && path) {
+    const url = artifactUrl({ content_url: artifactContentUrl(sessionId, path) })
+    // eslint-disable-next-line @next/next/no-img-element -- BFF bytes; next/image does not apply
+    return <img src={url} alt={alt} loading="lazy" {...stylex.props(imageStyles.image)} />
+  }
   const label = alt.trim() || src
   return (
     <Link href={src} isExternalLink referrerPolicy="no-referrer" tooltip={src}>

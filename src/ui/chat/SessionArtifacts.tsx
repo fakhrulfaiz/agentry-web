@@ -5,8 +5,8 @@
  * trailing attachments): the files the agent delivered with `present` in this chat
  * (`GET /agents/sessions/{id}/deliverables`, re-read whenever the chat goes
  * idle). Clicking a card opens the shared preview dialog with its Download.
- * The backend item stream does not tag which turn wrote a file, so the strip
- * shows the session's files rather than per-message cards.
+ * Each delivery names the turn whose `present` call made it (`turn_id`), so the
+ * conversation shows a turn's files right after that turn.
  */
 import { Button } from '@astryxdesign/core/Button'
 import { Icon } from '@astryxdesign/core/Icon'
@@ -19,6 +19,7 @@ import {
   DocumentTextIcon,
   PresentationChartBarIcon,
   TableCellsIcon,
+  FilmIcon,
 } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from 'react'
@@ -36,6 +37,7 @@ const KIND_LABEL: Record<ArtifactKind, string> = {
   sheet: 'Spreadsheet',
   pdf: 'PDF',
   code: 'Code',
+  video: 'Video',
   other: 'File',
 }
 
@@ -45,6 +47,7 @@ const KIND_ICON: Record<ArtifactKind, IconType> = {
   sheet: TableCellsIcon,
   pdf: DocumentIcon,
   code: CodeBracketIcon,
+  video: FilmIcon,
   other: DocumentIcon,
 }
 
@@ -134,36 +137,49 @@ export function FileCard({ artifact, onOpen }: { artifact: Artifact; onOpen: () 
   )
 }
 
+/** The files the agent delivered in this chat, grouped by the turn whose `present` call delivered them. */
+export interface SessionDeliverables {
+  /** Every file, newest first. */
+  all: Artifact[]
+  /** By `turn_id`, in delivery order ('' for deliveries without one). */
+  byTurn: ReadonlyMap<string, Artifact[]>
+}
+
+const NONE: SessionDeliverables = { all: [], byTurn: new Map() }
+
 /** `idle` is false while a turn runs; the list is re-read each time it turns true again. */
-export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionId: string; enabled: boolean; idle?: boolean }) {
-  const [items, setItems] = useState<Artifact[]>([])
-  const { actions } = usePreviewPanel()
+export function useSessionDeliverables(sessionId: string | null, enabled: boolean, idle = true): SessionDeliverables {
+  const [files, setFiles] = useState<SessionDeliverables>(NONE)
 
   const load = useCallback(async () => {
+    if (!sessionId) return
     try {
       const list = await api.listSessionDeliverables(sessionId)
-      setItems(
-        deliverableEntries(list)
-          .map((entry) => {
-          const name = entry.path.split('/').pop() ?? entry.path
-          return {
-            id: `${sessionId}:${entry.path}`,
-            name,
-            path: entry.path,
-            size: entry.size ?? 0,
-            mime_type: contentTypeForName(name),
-            session_id: sessionId,
-            updated_at: entry.last_modified ?? '',
-            content_url: artifactContentUrl(sessionId, entry.path),
-            ...(entry.description ? { description: entry.description } : {}),
-          }
-        })
-          // Newest first; the backend gives no per-turn attribution.
-          .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
-      )
+      const turnOf = new Map(list.data.map((entry) => [entry.path, entry.turn_id]))
+      const delivered = deliverableEntries(list).map((entry): Artifact & { turnId?: string } => {
+        const name = entry.path.split('/').pop() ?? entry.path
+        const turnId = turnOf.get(entry.path)
+        return {
+          id: `${sessionId}:${entry.path}`,
+          name,
+          path: entry.path,
+          size: entry.size ?? 0,
+          mime_type: contentTypeForName(name),
+          session_id: sessionId,
+          updated_at: entry.last_modified ?? '',
+          content_url: artifactContentUrl(sessionId, entry.path),
+          ...(entry.description ? { description: entry.description } : {}),
+          ...(turnId ? { turnId } : {}),
+        }
+      })
+      const byTurn = new Map<string, Artifact[]>()
+      // A delivery without a turn id (an older backend) is filed under '', which matches no turn: shown last.
+      for (const { turnId = '', ...artifact } of delivered) byTurn.set(turnId, [...(byTurn.get(turnId) ?? []), artifact])
+      const all = delivered.map(({ turnId: _turnId, ...artifact }) => artifact).sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+      setFiles({ all, byTurn })
     } catch {
-      // A session without a workspace, or a fetch hiccup: no strip, silently.
-      setItems([])
+      // A session without a workspace, or a fetch hiccup: no cards, silently.
+      setFiles(NONE)
     }
   }, [sessionId])
 
@@ -172,15 +188,24 @@ export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionI
     if (enabled && idle) void load()
   }, [enabled, idle, load])
 
-  if (!enabled || items.length === 0) return null
+  return enabled ? files : NONE
+}
 
+/** A grid of delivered file cards; clicking one opens it in the side panel. */
+export function DeliveredFiles({ files, label = 'Files in this chat' }: { files: readonly Artifact[]; label?: string }) {
+  const { actions } = usePreviewPanel()
+  if (files.length === 0) return null
   return (
-    <>
-      <ul {...stylex.props(styles.grid)} aria-label="Files in this chat" data-testid="chat-artifacts">
-        {items.map((artifact) => (
-          <FileCard key={artifact.id} artifact={artifact} onOpen={() => actions.openFile(artifact.path)} />
-        ))}
-      </ul>
-    </>
+    <ul {...stylex.props(styles.grid)} aria-label={label} data-testid="chat-artifacts">
+      {files.map((artifact) => (
+        <FileCard key={artifact.id} artifact={artifact} onOpen={() => actions.openFile(artifact.path)} />
+      ))}
+    </ul>
   )
+}
+
+/** Every delivered file of the chat in one grid (newest first). The conversation places them per turn instead. */
+export function SessionArtifacts({ sessionId, enabled, idle = true }: { sessionId: string; enabled: boolean; idle?: boolean }) {
+  const { all } = useSessionDeliverables(sessionId, enabled, idle)
+  return <DeliveredFiles files={all} />
 }

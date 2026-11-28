@@ -87,7 +87,7 @@ describe('buildTrajectory on the recorded web-search turn', () => {
     expect(timelineSpans(cancelled)[0].status).toBe('cancelled')
   })
 
-  it('the thinking is cut from the answer only on an exact leading match at a boundary', () => {
+  it('an assistant step\'s output is its message text as saved (the backend no longer repeats the thinking)', () => {
     const step = (reasoning: string, message: string) => {
       const items = [
         { id: 'item_reason_5', type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }], status: 'completed', turn_id: 'turn_4' },
@@ -95,8 +95,7 @@ describe('buildTrajectory on the recorded web-search turn', () => {
       ] as StoredSessionItem[]
       return buildTrajectory(TURNS, items).turns[0].records[0].output
     }
-    expect(step('Let me check.', 'Let me check.It is v26.')).toBe('It is v26.')
-    // A backend that does not repeat the thinking: a short thought never eats the answer.
+    expect(step('Let me check.', 'It is v26.')).toBe('It is v26.')
     expect(step('Ok', 'Okay, the answer is 4.')).toBe('Okay, the answer is 4.')
   })
 
@@ -130,6 +129,17 @@ describe('buildTrajectory on the recorded delegation', () => {
     const tools = t.turns[1].records.filter((r) => r.kind === 'tool')
     expect(tools.map((r) => r.name)).toEqual(['command', 'glob', 'glob', 'command'])
     expect(t.turns[1].endedAt).toBeUndefined()
+  })
+
+  it('carries the subagent prompt and the model it ran (resource first, else the call argument)', () => {
+    expect(call.prompt).toMatch(/^Your task: list the files/)
+    expect(call.model).toBeUndefined()
+    const withModel = RUNS.map((run) => ({ ...run, subagent: { ...run.subagent, model: 'deepseek-flash' } }))
+    const traced = buildTrajectory(D_TURNS, D_ITEMS, withModel).turns[0].records.find((r) => r.name === 'subagent')!
+    expect(traced.model).toBe('deepseek-flash')
+    expect(traced.subcalls!.filter((r) => r.subKind === 'assistant').every((r) => r.model === 'deepseek-flash')).toBe(true)
+    const asked = D_ITEMS.map((item) => (item.type === 'function_call' && item.name === 'subagent' ? { ...item, arguments: { ...(item.arguments as object), model: 'deepseek-pro' } } : item)) as StoredSessionItem[]
+    expect(buildTrajectory(D_TURNS, asked).turns[0].records.find((r) => r.name === 'subagent')!.model).toBe('deepseek-pro')
   })
 
   it('without subagent data the call has no subcalls', () => {

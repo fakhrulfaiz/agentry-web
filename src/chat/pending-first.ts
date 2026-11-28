@@ -1,7 +1,10 @@
 import type { UserFile } from './attachments'
 
 /** The first message of a chat just created from the new-chat page. */
-export type PendingFirst = { text: string; files?: UserFile[] }
+export type PendingFirst = { text: string; files?: UserFile[]; startLabel?: string }
+
+/** The part of that handoff the conversation needs after it has taken the message. */
+export type FirstSend = { startLabel: string }
 
 const pending = new Map<string, PendingFirst>()
 

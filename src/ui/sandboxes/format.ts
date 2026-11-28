@@ -1,4 +1,7 @@
-import type { CreateTemplateParams, SandboxEnvironment, SandboxPlace, SandboxProvider, SandboxTemplate } from '@/api/types'
+import type { CreateTemplateParams, SandboxProgress, SandboxEnvironment, SandboxPlace, SandboxProvider, SandboxTemplate } from '@/api/types'
+
+/** The separate browser-enabled sandbox image, used by the built-in Web browser template and the editor preset. */
+export const BROWSER_SANDBOX_IMAGE = 'ghcr.io/fakhrulfaiz/agentry-sandbox-browser:1'
 
 /** Status dot variant and the word shown beside it. */
 export function statusLook(status: SandboxEnvironment['status']): { variant: 'success' | 'warning' | 'error' | 'neutral'; text: string } {
@@ -122,15 +125,16 @@ export function providerAbilities(provider: SandboxProvider): string[] {
   return out
 }
 
-/** One line describing what a template sets up. */
+/** One line describing what a template sets up: the package names when there are few, else their count. */
 export function templateSummary(template: SandboxTemplate): string {
   const parts: string[] = []
-  const packages = template.packages.npm.length + template.packages.python.length + template.packages.system.length
-  if (template.image) parts.push(template.image)
+  const names = [...template.packages.system, ...template.packages.python, ...template.packages.npm]
+  if (template.image === BROWSER_SANDBOX_IMAGE) parts.push('Chromium and Playwright MCP')
+  else if (template.image) parts.push(template.image)
   if (template.files.length > 0) parts.push(`${template.files.length} ${template.files.length === 1 ? 'file' : 'files'}`)
-  if (packages > 0) parts.push(`${packages} ${packages === 1 ? 'package' : 'packages'}`)
+  if (names.length > 0) parts.push(names.length <= 4 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`)
   if (template.network.access !== 'enabled') parts.push(`network ${template.network.access}`)
-  return parts.length > 0 ? parts.join(', ') : 'Empty workspace'
+  return parts.length > 0 ? parts.join('; ') : 'Empty workspace'
 }
 
 /** Seconds since epoch as a short local date. */
@@ -223,6 +227,44 @@ export function templateBody(form: TemplateForm, fields: string[]): { body: Omit
   return { body }
 }
 
+/**
+ * The editor form for an existing template (edit or duplicate). The API never returns setup commands,
+ * variables or starter file contents, so those start empty unless the response happens to carry them.
+ */
+export function formFromTemplate(t: SandboxTemplate): TemplateForm {
+  const gb = t.resources?.memory_mb !== undefined ? String(Math.round((t.resources.memory_mb / 1024) * 1000) / 1000) : ''
+  return {
+    name: t.name ?? '',
+    provider: t.provider,
+    image: t.image ?? '',
+    system: t.packages.system.join(', '),
+    python: t.packages.python.join(', '),
+    npm: t.packages.npm.join(', '),
+    setup: (t.setup_commands ?? []).map((c) => c.command).join('\n'),
+    env: Object.entries(t.env ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+    network: t.network.access !== 'disabled',
+    cpus: t.resources?.cpus !== undefined ? String(t.resources.cpus) : '',
+    memoryGb: gb,
+    place: t.place ?? '',
+    gpus: t.gpus === undefined ? '' : String(t.gpus),
+  }
+}
+
+/**
+ * The update body: the create body plus the fields a create leaves out when they are empty or default, sent
+ * explicitly so that clearing the image, emptying a package list or turning the internet back on takes
+ * effect (an update replaces the fields it carries and keeps the rest). Setup commands, variables and
+ * starter files are only sent when filled in, so leaving them empty keeps what is stored.
+ */
+export function templateUpdateBody(form: TemplateForm, fields: string[], body: Omit<CreateTemplateParams, 'files'>, original: SandboxTemplate): Omit<CreateTemplateParams, 'files'> {
+  const has = (f: string) => fields.includes(f)
+  const out = { ...body }
+  if (has('image') && out.image === undefined) out.image = ''
+  if (has('packages') && out.packages === undefined) out.packages = { system: [], python: [], npm: [] }
+  if (has('network') && form.network && original.network.access === 'disabled') out.network = { access: 'enabled' }
+  return out
+}
+
 /** Environment-menu values that ask for a fresh sandbox for the chat: `new:` (empty) or `new:<template id>`. */
 export const NEW_SANDBOX = 'new:'
 
@@ -235,4 +277,24 @@ export function sessionEnvironment(choice: string): Record<string, string> | und
   if (choice === NEW_SANDBOX) return { type: 'openai_hosted', provider: 'sandbox' }
   if (choice.startsWith(NEW_SANDBOX)) return { type: 'sandbox', template_id: choice.slice(NEW_SANDBOX.length) }
   return { type: 'sandbox', environment_id: choice }
+}
+
+const STAGE_TEXT: Record<SandboxProgress['stage'], string> = {
+  pulling_image: 'Downloading the image…',
+  starting: 'Starting…',
+  preparing: 'Preparing the sandbox…',
+  installing_packages: 'Installing packages…',
+  copying_runtime: 'Copying the agent runtime…',
+  writing_files: 'Adding files…',
+  running_setup: 'Running setup…',
+  finishing: 'Finishing…',
+}
+
+/** Plain words for a setup stage; `Setting up…` when the server sent none (or a stage this app does not know). */
+export function setupProgressText(progress: SandboxProgress | undefined): string {
+  if (!progress) return 'Setting up…'
+  if (progress.stage === 'running_setup' && progress.step !== undefined && progress.steps !== undefined) {
+    return `Running setup (${progress.step} of ${progress.steps})${progress.detail ? `: ${progress.detail}` : '…'}`
+  }
+  return STAGE_TEXT[progress.stage] ?? 'Setting up…'
 }

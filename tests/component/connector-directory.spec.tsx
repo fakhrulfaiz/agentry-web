@@ -45,7 +45,7 @@ describe('ConnectorDirectory', () => {
 
   it('category chips filter the grid', async () => {
     render(<ConnectorDirectory entries={entries} featured={featured} failed={false} />)
-    await userEvent.click(within(screen.getByRole('group', { name: 'Categories' })).getByRole('button', { name: 'Crm' }))
+    await userEvent.click(within(screen.getByRole('group', { name: 'Categories' })).getByRole('button', { name: 'CRM' }))
     expect(within(screen.getByRole('list', { name: 'Connectors' })).getAllByRole('listitem')).toHaveLength(15)
   })
 

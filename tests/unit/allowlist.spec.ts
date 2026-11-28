@@ -32,13 +32,20 @@ describe('isAllowed', () => {
     ['GET', '/agents/environments/runtimes'],
     ['GET', '/agents/environments/templates'],
     ['POST', '/agents/environments/templates'],
+    ['POST', '/agents/environments/templates/tpl_1'],
     ['DELETE', '/agents/environments/templates/tpl_1'],
     ['GET', '/agents/environments'],
     ['POST', '/agents/environments'],
     ['GET', '/agents/environments/env_1'],
+    ['POST', '/agents/environments/env_1'],
     ['DELETE', '/agents/environments/env_1'],
     ['GET', '/agents/environments/env_1/files'],
     ['POST', '/agents/environments/env_1/files'],
+    ['GET', '/agents/environments/env_1/folders'],
+    ['POST', '/agents/environments/env_1/terminals'],
+    ['DELETE', '/agents/environments/env_1/terminals/term_ab12'],
+    ['POST', '/agents/environments/env_1/terminals/term_ab12/input'],
+    ['POST', '/agents/environments/env_1/terminals/term_ab12/resize'],
     ['POST', '/agents/sessions'],
     ['GET', '/agents/sessions'],
     ['GET', `/agents/sessions/${ID}`],
@@ -50,6 +57,7 @@ describe('isAllowed', () => {
     ['GET', '/agents/skills'],
     ['POST', '/agents/files'],
     ['GET', '/agents/files/file_abc/content'],
+    ['GET', '/agents/files/timg_ses_0123456789abcdef0123456789abcdef/content'],
     ['DELETE', '/agents/files/file_abc'],
     ['GET', '/agents/commands'],
     ['POST', `/agents/sessions/${ID}/commands/compact`],
@@ -136,6 +144,21 @@ describe('isAllowed', () => {
     }
   })
 
+  it('allows GET on the turn-changes routes only, with numeric indexes', () => {
+    for (const path of [`/agents/sessions/${ID}/changes`, `/agents/sessions/${ID}/turns/turn_12/changes`, `/agents/sessions/${ID}/turns/turn_12/changes/3`]) {
+      expect(isAllowed('GET', path), path).toBe(true)
+      expect(isAllowed('POST', path), path).toBe(false)
+      expect(isAllowed('DELETE', path), path).toBe(false)
+    }
+    for (const path of [
+      `/agents/sessions/${ID}/turns/turn_12/changes/abc`,
+      `/agents/sessions/${ID}/turns/turn_12/changes/-1`,
+      `/agents/sessions/${ID}/turns/turn_12/changes/123456`,
+      `/agents/sessions/${ID}/turns/turn_12/changes/1/x`,
+      `/agents/sessions/${ID}/turns/..%2F/changes`,
+    ]) expect(isAllowed('GET', path), path).toBe(false)
+  })
+
   it('serves session artifacts only through the list rule (bytes have their own validated route)', () => {
     expect(isAllowed('GET', `/agents/sessions/${ID}/artifacts`)).toBe(true)
     expect(isAllowed('POST', `/agents/sessions/${ID}/artifacts`)).toBe(false)
@@ -191,7 +214,7 @@ describe('sandbox routes', () => {
   it('keep file bytes off the proxy and refuse methods the page does not use', () => {
     expect(isAllowed('GET', '/agents/environments/env_1/files/a.txt')).toBe(false)
     expect(isAllowed('POST', '/agents/environments/providers')).toBe(false)
-    expect(isAllowed('POST', '/agents/environments/env_1')).toBe(false)
+    expect(isAllowed('POST', '/agents/environments/runtimes')).toBe(false)
     expect(isAllowed('DELETE', '/agents/environments')).toBe(false)
   })
 
@@ -201,5 +224,27 @@ describe('sandbox routes', () => {
       expect(isAllowed('GET', `/agents/environments/env_1/${action}`)).toBe(false)
     }
     expect(isAllowed('POST', '/agents/environments/env_1/destroy')).toBe(false)
+  })
+})
+
+describe('browser take-over routes', () => {
+  it('allows POST control and input on a session, nothing else', () => {
+    expect(isAllowed('POST', `/agents/sessions/${ID}/browser/control`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/browser/input`)).toBe(true)
+    expect(isAllowed('GET', `/agents/sessions/${ID}/browser/control`)).toBe(false)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/browser/devtools`)).toBe(false)
+    expect(isAllowed('POST', '/agents/sessions/../browser/input')).toBe(false)
+  })
+})
+
+describe('background job routes', () => {
+  it('allows the list, one job and Stop, and nothing else', () => {
+    expect(isAllowed('GET', `/agents/sessions/${ID}/jobs`)).toBe(true)
+    expect(isAllowed('GET', `/agents/sessions/${ID}/jobs/bash-3f2a9c1e`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/jobs/bash-3f2a9c1e/kill`)).toBe(true)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/jobs`)).toBe(false)
+    expect(isAllowed('DELETE', `/agents/sessions/${ID}/jobs/bash-1`)).toBe(false)
+    expect(isAllowed('GET', `/agents/sessions/${ID}/jobs/bash-1/kill`)).toBe(false)
+    expect(isAllowed('POST', `/agents/sessions/${ID}/jobs/bash.1/kill`)).toBe(false)
   })
 })

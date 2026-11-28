@@ -14,7 +14,8 @@ import { Heading } from '@astryxdesign/core/Heading'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
 import { IconButton } from '@astryxdesign/core/IconButton'
-import { StackItem } from '@astryxdesign/core/Layout'
+import { MoreMenu } from '@astryxdesign/core/MoreMenu'
+import { Layout, LayoutContent, LayoutFooter, StackItem } from '@astryxdesign/core/Layout'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
@@ -24,29 +25,32 @@ import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
 import {
   CircleStackIcon,
-  ClockIcon,
   CommandLineIcon,
-  CubeIcon,
   CubeTransparentIcon,
   DocumentDuplicateIcon,
   ExclamationTriangleIcon,
   FolderOpenIcon,
+  PencilIcon,
   ServerIcon,
   Square3Stack3DIcon,
-  TrashIcon,
 } from '@heroicons/react/24/outline'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { SandboxEnvironment, SandboxProvider, SandboxRuntimes, SandboxTemplate } from '@/api/types'
 import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { IconTile } from '@/ui/shared/IconTile'
-import { environmentLook, environmentName, fieldWords, lastUsed, providerBlurb, providerTitle, shortDate, shortId, templateSummary } from './format'
+import { environmentName, fieldWords, providerBlurb, providerTitle, templateSummary } from './format'
 import { defaultPlace, initialProvider, RunsOnPicker } from './RunsOnPicker'
+import { TemplateDetailsDialog } from './TemplateDetails'
 import { TemplateEditorDialog } from './TemplateEditorDialog'
+import { EnvironmentCard, Section } from './EnvironmentCard'
+import { groupEnvironments, summarize } from './overview'
+import { useEnvironmentChats } from './use-environment-chats'
+import { RenameEnvironmentDialog } from './RenameEnvironmentDialog'
 import { useCachedState } from '@/ui/page-cache'
 
-const COLUMN_WIDTH = 880
+const COLUMN_WIDTH = 1000
 type View = 'environments' | 'templates' | 'providers'
 /** While any environment is changing state, the list refreshes this often. */
 const SETTLING_POLL_MS = 3000
@@ -58,15 +62,15 @@ function Meta({ icon, children }: { icon: typeof FolderOpenIcon; children: strin
 const providerIcon = (name: string) => (name === 'local' ? ServerIcon : CubeTransparentIcon)
 const settling = (env: SandboxEnvironment) => env.status === 'pending' || env.sandbox?.state === 'provisioning' || env.sandbox?.state === 'deleting'
 
+type NewEnvironmentInput = { templateId?: string; provider?: string; name?: string; place?: string }
+
 function NewEnvironmentDialog({
-  isOpen, onClose, templates, providers, onCreated,
-}: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreated(): void }) {
+  isOpen, onClose, templates, providers, onCreate,
+}: { isOpen: boolean; onClose(): void; templates: SandboxTemplate[]; providers: SandboxProvider[]; onCreate(input: NewEnvironmentInput): void }) {
   const [name, setName] = useState('')
   const [provider, setProvider] = useState('')
   const [place, setPlace] = useState('')
   const [templateId, setTemplateId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -75,62 +79,56 @@ function NewEnvironmentDialog({
     setProvider(first)
     setPlace(defaultPlace(providers.find((p) => p.name === first)))
     setTemplateId('')
-    setError(null)
   }, [isOpen, providers])
 
   // Only templates made for the chosen place can start here.
   const fitting = templates.filter((t) => t.provider === provider)
   const chosen = fitting.find((t) => t.id === templateId)
 
-  async function create() {
-    setBusy(true)
-    setError(null)
-    try {
-      const created = await api.createSandboxEnvironment({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
-      // A refused sandbox (a limit, a failed setup) is recorded as failed: show why here instead of closing.
-      if (created.status === 'failed' && created.error) {
-        onCreated()
-        return setError(created.error)
-      }
-      onCreated()
-      onClose()
-    } catch (err) {
-      if (isSignedOut(err)) return goToLogin()
-      setError(err instanceof ApiError ? err.message : 'Could not create the environment.')
-    } finally {
-      setBusy(false)
-    }
+  // Setting up a sandbox can take minutes: the server answers at once with a record that is still setting up, and the list shows it.
+  function create() {
+    onCreate({ ...(templateId ? { templateId } : {}), ...(provider ? { provider } : {}), ...(provider === 'sandbox' && place ? { place } : {}), ...(name.trim() ? { name: name.trim() } : {}) })
+    onClose()
   }
 
   return (
     <Dialog isOpen={isOpen} onOpenChange={(open: boolean) => !open && onClose()} purpose="form" width={520}>
-      <DialogHeader title="New environment" subtitle="A workspace an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />
-      <VStack gap={4} padding={4}>
-        <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat environment menu." value={name} onChange={setName} />
-        {providers.length > 0 && <RunsOnPicker
-          providers={providers}
-          value={provider}
-          place={place}
-          onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
-          onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
-        />}
-        <Selector
-          label="Template"
-          description={fitting.length > 0 ? 'Start from a saved setup, or from nothing.' : `No templates for ${providerTitle(provider).toLowerCase()} yet. It starts from nothing.`}
-          options={[{ value: '', label: 'Start from nothing' }, ...fitting.map((t) => ({ value: t.id, label: t.name || 'Untitled template', description: templateSummary(t) }))]}
-          value={templateId}
-          onChange={setTemplateId}
-          isDisabled={fitting.length === 0}
-        />
-        {chosen && chosen.unsupported_fields.length > 0 && (
-          <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
-        )}
-        {error !== null && <Banner status="error" title={error} />}
-        <HStack gap={2} hAlign="end">
-          <Button label="Cancel" variant="ghost" onClick={onClose} />
-          <Button label="Create environment" variant="primary" isLoading={busy} isDisabled={!provider} onClick={() => void create()} />
-        </HStack>
-      </VStack>
+      <Layout
+        header={<DialogHeader title="New environment" subtitle="A workspace an agent runs in, with its own files." onOpenChange={(open: boolean) => !open && onClose()} />}
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              <TextInput label="Name" isOptional placeholder="Data analysis" description="Shown in the list and in the new-chat environment menu." value={name} onChange={setName} />
+              {providers.length > 0 && <RunsOnPicker
+                providers={providers}
+                value={provider}
+                place={place}
+                onChange={(p) => { setProvider(p); setPlace(defaultPlace(providers.find((x) => x.name === p))); setTemplateId('') }}
+                onPlaceChange={(p, pl) => { setProvider(p); setPlace(pl); setTemplateId('') }}
+              />}
+              <Selector
+                label="Template"
+                description={fitting.length > 0 ? 'Start from a saved setup, or from nothing.' : `No templates for ${providerTitle(provider).toLowerCase()} yet. It starts from nothing.`}
+                options={[{ value: '', label: 'Start from nothing' }, ...fitting.map((t) => ({ value: t.id, label: t.name || 'Untitled template', description: templateSummary(t) }))]}
+                value={templateId}
+                onChange={setTemplateId}
+                isDisabled={fitting.length === 0}
+              />
+              {chosen && chosen.unsupported_fields.length > 0 && (
+                <Banner status="warning" title={`This template sets ${fieldWords(chosen.unsupported_fields)}, which ${providerTitle(chosen.provider).toLowerCase()} cannot apply, so it will not start.`} />
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Cancel" variant="ghost" onClick={onClose} />
+              <Button label="Create environment" variant="primary" isDisabled={!provider} onClick={create} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   )
 }
@@ -185,7 +183,56 @@ export function SandboxesPage() {
   const [runtimes, setRuntimes] = useCachedState<SandboxRuntimes>('sandboxes.runtimes')
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'environment' | 'template' | null>(null)
+  const startCreate = (input: NewEnvironmentInput) => {
+    api.createSandboxEnvironment(input).then(
+      async (created) => {
+        const list = await api.listSandboxEnvironments().catch(() => null)
+        if (list) setEnvironments(list.data)
+        else setEnvironments((cur) => [created, ...(cur ?? [])])
+      },
+      (err: unknown) => {
+        if (isSignedOut(err)) return goToLogin()
+        setError(err instanceof ApiError ? err.message : 'Could not create the environment.')
+      },
+    )
+  }
   const [removing, setRemoving] = useState<SandboxTemplate | null>(null)
+  const [viewing, setViewing] = useState<SandboxTemplate | null>(null)
+  const [editing, setEditing] = useState<{ mode: 'edit' | 'duplicate'; template: SandboxTemplate } | null>(null)
+  const [renaming, setRenaming] = useState<SandboxEnvironment | null>(null)
+  const [deletingEnv, setDeletingEnv] = useState<SandboxEnvironment | null>(null)
+  const [acting, setActing] = useState<string | null>(null)
+  const replaceEnvironment = (updated: SandboxEnvironment) => setEnvironments((cur) => (cur ?? []).map((e) => (e.id === updated.id ? updated : e)))
+
+  /** Start or stop a sandbox from its card; the answer is the updated environment. */
+  async function lifecycle(env: SandboxEnvironment, action: 'start' | 'stop') {
+    setActing(env.id)
+    setError(null)
+    try {
+      replaceEnvironment(action === 'start' ? await api.startSandboxEnvironment(env.id) : await api.stopSandboxEnvironment(env.id))
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(err instanceof ApiError ? err.message : `Could not ${action} ${environmentName(env)}.`)
+    } finally {
+      setActing(null)
+    }
+  }
+
+  async function removeEnvironment() {
+    const env = deletingEnv
+    if (!env) return
+    setDeletingEnv(null)
+    setActing(env.id)
+    try {
+      await api.deleteSandboxEnvironment(env.id)
+      setEnvironments((cur) => (cur ?? []).filter((e) => e.id !== env.id))
+    } catch (err) {
+      if (isSignedOut(err)) return goToLogin()
+      setError(err instanceof ApiError ? err.message : `Could not delete ${environmentName(env)}.`)
+    } finally {
+      setActing(null)
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -218,8 +265,24 @@ export function SandboxesPage() {
     return () => clearInterval(timer)
   }, [anySettling])
 
+  const groups = groupEnvironments(environments ?? [])
+  const places = (providers ?? []).flatMap((p) => p.places ?? [])
+  const chatsByEnv = useEnvironmentChats()
+  // Coming back to the tab shows the machines' current state.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return
+      api.listSandboxEnvironments().then((page) => setEnvironments(page.data), () => undefined)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
+
   const loading = environments === null || templates === null || providers === null
-  const templateName = (id?: string) => (id ? templates?.find((t) => t.id === id)?.name || 'Deleted template' : null)
 
   async function removeTemplate() {
     if (!removing) return
@@ -239,6 +302,7 @@ export function SandboxesPage() {
         <VStack gap={1}>
           <Heading level={1} type="display-2">Sandboxes</Heading>
           <Text color="secondary">Where your agents run their commands and keep their files.</Text>
+          {view === 'environments' && environments && environments.length > 0 && <Text type="supporting" color="secondary">{summarize(environments)}</Text>}
         </VStack>
         <HStack gap={3} vAlign="center" wrap="wrap">
           <StackItem size="fill">
@@ -264,34 +328,27 @@ export function SandboxesPage() {
               actions={<Button label="New environment" onClick={() => setDialog('environment')} />}
             />
           ) : (
-            <CardGrid label="Environments">
-              {environments.map((env) => {
-                const look = environmentLook(env)
-                const from = templateName(env.template_id)
-                const used = lastUsed(env.sandbox?.last_used_at)
-                return (
-                  <EntityCard
-                    key={env.id}
-                    href={`/sandboxes/${env.id}`}
-                    title={environmentName(env)}
-                    leading={<IconTile icon={providerIcon(env.provider)} hue={look.variant === 'success' ? (env.provider === 'local' ? 'teal' : 'blue') : look.variant === 'error' ? 'red' : 'slate'} />}
-                    trailing={<HStack gap={2} vAlign="center"><StatusDot variant={look.variant} label={look.text} /><Text type="supporting" color="secondary">{look.text}</Text></HStack>}
-                    footer={
-                      <>
-                        <Meta icon={providerIcon(env.provider)}>{providerTitle(env.provider)}</Meta>
-                        {from && <Meta icon={DocumentDuplicateIcon}>{from}</Meta>}
-                        {env.sandbox?.image && <Meta icon={CubeIcon}>{env.sandbox.image}</Meta>}
-                        {used ? <Meta icon={ClockIcon}>{used}</Meta> : <Meta icon={FolderOpenIcon}>{`Created ${shortDate(env.created_at)}`}</Meta>}
-                      </>
-                    }
-                  >
-                    {env.error
-                      ? <Text type="supporting" color="secondary" maxLines={2}>{env.error}</Text>
-                      : !env.name && <Text type="supporting" color="secondary">{shortId(env.id)}</Text>}
-                  </EntityCard>
-                )
-              })}
-            </CardGrid>
+            <VStack gap={5}>
+              {([['Running', groups.running], ['Stopped', groups.stopped], ['This server', groups.server]] as const).map(([title, list]) =>
+                list.length === 0 ? null : (
+                  <Section key={title} title={title} count={list.length}>
+                    {list.map((env) => (
+                      <EnvironmentCard
+                        key={env.id}
+                        env={env}
+                        template={templates.find((t) => t.id === env.template_id)}
+                        places={places}
+                        chats={chatsByEnv ? (chatsByEnv.get(env.id)?.length ?? 0) : null}
+                        busy={acting === env.id}
+                        onRename={() => setRenaming(env)}
+                        onDelete={() => setDeletingEnv(env)}
+                        onLifecycle={(action) => void lifecycle(env, action)}
+                      />
+                    ))}
+                  </Section>
+                ),
+              )}
+            </VStack>
           )
         ) : view === 'templates' ? (
           templates.length === 0 ? (
@@ -307,8 +364,18 @@ export function SandboxesPage() {
                 <EntityCard
                   key={tpl.id}
                   title={tpl.name || 'Untitled template'}
+                  href={`#${tpl.id}`}
+                  onClick={(event) => { event.preventDefault(); if (tpl.built_in) setViewing(tpl); else setEditing({ mode: 'edit', template: tpl }) }}
                   leading={<IconTile icon={Square3Stack3DIcon} hue="violet" />}
-                  trailing={<IconButton label={`Delete ${tpl.name || 'template'}`} size="sm" variant="ghost" icon={<Icon icon={TrashIcon} />} onClick={() => setRemoving(tpl)} />}
+                  trailing={
+                    <HStack gap={1} vAlign="center">
+                      {!tpl.built_in && <IconButton label={`Edit ${tpl.name || 'template'}`} tooltip="Edit" size="sm" variant="ghost" icon={<Icon icon={PencilIcon} />} onClick={() => setEditing({ mode: 'edit', template: tpl })} />}
+                      <IconButton label={`Duplicate ${tpl.name || 'template'}`} tooltip="Duplicate" size="sm" variant="ghost" icon={<Icon icon={DocumentDuplicateIcon} />} onClick={() => setEditing({ mode: 'duplicate', template: tpl })} />
+                      {tpl.built_in ? <Text type="supporting" color="secondary">Built in</Text> : (
+                        <MoreMenu label={`More options for ${tpl.name || 'template'}`} size="sm" alignment="end" items={[{ label: 'Delete', variant: 'destructive' as const, onClick: () => setRemoving(tpl) }]} />
+                      )}
+                    </HStack>
+                  }
                   footer={
                     <>
                       <Meta icon={providerIcon(tpl.provider)}>{providerTitle(tpl.provider)}</Meta>
@@ -334,8 +401,19 @@ export function SandboxesPage() {
         )}
       </VStack>
 
-      <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreated={() => void load()} />
-      <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onCreated={() => void load()} />
+      <NewEnvironmentDialog isOpen={dialog === 'environment'} onClose={() => setDialog(null)} templates={templates ?? []} providers={providers ?? []} onCreate={startCreate} />
+      <RenameEnvironmentDialog environment={renaming} onClose={() => setRenaming(null)} onRenamed={replaceEnvironment} />
+      <AlertDialog
+        isOpen={deletingEnv !== null}
+        onOpenChange={(open: boolean) => !open && setDeletingEnv(null)}
+        title={`Delete ${deletingEnv ? environmentName(deletingEnv) : 'this environment'}?`}
+        description="Its workspace and every file in it are removed. Chats that used it keep their history."
+        actionLabel="Delete environment"
+        onAction={() => void removeEnvironment()}
+      />
+      <TemplateDetailsDialog template={viewing} onClose={() => setViewing(null)} />
+      <TemplateEditorDialog isOpen={dialog === 'template'} onClose={() => setDialog(null)} providers={providers ?? []} onSaved={() => void load()} />
+      <TemplateEditorDialog isOpen={editing !== null} onClose={() => setEditing(null)} providers={providers ?? []} mode={editing?.mode} template={editing?.template} onSaved={() => void load()} />
       <AlertDialog
         isOpen={removing !== null}
         onOpenChange={(open: boolean) => !open && setRemoving(null)}

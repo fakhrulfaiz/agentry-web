@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closeTab, initialState, openFile, pinTab, setWidth } from '@/preview/store'
+import { closeFiles, closeTab, initialState, openFile, pinTab, setWidth, showFiles } from '@/preview/store'
 
 describe('preview store', () => {
   it('opens a file, replacing the unpinned tab', () => {
@@ -10,12 +10,20 @@ describe('preview store', () => {
     s = openFile(s, 'b.py')
     expect(s.tabs).toEqual([{ path: 'b.py', pinned: false }])
   })
-  it('appends after a tab is pinned, and closing falls back to Files', () => {
-    let s = pinTab(openFile(initialState(), 'a.md'), 'a.md')
+  it('appends after a tab is pinned; closing falls back to Files when its tab is open, else Start', () => {
+    let s = pinTab(openFile(showFiles(initialState()), 'a.md'), 'a.md')
     s = openFile(s, 'b.py')
     expect(s.tabs.map((t) => t.path)).toEqual(['a.md', 'b.py'])
     s = closeTab(s, 'b.py')
     expect(s.active).toBe('files')
+    expect(closeTab(openFile(initialState(), 'c.md'), 'c.md').active).toBe('start')
+  })
+  it('Files is a tab: showFiles opens it, closeFiles removes it and returns to Start', () => {
+    const s = showFiles(initialState())
+    expect(s).toMatchObject({ open: true, filesOpen: true, active: 'files' })
+    expect(closeFiles(s)).toMatchObject({ filesOpen: false, active: 'start' })
+    const onFile = openFile(s, 'a.md')
+    expect(closeFiles(onFile)).toMatchObject({ filesOpen: false, active: 'a.md' })
   })
   it('clamps width', () => {
     expect(setWidth(initialState(), 5000).width).toBe(900)

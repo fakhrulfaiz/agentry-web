@@ -37,6 +37,7 @@ const session = (id: string, title: string): OAIAgentSession => ({
   vault_ids: [],
   agent: { id: 'agent_main', object: 'agent' } as OAIAgentSession['agent'],
   environment: { type: 'local', id: 'env_1' },
+  project_id: null,
   required_actions: [],
   usage: null,
 })

@@ -20,7 +20,9 @@
  * (409 `session_setting_not_live`) keeps the draft, shows Agentry's message and
  * puts the menus back.
  */
-import { Button } from '@astryxdesign/core/Button'
+import { ChangesCard, changesPlacement } from './ChangesCard'
+import { Icon } from '@astryxdesign/core/Icon'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { Banner } from '@astryxdesign/core/Banner'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
@@ -43,6 +45,11 @@ import { ChatTitleMenu } from '@/ui/shell/ChatTitleMenu'
 import { RenameDialog, SESSIONS_CHANGED, type SessionRef } from '@/ui/shell/session-actions'
 import { TopBar } from '@/ui/shell/TopBar'
 import { PreviewPanelProvider, usePreviewPanel } from '@/preview/store'
+import { PanelConversationContext, type PanelConversation } from '@/chat/panel-data'
+import { browserState } from '@/chat/browser-tools'
+import { BrowserAutoOpen } from '@/ui/preview/BrowserView'
+import { deriveTasks } from '@/chat/tasks'
+import { deriveTodos } from '@/chat/todos'
 import { PreviewPanel } from '@/ui/preview/PreviewPanel'
 import { useSessionView, ViewTabs, type ViewOption } from '@/ui/shell/ViewTabs'
 import { buildTrajectory, type TrajectoryRecord } from '@/ui/trajectory/build-trajectory'
@@ -53,11 +60,15 @@ import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
 import { Message } from './Message'
 import { scrollToItem } from './reveal'
-import { SessionArtifacts } from './SessionArtifacts'
-import { SubagentItems } from './SubagentCard'
+import { DeliveredFiles, useSessionDeliverables } from './SessionArtifacts'
+import { SessionFilesContext } from './session-files'
+import { PanelRightIcon } from '@/ui/icons/PanelRightIcon'
+import { SubagentActions, SubagentItems } from './SubagentCard'
+import { splitSubagentActions, waitingOnSubagentsOnly } from '@/chat/subagent-actions'
 import { Thinking } from './Thinking'
 import { groupTurns } from './group-turns'
 import { TurnGroup } from './TurnGroup'
+import { hasVisibleOutput, readShowSteps, shouldWaitForOutput, waitingLabel } from '@/chat/show-steps'
 import { readOpenFolds, writeOpenFolds } from '@/chat/open-folds'
 import { usePrefersReducedMotion } from './use-reduced-motion'
 
@@ -80,14 +91,29 @@ const styles = stylex.create({
   inactive: { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' },
 })
 
-/** Files button in the chat header; also opens `?file=<path>` (from the Artifacts page) once. */
+/** The `environmentId` prop for chats that run in a sandbox (the only ones with a terminal). */
+function sandboxEnvironmentProp(environment: { type?: string; environment_id?: unknown } | undefined): { environmentId?: string } {
+  return environment?.type === 'sandbox' && typeof environment.environment_id === 'string' ? { environmentId: environment.environment_id } : {}
+}
+
+/** Workspace button in the chat header (opens the panel's Start page); also opens `?file=<path>` (from the Artifacts page) once. */
 function PreviewControls() {
   const { actions } = usePreviewPanel()
   useEffect(() => {
     const file = new URLSearchParams(window.location.search).get('file')
     if (file) actions.openFile(file)
   }, [actions])
-  return <Button label="Files" size="sm" variant="ghost" onClick={actions.showFiles} />
+  const { state } = usePreviewPanel()
+  return (
+    <IconButton
+      label={state.open ? 'Close workspace panel' : 'Open workspace panel'}
+      tooltip={state.open ? 'Close workspace panel' : 'Workspace: files and terminal'}
+      variant="ghost"
+      size="sm"
+      icon={<Icon icon={PanelRightIcon} size="sm" />}
+      onClick={actions.toggle}
+    />
+  )
 }
 
 const CLOSED_NOTICE: Record<ClosedReason, { title: string; description: string }> = {
@@ -119,7 +145,7 @@ function retryTexts(items: MessageView[]): Map<string, string> {
 }
 
 export function Conversation({ sessionId }: { sessionId: string }) {
-  const { state, loaded, ready, connection, closedReason, send, stop, answer, runCommand } = useConversation(sessionId)
+  const { state, loaded, ready, firstSend, connection, closedReason, send, stop, answer, runCommand } = useConversation(sessionId)
   const router = useRouter()
   const toast = useToast()
   const [session, setSession] = useState<OAIAgentSession | null>(null)
@@ -137,7 +163,9 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [reveal, setReveal] = useState<string | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
-  // Finished turns whose process group the user expanded; the rest stay collapsed.
+  // Finished turns whose work block the user toggled away from the default (collapsed, or expanded with "Always show steps").
+  const [showSteps, setShowSteps] = useState(false)
+  useEffect(() => setShowSteps(readShowSteps()), [])
   // Kept per chat for the browser session, so a remount or reload does not close them.
   const [expanded, setExpandedState] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => setExpandedState(readOpenFolds(sessionId)), [sessionId])
@@ -155,13 +183,14 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   // Notices already shown: a turn that fails or is stopped after the send adds a new one and ends the wait.
   const seenNotices = useRef<Set<string>>(new Set())
   const noticesAtSend = useRef<Set<string>>(new Set())
+  // Older turns are not output for the send we are waiting on; keep their ids as a baseline.
+  const itemsAtSend = useRef<ReadonlySet<string>>(new Set())
+  const itemsNow = useRef(state.items)
+  itemsNow.current = state.items
   const reducedMotion = usePrefersReducedMotion()
-  // Something visibly happened already (a streaming thought or answer, a running tool): no waiting row.
-  const liveActivity = state.items.some(
-    (v) =>
-      (v.kind === 'assistant' && v.streaming && v.text.trim() !== '') ||
-      (v.kind === 'reasoning' && v.streaming && v.text.trim() !== '') ||
-      (v.kind === 'tool' && v.status === 'running'),
+  // Something the user can actually see from this send already: no waiting row.
+  const visibleOutput = hasVisibleOutput(
+    itemsAtSend.current.size > 0 ? state.items.filter((v) => !itemsAtSend.current.has(v.id)) : state.items,
   )
   useEffect(() => {
     for (const view of state.items) if (view.kind === 'notice') seenNotices.current.add(view.id)
@@ -172,13 +201,13 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       sent &&
       (state.status === 'in_progress' ||
         state.status === 'requires_action' ||
-        liveActivity ||
+        visibleOutput ||
         endedInNotice ||
         closedReason)
     ) {
       setSent(false)
     }
-  }, [sent, state.status, liveActivity, endedInNotice, closedReason])
+  }, [sent, state.status, visibleOutput, endedInNotice, closedReason])
   // Same state as the chat, so the trajectory updates live with it.
   const model = session?.agent.model
   const trajectory = useMemo(
@@ -281,6 +310,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   const { change, revert } = settings
   const onSend = useCallback(
     async (text: string, files?: UserFile[]) => {
+      itemsAtSend.current = new Set(itemsNow.current.map((v) => v.id))
       noticesAtSend.current = new Set(seenNotices.current)
       setSent(true)
       try {
@@ -334,15 +364,31 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       },
       effort: (arg, { openMenu }) => {
         if (!arg) return openMenu('effort') ? undefined : `Reasoning effort: ${settings.effort}`
-        const effort = chooseEffort(arg, settings.efforts)
+        const effort = chooseEffort(arg, undefined)
         setEffort(effort)
         return `Reasoning effort set to ${effort}. It applies from your next message.`
       },
       rename: () => setRenaming({ id: sessionId, metadata: session?.metadata }),
     }
-  }, [router, settings.model, settings.effort, settings.efforts, setModel, setEffort, modelOptions, sessionId, session?.metadata])
+  }, [router, settings.model, settings.effort, setModel, setEffort, modelOptions, sessionId, session?.metadata])
   const onStop = useCallback(() => void run(stop).catch(() => {}), [run, stop])
   const onAnswer = useCallback((id: string, a: ActionAnswer) => answer(id, a), [answer])
+  // A subagent's approvals render in its card, not at the end of the chat.
+  const split = useMemo(() => splitSubagentActions(state.items), [state.items])
+
+  const panelData = useMemo<PanelConversation>(
+    () => ({
+      tasks: deriveTasks(state.items, state.subagents, split.bySubagent),
+      jobs: state.jobs,
+      subagentViews: state.items.flatMap((v) => (v.kind === 'subagent' ? [v] : [])),
+      todos: deriveTodos(state.items),
+      browser: browserState(state.items),
+      items: subagentItems,
+      actions: split.bySubagent,
+      answer: onAnswer,
+    }),
+    [state.items, state.subagents, state.jobs, split.bySubagent, subagentItems, onAnswer],
+  )
 
   if (missing) {
     return (
@@ -353,20 +399,43 @@ export function Conversation({ sessionId }: { sessionId: string }) {
     )
   }
 
-  const running = state.status === 'in_progress' || state.status === 'requires_action'
+  const running =
+    state.status === 'in_progress' || (state.status === 'requires_action' && !waitingOnSubagentsOnly(state))
   const streaming = state.items.some((v) => v.kind === 'assistant' && v.streaming)
   const loading = !loaded || !ready
+  // A new chat's session is `idle` until the turn starts, so only a finished turn record ends its wait.
+  const turnEnded = state.turns.some((t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
   // The history is still arriving, the message is being queued, or the model is thinking
   // before its first visible output. A closed stream or an unavailable server shows its own notice.
-  const waiting = !closedReason && !failure?.unavailable && (loading || ((sent || state.status === 'in_progress') && !liveActivity))
+  const waiting = shouldWaitForOutput({
+    loading,
+    ready,
+    status: state.status,
+    sent,
+    firstSend: firstSend !== null,
+    visibleOutput,
+    endedInNotice,
+    closedReason: closedReason !== null,
+    unavailable: Boolean(failure?.unavailable),
+    turnEnded,
+  })
   const retries = retryTexts(state.items)
-  const entries = groupTurns(state.items, state.turnOf, state.turns)
+  // A running turn folds into one live line too, unless "Always show steps" is on.
+  const entries = groupTurns(split.items, state.turnOf, state.turns, { live: !showSteps })
+  const changesAt = changesPlacement(entries, state.turnOf, state.turns)
+  // Delivered files sit after the turn whose `present` call delivered them; any whose turn is not shown go last.
+  const deliverables = useSessionDeliverables(sessionId ?? null, ready, !running)
+  const placedTurns = new Set([...changesAt.values()].map((c) => c.turnId))
+  const unplacedFiles = [...deliverables.byTurn].filter(([turnId]) => !placedTurns.has(turnId)).flatMap(([, files]) => files)
   // A chat with nothing in it yet has no trajectory to switch to (unknown while its history loads).
   const blank = loaded && state.items.length === 0 && state.turns.length === 0
   const shown: View = blank ? 'chat' : view
 
   return (
     <PreviewPanelProvider sessionId={session?.id ?? null}>
+    <PanelConversationContext.Provider value={panelData}>
+    <BrowserAutoOpen loaded={loaded && ready} />
+    <SessionFilesContext.Provider value={session?.id ?? null}>
     <VStack xstyle={styles.page}>
       <TopBar
         title={session && !blank ? <ChatTitleMenu sessionId={session.id} metadata={session.metadata} /> : undefined}
@@ -401,7 +470,6 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                   model: settings.model,
                   onModelChange: settings.setModel,
                   effort: settings.effort,
-                  efforts: settings.efforts,
                   onEffortChange: settings.setEffort,
                 }}
                 status={failure && !failure.unavailable ? { type: 'error', message: failure.message } : undefined}
@@ -409,8 +477,14 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             }
           >
             <SubagentItems.Provider value={subagentItems}>
+              <SubagentActions.Provider value={split.bySubagent}>
               <ChatMessageList isStreaming={streaming}>
-                {entries.map((entry) => {
+                {entries.map((entry, entryIndex) => {
+                  const changes = changesAt.get(entryIndex)
+                  const turnFiles = changes ? deliverables.byTurn.get(changes.turnId) : undefined
+                  const files = turnFiles ? <DeliveredFiles key={`files-${changes!.turnId}`} files={turnFiles} label="Files from this reply" /> : null
+                  const changesCard = changes && sessionId && ready ? <ChangesCard key={`changes-${changes.turnId}`} sessionId={sessionId} turnId={changes.turnId} completed={changes.completed} /> : null
+                  const card = files || changesCard ? [files, changesCard].filter(Boolean) : null
                   const row = (view: MessageView) => {
                     const retryText = retries.get(view.id)
                     return (
@@ -424,16 +498,16 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                       />
                     )
                   }
-                  if (entry.type === 'view') return row(entry.view)
-                  return (
+                  if (entry.type === 'view') return card ? [row(entry.view), ...card] : row(entry.view)
+                  const group = (
                     <TurnGroup
                       key={`group-${entry.turnId}`}
                       group={entry}
-                      open={expanded.has(entry.turnId) || entry.views.some((v) => v.id === reveal || v.id === highlight)}
+                      open={expanded.has(entry.turnId) !== showSteps || entry.views.some((v) => v.id === reveal || v.id === highlight)}
                       onOpenChange={(open) =>
                         setExpanded((cur) => {
                           const next = new Set(cur)
-                          if (open) next.add(entry.turnId)
+                          if (open !== showSteps) next.add(entry.turnId)
                           else next.delete(entry.turnId)
                           return next
                         })
@@ -442,12 +516,13 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                       {entry.views.map(row)}
                     </TurnGroup>
                   )
+                  return card ? [group, ...card] : group
                 })}
-                {waiting && <Thinking label={loading && state.items.length === 0 ? 'Loading conversation…' : 'Agentry is thinking…'} />}
-                {/* The files the agent created, as a card at the end of the chat (claude.ai's
-                    artifacts), not pinned to the composer. */}
-                {sessionId && <SessionArtifacts sessionId={sessionId} enabled={ready} idle={!running} />}
+                {waiting && <Thinking label={waitingLabel(loading, state.status, firstSend, ready, sent)} />}
+                {/* Delivered files whose turn is not in the list (an older backend without turn ids). */}
+                <DeliveredFiles files={unplacedFiles} />
               </ChatMessageList>
+              </SubagentActions.Provider>
             </SubagentItems.Provider>
           </ChatLayout>
         </VStack>
@@ -457,10 +532,12 @@ export function Conversation({ sessionId }: { sessionId: string }) {
           </VStack>
         )}
       </VStack>
-      {session && <PreviewPanel sessionId={session.id} idle={!running} />}
+      {session && <PreviewPanel sessionId={session.id} idle={!running} {...sandboxEnvironmentProp(session.environment)} />}
       </HStack>
       <RenameDialog session={renaming} onClose={() => setRenaming(null)} />
     </VStack>
+    </SessionFilesContext.Provider>
+    </PanelConversationContext.Provider>
     </PreviewPanelProvider>
   )
 }

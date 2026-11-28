@@ -12,7 +12,7 @@
  * invented: missing timing stays undefined.
  *
  * Assistant steps: the backend saves a step as `item_reason_N` (thinking) and
- * `item_msg_N` (text, which repeats the thinking first). They form one
+ * `item_msg_N` (its text, without the thinking). They form one
  * Assistant record "Step k" (k counts steps in the turn). Tool calls belong to
  * the step before them (`stepId`), which is what the Calls fold groups.
  *
@@ -23,7 +23,6 @@
  * cancelled turn takes that status.
  */
 import type { OAIItemTiming, OAISubagent, OAITokenUsage, OAITurn, StoredSessionItem, TurnStatus } from '@/api/types'
-import { stripReasoning } from '@/chat/reducer'
 
 export type RecordKind = 'user' | 'assistant' | 'tool' | 'subtool'
 export type RecordStatus = 'pending' | 'completed' | 'failed' | 'cancelled'
@@ -49,7 +48,10 @@ export interface TrajectoryRecord {
   /** Assistant text, or tool output. */
   output?: unknown
   thinking?: string
+  /** An assistant step's model, or the model a subagent ran (its resource's `model`, else the call's `model` argument). */
   model?: string
+  /** For a `subagent` call: what the subagent was asked (the call's `prompt`). */
+  prompt?: string
   /** Unix seconds (fractional); only when recorded. */
   startedAt?: number
   /** An assistant step's first streamed token. */
@@ -180,7 +182,6 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
   const steps = new Map<string, TrajectoryRecord>()
   const stepCount = new Map<string, number>()
   const lastStep = new Map<string, TrajectoryRecord>()
-  const reasoningText = new Map<string, string>()
   const calls = new Map<string, TrajectoryRecord>()
   const sub = scope.chatItemId !== undefined
 
@@ -227,20 +228,15 @@ function recordsOf(items: StoredSessionItem[], scope: Scope): TrajectoryRecord[]
         const step = stepFor(item.id, turnId)
         applyTiming(step, item.timing)
         if (item.usage) step.usage = item.usage
-        const n = stepNumberOf(item.id)
-        const prefix = n ? (reasoningText.get(`${turnId}:${n}`) ?? '') : ''
-        const own = stripReasoning(text, prefix)
-        step.output = own
-        if (own.trim()) {
-          step.title = firstLine(plain(own))
+        step.output = text
+        if (text.trim()) {
+          step.title = firstLine(plain(text))
           if (!sub) step.chatItemId = item.id
         }
         break
       }
       case 'reasoning': {
         const text = (item.summary ?? []).map((p) => p.text).join('')
-        const n = stepNumberOf(item.id)
-        if (n) reasoningText.set(`${turnId}:${n}`, text)
         const step = stepFor(item.id, turnId)
         applyTiming(step, item.timing)
         step.thinking = (step.thinking ? `${step.thinking}\n\n` : '') + text
@@ -314,14 +310,20 @@ export function buildTrajectory(turns: OAITurn[], items: StoredSessionItem[], su
   for (const record of records) {
     if (record.kind !== 'tool' || record.name !== SUBAGENT_TOOL || typeof record.output !== 'string') continue
     const run = subagents.find((r) => (record.output as string).includes(r.subagent.id))
-    const description = record.input && typeof record.input === 'object' ? (record.input as { description?: unknown }).description : undefined
-    if (typeof description === 'string' && description) record.title = firstLine(description, 80)
+    const args = record.input && typeof record.input === 'object' ? (record.input as Record<string, unknown>) : {}
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+    const description = text(args.description)
+    if (description) record.title = firstLine(description, 80)
+    const prompt = text(args.prompt)
+    if (prompt) record.prompt = prompt
+    const model = run?.subagent.model ?? text(args.model)
+    if (model) record.model = model
     if (!run) continue
     const childStatus = new Map(run.turns.map((t) => [t.id, t.status]))
     record.subagentId = run.subagent.id
     record.subcalls = recordsOf(
       (run.items ?? []).map(({ subagent_id: _child, ...item }) => item as StoredSessionItem),
-      { prefix: `${run.subagent.id}/`, chatItemId: record.chatItemId, turnStatus: (id) => childStatus.get(id) },
+      { prefix: `${run.subagent.id}/`, chatItemId: record.chatItemId, turnStatus: (id) => childStatus.get(id), ...(model ? { model } : {}) },
     )
     const first = run.turns[0]
     const last = run.turns.at(-1)

@@ -4,6 +4,8 @@ import { DEFAULT_CONNECTORS_MCP_URL, withConnectorTool } from '@/server/connecto
 const tool = (url: string) => ({
   type: 'mcp',
   server_label: 'composio',
+  // Optional: a Composio hiccup must not stop the chat from starting.
+  required: false,
   transport: { type: 'http', server_url: url, headers: { 'x-consumer-api-key': 'ck_test_123' } },
 })
 

@@ -16,6 +16,7 @@ vi.mock('next/navigation', () => ({
 import { buildTrajectory, type SubagentRun } from '@/ui/trajectory/build-trajectory'
 import { CHIP } from '@/ui/trajectory/labels'
 import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
+import { Inspector } from '@/ui/trajectory/Inspector'
 import delegation from '../fixtures/live/subagent.json'
 import live from '../fixtures/live/web-search.json'
 
@@ -74,6 +75,14 @@ describe('TrajectoryView ledger', () => {
     expect(rows()).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: 'Turns' }))
     expect(rows().length).toBeGreaterThan(0)
+  })
+
+  it('the Inspector of a subagent call shows the model it ran and its prompt', () => {
+    const call = DELEGATION.turns[0].records.find((r) => r.name === 'subagent')!
+    render(<Inspector record={{ ...call, model: 'deepseek-flash' }} onShowInChat={vi.fn()} />)
+    const section = screen.getByRole('region', { name: 'Subagent' })
+    expect(within(section).getByText('deepseek-flash')).toBeInTheDocument()
+    expect(within(section).getByText(/Your task: list the files/)).toBeInTheDocument()
   })
 
   it('subcalls start folded into a summary that expands', async () => {

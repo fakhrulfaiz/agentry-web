@@ -2,12 +2,13 @@
  * The reducer against a turn recorded from the real backend
  * (`tests/fixtures/live/web-search.json`, `scripts/record-fixture.ts`).
  *
- * What the backend really sends: the SSE stream carries status, turn, and
- * assistant-message frames only. Reasoning, function calls and their outputs
- * (and the user message) exist only in `GET /items`. A saved assistant message
- * repeats its step's reasoning in front of its text (`item_reason_N` +
- * `item_msg_N`), and the stream's text for a step without text chunks is that
- * reasoning too. Function calls stay `in_progress`; the output item finishes them.
+ * What that (pre 2026-11-26) backend sent: the SSE stream carried status, turn,
+ * and assistant-message frames only. Reasoning, function calls and their
+ * outputs (and the user message) existed only in `GET /items`. The recording's
+ * assistant texts were cleaned of the step's reasoning (which the backend
+ * repeated in front of them then, and no longer does), so a step without text
+ * of its own has empty text. Function calls stay `in_progress`; the output
+ * item finishes them.
  */
 import { describe, expect, it } from 'vitest'
 import type { OAISessionEvent, OAISubagent, OAITurn, StoredSessionItem } from '@/api/types'
@@ -161,15 +162,13 @@ describe('reducer on a recorded backend turn', () => {
     expect(streaming()).toEqual({ item_reason_18: false, item_reason_26: false, item_reason_32: false })
   })
 
-  it('a step streamed as reasoning text loses it once the reasoning item arrives', () => {
+  it('a step without text of its own stays empty, streamed or loaded', () => {
     const firstDone = FRAMES.findIndex((f) => f.event.type === 'agent.session.turn.item.done')
     const id = (FRAMES[firstDone].event as { item: { id: string } }).item.id
     const streamed = fold(FRAMES.slice(0, firstDone + 1))
-    expect(ofKind(streamed, 'assistant').find((v) => v.id === id)?.text).not.toBe('')
-    const refreshed = applyItems(streamed, ITEMS.slice(0, ITEMS.findIndex((it) => it.id === id) + 1))
-    expect(ofKind(refreshed, 'assistant').find((v) => v.id === id)?.text).toBe('')
-    // Replayed frames for that message never bring the reasoning text back.
-    expect(ofKind(fold(FRAMES, refreshed), 'assistant').find((v) => v.id === id)?.text).toBe('')
+    expect(ofKind(streamed, 'assistant').find((v) => v.id === id)?.text).toBe('')
+    const loaded = applyItems(streamed, ITEMS.slice(0, ITEMS.findIndex((it) => it.id === id) + 1))
+    expect(ofKind(fold(FRAMES, loaded), 'assistant').find((v) => v.id === id)?.text).toBe('')
   })
 
   it('the optimistic user bubble is reconciled by the items refresh', () => {
@@ -212,6 +211,7 @@ describe('subagents on a recorded delegating turn', () => {
       sessionId: DELEGATION.session_id,
       subagentId: CHILD.subagent.id,
       name: 'List workspace files and count',
+      prompt: expect.stringMatching(/^Your task: list the files/),
       status: 'completed',
       startedAt: turn.started_at,
       endedAt: turn.completed_at,

@@ -4,8 +4,9 @@
  * never mutates the previous one.
  *
  * Event ids: an event with an SSE `id` is durable. It is applied once (ids
- * already in `seen`, or numerically at or below `lastEventId`, are ignored)
- * and moves `lastEventId`. An event without an `id` is ephemeral (status
+ * already in `seen`, or at or before `lastEventId`, are ignored) and moves
+ * `lastEventId`. Ids are `<n>` or `<n>.<sub>` (an item frame numbered after
+ * frame `n`) and compare as (`n`, `sub`) pairs, so `12.10` follows `12.9`. An event without an `id` is ephemeral (status
  * snapshots, approval overlays, dispatch errors): it is always applied and
  * never enters `seen` or moves `lastEventId`.
  *
@@ -21,14 +22,14 @@
  * an old turn lands inside that turn, not at the bottom. Views without a turn
  * are appended.
  *
- * What the backend really streams (fixture `tests/fixtures/live/web-search.json`):
- * status, turn, and assistant-message frames only. User messages, reasoning,
- * function calls and their outputs exist only in `GET /items`, so the hook
- * refreshes the items during a turn and `applyItems` merges them in log order
- * around the streamed messages. A saved assistant message repeats its step's
- * reasoning in front of its own text (`item_reason_N` then `item_msg_N`, same
- * N), and a step without text streams that reasoning as its text: the
- * reasoning is cut from the front of the message whenever both are known.
+ * What the backend streams (since 2026-11-26): status, turn and
+ * assistant-message frames, plus an item frame for every other saved item
+ * (user messages, reasoning before its step's message, tool calls as
+ * `item.added`, outputs as `item.done`). Item frames also upsert `log`, so the
+ * trajectory follows the stream without re-reading `GET /items`. Message text
+ * is the answer only (the backend no longer repeats the step's reasoning in
+ * front of it). Older recordings (`tests/fixtures/live/*.json`) carry the
+ * assistant frames only; their items still come from `GET /items`.
  *
  * Streaming: an assistant message streams from its first delta until its turn
  * ends. A reasoning view streams ("Thinking…") only while it is the current
@@ -36,16 +37,20 @@
  * (other than its own step's message while that has no text of its own), it
  * collapses to its summary (`settleReasoning`).
  *
- * Subagents: a child's activity never travels on the parent stream. The hook
- * reads `GET .../subagents` and each child's turns, and `applySubagents` makes
- * one card per child, right after the `subagent` call whose output names it
- * ("started subagent <id>"), named by that call's `description`.
+ * Subagents: the hook reads `GET .../subagents` and each child's turns and
+ * items on open and on every reconnect, and the parent stream carries live
+ * `agent.session.subagent.*` events (created, updated with the child's turn,
+ * item added/done, closed; never replayed) that update the same runs.
+ * `applySubagents` makes one card per child, right after the `subagent` call
+ * whose output names it ("started subagent <id>"), named by that call's
+ * `description`, with its `prompt` and the model it ran (the resource's
+ * `model`, else the call's `model` argument).
  *
  * Turns, the log and subagent runs (for the trajectory): `turns` holds each top-level turn record,
  * from the stream's turn frames and `GET .../turns` (`applyTurns`); a finished
  * turn never goes back to running when its `created` frame is replayed. `log`
- * is the latest `GET .../items` list as fetched; `subagents` the latest
- * subagent runs with their turns and items.
+ * is the latest `GET .../items` list, with streamed items upserted by id;
+ * `subagents` the latest subagent runs with their turns and items.
  *
  * Tool calls: the backend leaves a `function_call` `in_progress` until its
  * output item arrives. A call still without output when its turn has ended is
@@ -59,13 +64,14 @@
  * drops an approval that the session snapshot reported. Action views are kept
  * at the end of `items`.
  */
-import type { ConnectRequest } from '@/api/types'
+import type { ConnectRequest, OAIOutputImagePart } from '@/api/types'
 import type { UserFile } from './attachments'
 import type {
   OAIRequiredAction,
   OAISessionEvent,
   OAISessionItem,
   OAISessionStatusEvent,
+  OAIJob,
   OAISubagent,
   OAITurn,
   SessionStatus,
@@ -77,7 +83,7 @@ export type MessageView =
   | { kind: 'user'; id: string; text: string; files?: UserFile[] }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
-  | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown; connect?: ConnectRequest }
+  | { kind: 'tool'; id: string; callId: string; name: string; args: unknown; status: 'running' | 'done' | 'failed'; output?: unknown; connect?: ConnectRequest; images?: OAIOutputImagePart[] }
   | {
     kind: 'subagent'
     id: string
@@ -85,6 +91,10 @@ export type MessageView =
     sessionId: string
     subagentId: string
     name: string
+    /** What the subagent was asked: the delegating call's `prompt`. */
+    prompt?: string
+    /** The model it ran: the subagent resource's `model`, else the call's `model` argument. */
+    model?: string
     status: string
     /** Unix seconds. */
     startedAt?: number
@@ -106,17 +116,18 @@ export interface ConversationState {
   openTurn: string | null
   /** Top-level turn records, oldest first. */
   turns: OAITurn[]
-  /** The latest saved-items list (`GET .../items`). */
+  /** The saved-items list (`GET .../items`, then streamed items upserted by id). */
   log: StoredSessionItem[]
   /** The latest subagent runs as read (for the trajectory). */
   subagents: SubagentActivity[]
+  /** Background jobs (`GET .../jobs`, then `agent.session.job.*` events), oldest first. */
+  jobs: OAIJob[]
 }
 
 type ToolView = Extract<MessageView, { kind: 'tool' }>
 type ActionView = Extract<MessageView, { kind: 'action' }>
 type UserView = Extract<MessageView, { kind: 'user' }>
 type AssistantView = Extract<MessageView, { kind: 'assistant' }>
-type ReasoningView = Extract<MessageView, { kind: 'reasoning' }>
 type SubagentView = Extract<MessageView, { kind: 'subagent' }>
 
 /** One subagent with its turns (and its items, once read), as the hook reads them. */
@@ -129,7 +140,7 @@ export interface SubagentActivity {
 export const LOCAL_PREFIX = 'local:'
 
 export function initialState(sessionId: string): ConversationState {
-  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [], subagents: [] }
+  return { sessionId, status: 'idle', items: [], lastEventId: null, seen: new Set(), turnOf: new Map(), openTurn: null, turns: [], log: [], subagents: [], jobs: [] }
 }
 
 /**
@@ -191,6 +202,7 @@ export function applySubagents(s: ConversationState, children: SubagentActivity[
       status,
       startedAt: turns[0]?.started_at ?? turns[0]?.created_at ?? subagent.created_at,
       endedAt: endedAt ?? undefined,
+      model: subagent.model ?? undefined,
     })
   }
   return actionsLast(next)
@@ -293,11 +305,67 @@ function actionsLast(s: ConversationState): ConversationState {
   }
 }
 
-function isAtOrBefore(id: string, last: string | null): boolean {
+/** An SSE id as (`n`, `sub`): `12` is (12, 0), `12.3` is (12, 3); anything else is not an id. */
+function framePosition(id: string): [number, number] | null {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(id)
+  return match ? [Number(match[1]), match[2] === undefined ? 0 : Number(match[2])] : null
+}
+
+export function isAtOrBefore(id: string, last: string | null): boolean {
   if (last === null) return false
-  const a = Number(id)
-  const b = Number(last)
-  return Number.isInteger(a) && Number.isInteger(b) && a <= b
+  const a = framePosition(id)
+  const b = framePosition(last)
+  if (!a || !b) return false
+  return a[0] < b[0] || (a[0] === b[0] && a[1] <= b[1])
+}
+
+/** Upserts a streamed top-level item into `log` by id (subagent items stay in `subagents`). */
+function upsertLog(s: ConversationState, item: StoredSessionItem): ConversationState {
+  if (item.subagent_id) return s
+  const index = s.log.findIndex((i) => i.id === item.id)
+  return { ...s, log: index === -1 ? [...s.log, item] : s.log.with(index, item) }
+}
+
+type SubagentEvent = Extract<OAISessionEvent, { type: `agent.session.subagent.${string}` }>
+
+/**
+ * A live subagent event updates its run in `subagents` (the run's resource,
+ * a turn, or an item, each upserted by id) and then its card. An item or
+ * turn for a child not known yet is dropped: the next `/subagents` read has it.
+ */
+function applySubagentEvent(s: ConversationState, event: SubagentEvent): ConversationState {
+  const id = 'subagent' in event ? event.subagent.id : event.subagent_id
+  const index = s.subagents.findIndex((run) => run.subagent.id === id)
+  const current: SubagentActivity | undefined = index === -1 ? undefined : s.subagents[index]
+  let run: SubagentActivity
+  if ('subagent' in event) {
+    run = { ...(current ?? { turns: [] }), subagent: event.subagent }
+    if (event.type === 'agent.session.subagent.updated') {
+      const at = run.turns.findIndex((t) => t.id === event.turn.id)
+      run = { ...run, turns: at === -1 ? [...run.turns, event.turn] : run.turns.with(at, event.turn) }
+    }
+  } else {
+    if (!current) return s
+    const items = current.items ?? []
+    const at = items.findIndex((i) => i.id === event.item.id)
+    const item = { ...event.item, subagent_id: id }
+    run = { ...current, items: at === -1 ? [...items, item] : items.with(at, item) }
+  }
+  const children = index === -1 ? [...s.subagents, run] : s.subagents.with(index, run)
+  return applySubagents(s, children)
+}
+
+/** Replaces the jobs with a fresh read (`GET .../jobs`). */
+export function applyJobs(s: ConversationState, jobs: OAIJob[]): ConversationState {
+  return { ...s, jobs }
+}
+
+/** Upserts one job from a stream event, keeping the output last read (events carry none). */
+function upsertJob(s: ConversationState, job: OAIJob): ConversationState {
+  const at = s.jobs.findIndex((j) => j.id === job.id)
+  if (at === -1) return { ...s, jobs: [...s.jobs, job] }
+  const output = job.output ?? s.jobs[at].output
+  return { ...s, jobs: s.jobs.with(at, output ? { ...job, output } : job) }
 }
 
 function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean): ConversationState {
@@ -316,11 +384,21 @@ function reduce(s: ConversationState, event: OAISessionEvent, ephemeral: boolean
     case 'agent.session.turn.cancelled':
       return applyTurnEnd(s, event.turn)
     case 'agent.session.item.done':
-      return applyItem(s, event.item, true, event.turn_id ?? undefined)
+      return applyItem(upsertLog(s, event.item), event.item, true, event.turn_id ?? undefined)
     case 'agent.session.turn.item.added':
-      return applyItem(s, event.item, false, event.turn_id)
+      return applyItem(upsertLog(s, event.item), event.item, false, event.turn_id)
     case 'agent.session.turn.item.done':
-      return applyItem(s, event.item, true, event.turn_id)
+      return applyItem(upsertLog(s, event.item), event.item, true, event.turn_id)
+    case 'agent.session.subagent.created':
+    case 'agent.session.subagent.updated':
+    case 'agent.session.subagent.closed':
+    case 'agent.session.subagent.item.added':
+    case 'agent.session.subagent.item.done':
+      return applySubagentEvent(s, event)
+    case 'agent.session.job.updated':
+      return upsertJob(s, event.job)
+    case 'agent.session.job.removed':
+      return s.jobs.some((j) => j.id === event.job_id) ? { ...s, jobs: s.jobs.filter((j) => j.id !== event.job_id) } : s
     case 'agent.session.turn.output_text.delta': {
       const current = find(s.items, event.item_id)
       if (current?.kind === 'assistant' && !current.streaming) return s // replay of a finished message
@@ -409,19 +487,26 @@ const SUBAGENT_NAME = 'Subagent'
 function placeSubagentView(
   s: ConversationState,
   subagentId: string,
-  update: Pick<SubagentView, 'status' | 'startedAt' | 'endedAt'>,
+  update: Pick<SubagentView, 'status' | 'startedAt' | 'endedAt' | 'model'>,
 ): ConversationState {
   const id = `subagent:${subagentId}`
   const current = find(s.items, id)
+  const previous = current?.kind === 'subagent' ? current : undefined
   const spawn = s.items.find((v): v is ToolView => v.kind === 'tool' && typeof v.output === 'string' && v.output.includes(subagentId))
-  const description = spawn && spawn.args && typeof spawn.args === 'object' ? (spawn.args as { description?: unknown }).description : undefined
-  const name = typeof description === 'string' && description ? description : current?.kind === 'subagent' ? current.name : SUBAGENT_NAME
+  // The `subagent` tool's arguments: `description` (display name), `prompt`, and optional `provider`/`model`/`reasoning_effort`.
+  const args = spawn && spawn.args && typeof spawn.args === 'object' ? (spawn.args as Record<string, unknown>) : undefined
+  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+  const name = text(args?.description) ?? previous?.name ?? SUBAGENT_NAME
+  const prompt = text(args?.prompt) ?? previous?.prompt
+  const model = update.model ?? previous?.model ?? text(args?.model)
   const view: SubagentView = {
     kind: 'subagent',
     id,
     sessionId: s.sessionId,
     subagentId,
     name,
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(model === undefined ? {} : { model }),
     status: update.status,
     startedAt: update.startedAt ?? (current?.kind === 'subagent' ? current.startedAt : undefined),
     endedAt: update.endedAt,
@@ -458,10 +543,7 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
       // A finished step never streams again; `settleReasoning` ends the current one.
       const current = find(s.items, item.id)
       const streaming = turn !== undefined && turn === s.openTurn && (current?.kind !== 'reasoning' || current.streaming)
-      const next = place(s, { kind: 'reasoning', id: item.id, text, streaming }, turn)
-      // The step's message may already show this reasoning as its text.
-      const message = find(next.items, messageIdOf(item.id))
-      return message?.kind === 'assistant' ? placeAssistant(next, message, next.turnOf.get(message.id)) : next
+      return place(s, { kind: 'reasoning', id: item.id, text, streaming }, turn)
     }
     case 'function_call':
       return placeTool(s, {
@@ -509,7 +591,7 @@ function applyItem(s: ConversationState, item: OAISessionItem, done: boolean, ev
         s.items.findLast((v): v is ToolView => v.kind === 'tool' && v.name === COMMAND && v.output === undefined && (!turn || s.turnOf.get(v.id) === turn))
       if (!call) return s
       const failed = item.status === 'failed' || item.status === 'incomplete' || Boolean(item.error)
-      return place(s, { ...call, status: failed ? 'failed' : 'done', output: item.output, ...(item.connect_request ? { connect: item.connect_request } : {}) }, turn)
+      return place(s, { ...call, status: failed ? 'failed' : 'done', output: item.output, ...(item.connect_request ? { connect: item.connect_request } : {}), ...(item.images?.length ? { images: item.images } : {}) }, turn)
     }
     default:
       return s
@@ -525,30 +607,9 @@ function messageIdOf(reasoningId: string): string {
   return reasoningId.startsWith(REASONING_PREFIX) ? MESSAGE_PREFIX + reasoningId.slice(REASONING_PREFIX.length) : ''
 }
 
-function reasoningIdOf(messageId: string): string {
-  return messageId.startsWith(MESSAGE_PREFIX) ? REASONING_PREFIX + messageId.slice(MESSAGE_PREFIX.length) : ''
-}
-
-/** Upserts an assistant message without the reasoning of its step in front of its text. */
+/** Upserts an assistant message. */
 function placeAssistant(s: ConversationState, view: AssistantView, turn: string | undefined): ConversationState {
-  const reasoning = find(s.items, reasoningIdOf(view.id)) as ReasoningView | undefined
-  const text = stripReasoning(view.text, reasoning?.kind === 'reasoning' ? reasoning.text : '')
-  return place(s, text === view.text ? view : { ...view, text }, turn)
-}
-
-/**
- * `text` without its step's `reasoning` in front. The backend repeats the
- * reasoning at the start of the message with no separator, so the strip
- * happens only on an exact leading match that ends at a boundary: the whole
- * text, or a reasoning that ends with whitespace or sentence punctuation, or
- * an answer that goes on after whitespace. A short reasoning ("Ok") never
- * eats the start of a word of the answer ("Okay, …").
- */
-export function stripReasoning(text: string, reasoning: string): string {
-  if (!reasoning || !text.startsWith(reasoning)) return text
-  const rest = text.slice(reasoning.length)
-  const boundary = rest === '' || /[\s.!?:;…)\]"'”’]$/.test(reasoning) || /^\s/.test(rest)
-  return boundary ? rest : text
+  return place(s, view, turn)
 }
 
 function toolStatus(status: ToolCallStatus, inProgress: ToolView['status']): ToolView['status'] {

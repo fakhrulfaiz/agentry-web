@@ -31,16 +31,29 @@ async function startChat(page: Page, text: string) {
   await page.waitForURL(/\/c\/[A-Za-z0-9_-]+$/)
 }
 
-/** The label of a finished turn's fold: "Used 2 tools" or "Thought for 8s · 5 steps". */
-const FOLD = /^(Used \d+ tools?|Thought( for [^·]+)? · \d+ steps?)$/
+/** The label of a finished turn's fold: "Worked for 8s · 2 commands" or "Thought for 8s". */
+const FOLD = /^(Worked( for [^·]+)?( · [^·]+)+|Thought( for .+)?)$/
 /** One reasoning row, not the fold. */
 const THOUGHT = /^Thought(?!.* · \d+ steps?$)/
 
 /** A finished turn folds its thoughts, tools and subagents into "Used N tools"; open every fold. */
 async function openWork(page: Page) {
-  const folds = page.getByRole('button', { name: FOLD })
+  // A turn still working (e.g. its subagent runs on) is the compact live line, "<step> · N steps · 5s".
+  const folds = page.getByRole('button', { name: FOLD }).or(page.getByRole('button', { name: /· \d+ steps? · \d/ }))
   await expect(folds.first()).toBeVisible()
   for (const fold of await folds.all()) if ((await fold.getAttribute('aria-expanded')) !== 'true') await fold.click()
+}
+
+/** Records (in `window.__sawBusyAnswer`) whether an assistant message containing `text` was ever shown while still streaming. */
+async function watchBusyAnswer(page: Page, text: string) {
+  await page.evaluate((needle) => {
+    const w = window as unknown as { __sawBusyAnswer?: boolean }
+    w.__sawBusyAnswer = false
+    const check = () => {
+      for (const m of document.querySelectorAll('[data-testid="assistant-message"][aria-busy="true"]')) if (m.textContent?.includes(needle)) w.__sawBusyAnswer = true
+    }
+    new MutationObserver(check).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['aria-busy'] })
+  }, text)
 }
 
 async function sendInChat(page: Page, text: string) {
@@ -87,7 +100,8 @@ test('reopening a chat shows the full history once: user, tool and assistant', a
   await expect(users).toHaveCount(1)
   // The bubble's text only: the row also holds the hover actions (Retry, Edit, Copy).
   await expect(users.getByText('Use a tool please', { exact: true })).toHaveCount(1)
-  await openWork(page)
+  // A turn with a single tool call is not folded: its card shows directly.
+  await expect(page.getByRole('button', { name: FOLD })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /search/ })).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveText(/^I searched and found 3 results: alpha, beta and gamma\.$/)
@@ -157,22 +171,26 @@ async function overflow(page: Page) {
 test('a web lookup shows thinking, tool cards and a streamed answer as it happens, in the column', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await signIn(page)
+  await watchBusyAnswer(page, 'The latest stable Node.js release')
   await startChat(page, 'Look up the latest Node.js release on the web')
 
-  // Live, before the turn ends: reasoning, then tool cards from the items refresh. A thought is
-  // open ("Thinking…") only while it is the latest step, so by the time the step's call is saved it shows as "Thought".
-  await expect(page.getByRole('button', { name: /^(Thinking…|Thought)/ }).first()).toBeVisible()
-  expect(await page.getByRole('button', { name: /Thinking…/ }).count()).toBeLessThanOrEqual(1)
-  await expect(page.getByRole('button', { name: /web_search/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /web_fetch/ })).toBeVisible()
-  // The answer streams in: seen while still busy, then complete.
-  await expect(page.locator('[data-testid="assistant-message"][aria-busy="true"]').filter({ hasText: 'The latest stable Node.js release' })).toBeVisible()
+  // Live, before the turn ends: compact steps (the default) show the running turn as one live line,
+  // "<current step> · N steps · 5s", instead of every thought and tool card.
+  const live = page.getByRole('button', { name: /· \d+ steps? · \d/ })
+  await expect(live.first()).toBeVisible()
+  expect(await page.getByRole('button', { name: /^Thinking…$/ }).count()).toBeLessThanOrEqual(1)
+  // The answer streams in: seen while still busy, then complete. The busy window can be shorter than
+  // Playwright's polling, so an observer in the page records whether it was ever on screen.
+  await page.waitForFunction(() => (window as unknown as { __sawBusyAnswer?: boolean }).__sawBusyAnswer === true, undefined, { timeout: 20_000 })
   await expect(assistantMessages(page).last()).toContainText('pre-release alpha')
 
-  // Done: reasoning collapses to one line each; it is never shown as the answer.
+  // Done: the live line becomes the fold; inside, reasoning is one line each and the tools are there.
+  await expect(live).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Thinking…/ })).toHaveCount(0)
   await openWork(page)
   await expect(page.getByRole('button', { name: THOUGHT })).toHaveCount(3)
+  await expect(page.getByRole('button', { name: /web_search/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /web_fetch/ })).toHaveCount(1)
   await expect(assistantMessages(page)).toHaveCount(1)
   await expect(assistantMessages(page)).not.toContainText('Let me')
 
@@ -285,7 +303,7 @@ test('the chat title menu stars a chat; it stays under Starred after a reload', 
 
   await page.reload()
   await expect(starred.getByRole('link', { name: 'Keep this chat' })).toBeVisible()
-  await expect(page.getByRole('group', { name: 'Today' })).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'Recents' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Keep this chat', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: 'Unstar' })).toBeVisible()
 })

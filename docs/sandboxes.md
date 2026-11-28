@@ -27,7 +27,7 @@ Prerequisites:
 - Node 24 and pnpm 11 (`export PATH=$HOME/.nvm/versions/node/v24.19.0/bin:$PATH`).
 - The Postgres container the API already uses (`agentry-postgres`, port 55432).
 
-1. **Build the images.** This makes the default sandbox image `agentry/sandbox:1` (Debian, Node 24, Python 3.11, pandas, python-docx and more), the `envd` agent, the DeepSeek Harness helper and the firewall helper:
+1. **Build the images.** This makes the default sandbox image `agentry/sandbox:1` (Debian, Node 24, Python 3.11, pandas, python-docx and more), the separate browser image `agentry-sandbox-browser:1`, the `envd` agent, the DeepSeek Harness helper and the firewall helper:
 
    ```sh
    cd ~/code/agentry-sandbox && pnpm install && pnpm images:build
@@ -96,7 +96,7 @@ Open `http://127.0.0.1:3090/admin` and sign in with `AGENTRY_SANDBOX_ADMIN_KEY` 
 
 ## A fresh sandbox for one chat
 
-When the isolated sandbox is available, the new-chat environment menu has a **New sandbox for this chat** section. It offers **Empty sandbox** (the standard image) and one entry per sandbox template. Pick one and send: the sandbox is created with the chat, and **deleting the chat deletes it**. It suits throwaway work, like trying a library, running untrusted code or a one-off scrape. Your existing environments are listed above it under **Your environments**.
+When the isolated sandbox is available, the new-chat environment menu has a **New sandbox for this chat** section. It offers **Empty sandbox** (the standard image) and one entry per sandbox template, including the built-in **Web browser** template (a separate image with Chromium and Playwright MCP). Pick one and send: the sandbox is created with the chat, and **deleting the chat deletes it**. It suits throwaway work, like trying a library, running untrusted code or a one-off scrape. Your existing environments are listed above it under **Your environments**.
 
 ## Sandboxes the agent manages itself
 
@@ -167,6 +167,7 @@ Other settings:
 - **Network:** the public internet only. The Docker host, your LAN, private ranges (10/8, 172.16/12, 192.168/16, 100.64/10), link-local and cloud metadata addresses, and multicast are blocked. Sandboxes of the same user can't talk to each other. A template with internet off gets no outbound connections at all.
 - **Container wall:** no privileged mode, no host folders, no Docker socket, a minimal set of Linux capabilities (no raw sockets, no network admin), and CPU, memory and process limits.
 - **Secrets:** the sandbox never sees the Agentry API key or the sandbox service key. Template variables *are* visible to the agent, so don't put secrets there that you wouldn't hand to it.
+- **Web browser:** Chromium and Playwright MCP live in a separate browser image, not in the standard one. Turn on **Web browser** on an agent's Tools tab and start the chat on the built-in **Web browser** template (or a template whose image is `ghcr.io/fakhrulfaiz/agentry-sandbox-browser:1`); then its sandbox chats can open pages, click, type and take screenshots, inside the sandbox and under its network rules. The chat's side panel has a **Browser** tab showing the page and the latest screenshot. Chats on the server get no browser. Resetting a standard sandbox does not add the browser: create a new one from the browser template instead. The template editor's Software tab also has a **Web browser** image preset.
 - **Skills:** your skills and the built-in ones are copied into the sandbox read-only, at the same paths as on the server, so `/skill-name` works there too.
 
 ## Using it from the API

@@ -25,6 +25,8 @@ export interface AgentForm {
   skills: AgentSkillSelection | null
   /** Ask before each write on the user's behalf, or send without asking. */
   sendPolicy: 'ask' | 'auto'
+  /** The web browser (Playwright MCP, sandbox chats only): `auto` saves null, `on` true, `off` false. */
+  browser: 'auto' | 'on' | 'off'
   subagents: boolean
   maxSubagents: number
   /** Other metadata keys on the record, kept as they were. */
@@ -36,7 +38,7 @@ export const CONNECTORS_KEY = 'connectors'
 
 export const emptyForm = (model = ''): AgentForm => ({
   name: '', ...defaultAvatar(`new-${String(Date.now())}`), model, effort: 'auto', instructions: '', allTools: true, tools: [], deniedTools: [],
-  apps: null, skills: null, sendPolicy: 'ask', subagents: false, maxSubagents: 3, extraMetadata: {},
+  apps: null, skills: null, sendPolicy: 'ask', browser: 'auto', subagents: false, maxSubagents: 3, extraMetadata: {},
 })
 
 /** Grants from a saved agent: `apps`, else the legacy `metadata.connectors` list (all tools each), else unrestricted. */
@@ -62,6 +64,7 @@ export function agentToForm(agent: OAIAgent, defaultModel = ''): AgentForm {
     apps: grantsOf(agent),
     skills: agent.skills ?? null,
     sendPolicy: agent.send_policy === 'auto' ? 'auto' : 'ask',
+    browser: agent.browser === true ? 'on' : agent.browser === false ? 'off' : 'auto',
     subagents: agent.multi_agent?.enabled ?? false,
     maxSubagents: Math.min(MAX_SUBAGENTS, Math.max(1, agent.multi_agent?.max_concurrent_subagents ?? 3)),
     extraMetadata,
@@ -86,6 +89,7 @@ export function formToParams(form: AgentForm, catalog: string[] = []): CreateAge
     apps: form.apps,
     skills: form.skills,
     send_policy: form.sendPolicy,
+    browser: form.browser === 'on' ? true : form.browser === 'off' ? false : null,
   }
 }
 
