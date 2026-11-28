@@ -11,7 +11,7 @@ import { VStack } from '@astryxdesign/core/VStack'
 import { colorVars, radiusVars, spacingVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react'
-import { keyEvent, mouseEvent, type BrowserInputEvent, type FrameBox } from '@/chat/browser-input'
+import { composedTextEvent, keyEvent, mouseEvent, wheelFromTouch, type BrowserInputEvent, type FrameBox } from '@/chat/browser-input'
 import type { LiveFocus, LiveFrame, LivePointer } from '@/chat/use-browser-live'
 import { BrowserCursor } from './BrowserCursor'
 
@@ -83,6 +83,11 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
   // A new SSE frame arrives often; the control effect must not re-run (and re-focus the image) for it.
   const frameRef = useRef(frame)
   frameRef.current = frame
+  // IME composition and the last point of a one-finger drag are transient input state, not render state.
+  const composing = useRef(false)
+  const touchFrom = useRef<{ clientX: number; clientY: number } | null>(null)
+  // A drag must end without a click even though its last point equals the pointer-up point.
+  const touchMoved = useRef(false)
   const src = frame?.src ?? screenshotUrl
   useEffect(() => {
     const img = ref.current
@@ -98,6 +103,9 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
       if (m?.type === 'mouse') send({ type: 'wheel', x: m.x, y: m.y, delta_x: e.deltaX * scale, delta_y: e.deltaY * scale, ...(m.modifiers ? { modifiers: m.modifiers } : {}) })
     }
     img.addEventListener('wheel', onWheel, { passive: false })
+    // Losing focus mid-composition must not swallow the next typed key.
+    const onBlur = () => { composing.current = false; touchFrom.current = null; touchMoved.current = false }
+    img.addEventListener('blur', onBlur)
     // The viewport's own ratio, not the screenshot's, decides the page size while in control.
     const fit = () => {
       const r = viewportRef.current?.getBoundingClientRect()
@@ -112,6 +120,10 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
     if (viewportRef.current) observer?.observe(viewportRef.current)
     return () => {
       img.removeEventListener('wheel', onWheel)
+      img.removeEventListener('blur', onBlur)
+      composing.current = false
+      touchFrom.current = null
+      touchMoved.current = false
       observer?.disconnect()
     }
   }, [inControl, send])
@@ -123,7 +135,35 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
       ref.current.focus()
       ref.current.setPointerCapture?.(e.pointerId)
     }
-    const m = mouseEvent(e, action, frameBox(ref.current, frame))
+    const box = frameBox(ref.current, frame)
+    if (e.pointerType === 'touch') {
+      if (action === 'down') {
+        touchFrom.current = { clientX: e.clientX, clientY: e.clientY }
+        touchMoved.current = false
+        const down = mouseEvent(e, 'down', box)
+        if (down) send(down)
+        return
+      }
+      const from = touchFrom.current
+      if (action === 'move') {
+        if (!from) return
+        const wheel = wheelFromTouch(from, e, box)
+        if (wheel) {
+          send(wheel)
+          touchMoved.current = true
+        }
+        touchFrom.current = { clientX: e.clientX, clientY: e.clientY }
+        return
+      }
+      touchFrom.current = null
+      const up = mouseEvent(e, 'up', box)
+      if (!up || up.type !== 'mouse') return
+      const dragged = touchMoved.current
+      touchMoved.current = false
+      send(dragged ? { ...up, click_count: 0 } : up)
+      return
+    }
+    const m = mouseEvent(e, action, box)
     if (m) send(m)
   }
   const key = (action: 'down' | 'up') => (e: KeyboardEvent<HTMLImageElement>) => {
@@ -134,7 +174,7 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
       return
     }
     e.preventDefault()
-    send(keyEvent(e, action))
+    send(keyEvent(e, action, composing.current))
   }
 
   return (
@@ -153,7 +193,15 @@ export function BrowserViewport({ frame, screenshotUrl, inControl, send, pointer
               onPointerDown: pointer('down'),
               onPointerMove: pointer('move'),
               onPointerUp: pointer('up'),
+              onPointerCancel: () => { touchFrom.current = null; touchMoved.current = false },
               onContextMenu: (e: { preventDefault: () => void }) => { e.preventDefault() },
+              onCompositionStart: () => { composing.current = true },
+              onCompositionUpdate: () => { composing.current = true },
+              onCompositionEnd: (e: { data: string }) => {
+                composing.current = false
+                const text = composedTextEvent(e.data)
+                if (text) send(text)
+              },
               onKeyDown: key('down'),
               onKeyUp: key('up'),
               onPaste: (e: { preventDefault: () => void; clipboardData: DataTransfer }) => {
