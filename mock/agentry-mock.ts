@@ -989,6 +989,15 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (method === 'POST') {
         const body = await readJson(req)
         if (body.metadata && typeof body.metadata === 'object') s.metadata = body.metadata as Record<string, string>
+        // Like the API: `metadata_merge` sets keys and removes those given as null (starring uses it).
+        if (body.metadata_merge && typeof body.metadata_merge === 'object') {
+          const next = { ...s.metadata }
+          for (const [key, value] of Object.entries(body.metadata_merge as Record<string, string | null>)) {
+            if (value === null) delete next[key]
+            else next[key] = value
+          }
+          s.metadata = next
+        }
         if ('project_id' in body) {
           const next = body.project_id
           if (next !== null && typeof next !== 'string') throw new HttpError(400, 'invalid_request_error', 'project_id must be a string or null')
