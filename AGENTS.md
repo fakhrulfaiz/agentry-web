@@ -68,6 +68,21 @@ Progress is tracked in the plan's ledger under `.superpowers/sdd/` (git-ignored)
 - Theme: `src/ui/theme/brand.ts` defines the Agentry theme (`theme-neutral` re-coloured to a shadcn-style palette: blue accent `#3b82f6`, flat neutral greys, small radii, Inter for text and headings, JetBrains Mono for code); `pnpm exec astryx theme build src/ui/theme/brand.ts --out src/ui/theme/agentry.css` writes the generated `agentry.{css,js,d.ts}` (do not edit; rebuild after changing `brand.ts` or upgrading astryx). `src/ui/theme/AppTheme.tsx` applies it in the mode from the `agentry_theme` cookie (`system` | `light` | `dark`, helpers in `src/ui/theme/theme-cookie.ts`), read by `app/layout.tsx`. `src/astryx-themes.ts` is the CLI's theme registry and is not imported by the app.
 - Shell: `app/(app)/layout.tsx` guards every signed-in page (`requirePageSession()`), renders `<meta name="agentry-csrf">`, and wraps pages in `src/ui/shell/Shell.tsx` (astryx `AppShell` + `Sidebar`). DOM tests import `tests/helpers/dom.ts` for jsdom's missing `<dialog>` methods.
 
+## Reusable components (check here before building new UI; keep this list current)
+
+Generic, reused pieces. New generic UI goes in `src/ui/shared/` with a one-line doc comment saying what it is; add it here.
+
+- `src/ui/shared/IconTile.tsx`: coloured icon tile (agents, environments, cards).
+- `src/ui/shared/FolderPicker.tsx`: Finder-style column folder browser (breadcrumb, lazy columns, new folder); takes any `listFolders(path)` loader (2026-11-28, used by the project dialog).
+- `src/ui/cards/EntityCard.tsx`: `EntityCard`, `CardGrid`, `Fact` for card grids (Agents, Sandboxes).
+- `src/ui/preview/FileTree.tsx` + `src/preview/tree.ts`: keyboard-accessible file tree built from flat paths.
+- `src/ui/preview/renderers/index.tsx`: `RendererBody` previews a file by type (text, code, CSV, images, PDF, Office as PDF, video with cursor track).
+- `src/ui/chat/Markdown.tsx`: Markdown with streaming support and Connect links.
+- `src/ui/chat/Notice.tsx`, `ConnectionPill.tsx`: inline notices with retry; live/reconnecting pill.
+- `src/ui/preview/BrowserCursor.tsx`: agent cursor, click ripple and focus outline over a page image.
+- `src/ui/shell/session-actions.tsx`: chat Rename/Delete dialogs and the star toggle; `src/ui/shell/sidebar-view.ts`: sidebar Group by/Order by/Show helpers.
+- `src/ui/chat/use-reduced-motion.ts`, `src/ui/chat/reveal.ts`: reduced-motion hook and text reveal.
+
 ## Priorities (review 2026-11-28; keep this list current)
 
 All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: S under half a day, M about a day, L several days, XL a week or more. When an item is solved, mark it DONE with the date (or delete it once released); add new items in priority order. Plan checkboxes in `docs/superpowers/plans/` are not kept up to date: judge status from merged code and CHANGELOG.
