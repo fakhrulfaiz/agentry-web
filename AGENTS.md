@@ -89,7 +89,7 @@ Generic, reused pieces. New generic UI goes in `src/ui/shared/` with a one-line 
 All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: S under half a day, M about a day, L several days, XL a week or more. When an item is solved, mark it DONE with the date (or delete it once released); add new items in priority order. Plan checkboxes in `docs/superpowers/plans/` are not kept up to date: judge status from merged code and CHANGELOG.
 
 **P0 (risk or debt)**
-- [ ] Release `develop` → `main` in all three repos (version bump, `## <version>` CHANGELOG section, one e2e run, PR). M.
+- [x] DONE 2026-11-28: released web 0.4.0, API 0.4.0, sandbox 0.3.0 (merged by the user; CI and e2e green).
 - [x] DONE 2026-11-28, live checks: jobs in the Tasks tab (API list, Tasks row with timer, live output tab, Stop); recording playback (found and fixed: the API sent no `Content-Length`, so videos could not seek); Composio read tools (found and fixed: the Composio relay route never matched DSH's web server, so Composio was disconnected in every new chat since the relay landed; `gmail_search_emails` now works in one call).
 - [x] SKIPPED 2026-11-28 (user's decision): live check of schedule tools with two owners (needs `apiKeys` mode with a second key; unit tests cover the owner filter).
 - [x] DONE 2026-11-28: sandbox chat with no host `/workspace` works (chat created, `pwd` → `/workspace` inside the sandbox).
@@ -104,8 +104,8 @@ All three repos (web, `~/code/dsh-agents-api`, `~/code/agentry-sandbox`). Size: 
 - [x] DONE 2026-11-28: Sandboxes templates: Edit and Duplicate (icon actions, one editor dialog for new/edit/duplicate; the API does not return setup commands, variables or file contents, so Edit keeps them when left empty and Duplicate does not copy them).
 - [ ] Vision model route (backlog 4; spec `docs/superpowers/specs/2026-11-26-vision-model-route-design.md`, 3 open questions, no plan yet). M.
 - [x] DONE 2026-11-28: sandbox snapshots in the service (workspace on every place, Docker disk, E2B disk/memory against the fake only, MCP tools), merged to agentry-sandbox `develop`, release 0.3.0.
-- [ ] Snapshots in the API and web (save, list, restore, new environment from a snapshot on the environment page): plan in `docs/superpowers/plans/2026-11-27-sandbox-fast-create-progress-snapshots.md` § "Snapshots: API and web (next)"; decided: snapshots are kept on environment delete unless the delete dialog's "Also delete its N snapshots" is ticked. M.
-- [x] DONE 2026-11-28 (local `develop` in all three repos, not pushed): download and upload for "Files only" snapshots (service `GET /v1/snapshots/{id}/download`, `POST /v1/snapshots/import`; API `.../snapshots/{id}/content`, `.../snapshots/import`; web icons in the Snapshots tab). Later: copy a disk snapshot to another location. M.
+- [x] DONE 2026-11-28: snapshots in the API and web (Snapshots tab: save, restore, new environment from a snapshot, delete; "Also delete its N snapshots" on environment delete). Follow-up: a snapshot picker in New environment and a list of snapshots of deleted environments on the Sandboxes page. S–M.
+- [x] DONE 2026-11-28: download and upload for "Files only" snapshots (service `GET /v1/snapshots/{id}/download`, `POST /v1/snapshots/import`; API `.../snapshots/{id}/content`, `.../snapshots/import`; web icons in the Snapshots tab; checked live, the download is a valid .tar.gz of /workspace). Later: copy a disk snapshot to another location. M.
 - [x] DONE 2026-11-28: small UI, duplicate recent files on the new-chat page; empty space under Instructions in the agent form.
 - [x] DONE 2026-11-28: Projects live check through the UI (user).
 
