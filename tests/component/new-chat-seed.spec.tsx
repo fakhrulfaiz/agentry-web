@@ -217,6 +217,26 @@ describe('New chat project preset', () => {
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'))
   })
 
+  it('keeps the project folder on its environment, shows it, and drops it for another environment', async () => {
+    const user = userEvent.setup()
+    apiMock.getProject.mockResolvedValue(project({ environment: { type: 'sandbox', environment_id: 'env_1', directory: 'biology' } }))
+    render(<NewChat />)
+    await waitFor(() => expect(selection().environment).toHaveTextContent('Data box'))
+    expect(await screen.findByText('in /workspace/biology')).toBeInTheDocument()
+    await send()
+    expect(apiMock.createSession).toHaveBeenCalledWith({ text: 'hello', model: 'm-saved', effort: 'medium', agentId: 'agent_1', environmentId: 'env_1', directory: 'biology', projectId: 'proj_1' })
+    cleanup()
+    apiMock.createSession.mockClear()
+    render(<NewChat />)
+    await waitFor(() => expect(selection().environment).toHaveTextContent('Data box'))
+    await user.click(selection().environment)
+    await user.click(await screen.findByRole('option', { name: /Other box/ }))
+    expect(screen.queryByText('in /workspace/biology')).toBeNull()
+    await user.click(input())
+    await user.keyboard('hello{Enter}')
+    await waitFor(() => expect(apiMock.createSession).toHaveBeenCalledWith(expect.not.objectContaining({ directory: expect.anything() })))
+  })
+
   it('keeps explicit agent and environment overrides while sending projectId', async () => {
     const user = userEvent.setup()
     render(<NewChat />)

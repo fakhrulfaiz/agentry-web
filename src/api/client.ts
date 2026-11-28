@@ -227,13 +227,14 @@ export const api = {
   },
 
   /** Starts a session with the first message (and `agent.reasoning.effort` when given); the title (session metadata) comes from that message. */
-  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string; projectId?: string }): Promise<OAIAgentSession> {
+  createSession(input: { text: string; model: string; effort?: ReasoningEffort; files?: UserFile[]; agentId?: string; environmentId?: string; directory?: string; projectId?: string }): Promise<OAIAgentSession> {
     const body: CreateSessionParams = {
       ...(input.projectId ? { project_id: input.projectId } : {}),
       ...(input.agentId ? { agent_id: input.agentId } : {}),
       agent: { model: input.model, ...(input.effort ? { reasoning: { effort: input.effort } } : {}) },
       // An environment id, or `new:` / `new:<template id>` for a fresh sandbox that belongs to this chat.
-      ...(sessionEnvironment(input.environmentId ?? '') ? { environment: sessionEnvironment(input.environmentId ?? '') } : {}),
+      // `directory` is a starting folder inside an existing environment's workspace (from a Project).
+      ...(sessionEnvironment(input.environmentId ?? '') ? { environment: { ...sessionEnvironment(input.environmentId ?? ''), ...(input.directory ? { directory: input.directory } : {}) } } : {}),
       input: input.files?.length ? [{ role: 'user', content: contentParts(input.text, input.files) }] : input.text,
       metadata: { title: titleFrom(input.text || input.files?.[0]?.name || '') },
     }

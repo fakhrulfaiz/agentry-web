@@ -6,6 +6,7 @@
  */
 import { Center } from '@astryxdesign/core/Center'
 import { VStack } from '@astryxdesign/core/VStack'
+import { Text } from '@astryxdesign/core/Text'
 import { ChatLayout, ChatMessageList } from '@astryxdesign/core/Chat'
 import * as stylex from '@stylexjs/stylex'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -66,6 +67,9 @@ export function NewChat() {
   const [environmentId, setEnvironmentId] = useState('')
   // A Project preset stays with this chat even when its agent/environment are overridden before the first send.
   const [projectId, setProjectId] = useState('')
+  // The Project's starting folder applies only to the Project's own environment, not to an override.
+  const [projectFolder, setProjectFolder] = useState<{ environmentId: string; directory: string } | null>(null)
+  const directory = projectFolder && projectFolder.environmentId === environmentId ? projectFolder.directory : ''
   // The Project's saved agent model is applied once models load, so the cookie default cannot win the race.
   const [presetModel, setPresetModel] = useState<string | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -135,7 +139,11 @@ export function NewChat() {
             if (effort === 'low' || effort === 'medium' || effort === 'high') setEffort(effort)
           }
           const environment = (project.environment as { environment_id?: unknown } | null | undefined)?.environment_id
-          if (typeof environment === 'string' && usable.some((e) => e.id === environment)) setEnvironmentId(environment)
+          if (typeof environment === 'string' && usable.some((e) => e.id === environment)) {
+            setEnvironmentId(environment)
+            const folder = project.environment?.directory
+            if (typeof folder === 'string' && folder) setProjectFolder({ environmentId: environment, directory: folder })
+          }
         }
       })
   }, [wantedEnvironment, wantedProject])
@@ -143,7 +151,7 @@ export function NewChat() {
   async function start(text: string, files?: UserFile[]) {
     setPending({ text, ...(files?.length ? { files } : {}) })
     try {
-      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}), ...(environmentId ? { environmentId } : {}), ...(projectId ? { projectId } : {}) })
+      const session = await api.createSession({ text, model, files, ...(effort === 'auto' ? {} : { effort }), ...(agentId ? { agentId } : {}), ...(environmentId ? { environmentId } : {}), ...(directory ? { directory } : {}), ...(projectId ? { projectId } : {}) })
       setPendingFirst(session.id, {
         text,
         ...(files?.length ? { files } : {}),
@@ -205,6 +213,7 @@ export function NewChat() {
       />
       {/* Who runs the chat and where: under the input, so a long sandbox name does not crowd it. */}
       {!pending && <ContextMenus settings={settings} />}
+      {!pending && directory && <Text type="supporting">in /workspace/{directory}</Text>}
     </VStack>
   )
   return (

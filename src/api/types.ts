@@ -183,6 +183,8 @@ export interface HostToolInfo {
 /** Environment on a session. F1 never edits it. */
 export interface OAIEnvironmentConfig {
   type: string
+  /** Sandbox environments: a folder inside the workspace the chat starts in. */
+  directory?: string
   [key: string]: unknown
 }
 

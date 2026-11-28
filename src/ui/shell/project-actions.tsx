@@ -19,6 +19,7 @@ import { VStack } from '@astryxdesign/core/VStack'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
 import type { OAIAgent, OAIEnvironmentConfig, OAIProject, SandboxEnvironment } from '@/api/types'
+import { normalizeWorkspaceFolder, topLevelFolders } from '@/ui/sandboxes/workspace-folder'
 import { announceProjects } from './project-events'
 import { announceSessions, type SessionRef } from './session-actions'
 
@@ -55,6 +56,9 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
   const [name, setName] = useState('')
   const [agentId, setAgentId] = useState('')
   const [environmentId, setEnvironmentId] = useState('')
+  const [folder, setFolder] = useState('')
+  const [folderError, setFolderError] = useState<string | null>(null)
+  const [folderPicks, setFolderPicks] = useState<string[]>([])
   const [pinned, setPinned] = useState(false)
   const [agents, setAgents] = useState<OAIAgent[]>([])
   const [environments, setEnvironments] = useState<SandboxEnvironment[]>([])
@@ -64,8 +68,10 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
   useEffect(() => {
     setName(project?.name ?? '')
     setAgentId(project?.agent_id ?? '')
-    const current = project?.environment as { environment_id?: unknown } | null | undefined
+    const current = project?.environment as { environment_id?: unknown; directory?: unknown } | null | undefined
     setEnvironmentId(current && typeof current.environment_id === 'string' ? current.environment_id : '')
+    setFolder(current && typeof current.directory === 'string' ? current.directory : '')
+    setFolderError(null)
     setPinned(project?.pinned ?? false)
     setError(null)
   }, [project])
@@ -80,6 +86,19 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
       .then((list) => setEnvironments(list.data), () => undefined)
   }, [isOpen])
 
+  // Quick picks: the environment's existing top-level folders. A failed list just shows none.
+  useEffect(() => {
+    setFolderPicks([])
+    if (!isOpen || !environmentId) return
+    let current = true
+    Promise.resolve()
+      .then(() => api.listEnvironmentFiles(environmentId))
+      .then((page) => current && setFolderPicks(topLevelFolders(page.data.map((file) => file.path))), () => undefined)
+    return () => {
+      current = false
+    }
+  }, [isOpen, environmentId])
+
   async function save(event: FormEvent) {
     event.preventDefault()
     if (saving) return
@@ -88,9 +107,14 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
       setError('Enter a name.')
       return
     }
+    const cleaned = environmentId ? normalizeWorkspaceFolder(folder) : { value: '' }
+    if ('error' in cleaned) {
+      setFolderError(cleaned.error)
+      return
+    }
     setSaving(true)
     try {
-      const environment: OAIEnvironmentConfig | null = environmentId ? { type: 'sandbox', environment_id: environmentId } : null
+      const environment: OAIEnvironmentConfig | null = environmentId ? { type: 'sandbox', environment_id: environmentId, ...(cleaned.value ? { directory: cleaned.value } : {}) } : null
       const params = { name: trimmed, agent_id: agentId || null, environment, pinned }
       if (project) await api.updateProject(project.id, params)
       else await api.createProject(params)
@@ -132,12 +156,48 @@ export function ProjectDialog({ project, isOpen, onClose }: { project: OAIProjec
           <Selector
             label="Environment"
             value={environmentId}
-            onChange={(value) => setEnvironmentId(value ?? '')}
+            onChange={(value) => {
+              // A folder belongs to one environment's workspace.
+              if ((value ?? '') !== environmentId) setFolder('')
+              setFolderError(null)
+              setEnvironmentId(value ?? '')
+            }}
             options={[
               { value: '', label: 'Default workspace' },
               ...environments.map((environment) => ({ value: environment.id, label: environment.name || 'Untitled sandbox' })),
             ]}
           />
+          {environmentId && (
+            <VStack gap={2}>
+              <TextInput
+                label="Folder"
+                description="Inside /workspace. Chats in this project start here; it is created if missing. Leave empty for the whole workspace."
+                value={folder}
+                onChange={(value) => {
+                  setFolder(value)
+                  setFolderError(null)
+                }}
+                status={folderError ? { type: 'error', message: folderError } : undefined}
+                statusVariant="detached"
+              />
+              {folderPicks.length > 0 && (
+                <HStack gap={2} wrap="wrap">
+                  {folderPicks.map((pick) => (
+                    <Button
+                      key={pick}
+                      label={pick}
+                      size="sm"
+                      variant={folder === pick ? 'primary' : 'secondary'}
+                      onClick={() => {
+                        setFolder(pick)
+                        setFolderError(null)
+                      }}
+                    />
+                  ))}
+                </HStack>
+              )}
+            </VStack>
+          )}
           <Switch label="Pinned" value={pinned} onChange={setPinned} />
           <HStack gap={2} hAlign="end">
             <Button label="Cancel" variant="ghost" onClick={onClose} />
