@@ -22,6 +22,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { VStack } from '@astryxdesign/core/VStack'
 import { ChevronRightIcon, FolderIcon, FolderPlusIcon } from '@heroicons/react/24/outline'
+import { colorVars, radiusVars } from '@astryxdesign/core/theme/tokens.stylex'
 import * as stylex from '@stylexjs/stylex'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -45,6 +46,28 @@ const ui = stylex.create({
     borderInlineEndColor: 'var(--color-border)',
   },
   body: { padding: 24, maxInlineSize: '100%' },
+  // A Finder row: icon, name (left-aligned, truncated), chevron at the far edge.
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    inlineSize: '100%',
+    minInlineSize: 0,
+    paddingBlock: 6,
+    paddingInline: 8,
+    borderWidth: 0,
+    borderRadius: radiusVars['--radius-element'],
+    backgroundColor: { default: 'transparent', ':hover': colorVars['--color-overlay-hover'] },
+    color: 'inherit',
+    font: 'inherit',
+    textAlign: 'start',
+    cursor: 'pointer',
+    outlineStyle: { default: 'none', ':focus-visible': 'solid' },
+    outlineWidth: 2,
+    outlineColor: colorVars['--color-accent'],
+  },
+  rowOn: { backgroundColor: { default: colorVars['--color-overlay-pressed'], ':hover': colorVars['--color-overlay-pressed'] } },
+  rowName: { flexGrow: 1, minInlineSize: 0 },
 })
 
 type Column = {
@@ -199,15 +222,19 @@ export function FolderPicker({ isOpen, title = 'Choose a folder', rootLabel = '/
                   const path = join(column.path, name)
                   const isOn = selected === path || selected.startsWith(`${path}/`)
                   return (
-                    <Button
+                    <button
                       key={name}
-                      label={name}
-                      variant={isOn ? 'secondary' : 'ghost'}
-                      width="100%"
-                      icon={<Icon icon={FolderIcon} />}
-                      endContent={<Icon icon={ChevronRightIcon} />}
+                      type="button"
+                      aria-pressed={isOn}
                       onClick={() => open(column.path, name)}
-                    />
+                      {...stylex.props(ui.row, isOn && ui.rowOn)}
+                    >
+                      <Icon icon={FolderIcon} size="sm" color={isOn ? 'primary' : 'secondary'} />
+                      <span {...stylex.props(ui.rowName)}>
+                        <Text maxLines={1}>{name}</Text>
+                      </span>
+                      <Icon icon={ChevronRightIcon} size="sm" color="secondary" />
+                    </button>
                   )
                 })}
               {column.state === 'ready' && adding && column.path === selected && (
