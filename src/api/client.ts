@@ -39,6 +39,7 @@ import type {
   UpdateProjectParams,
   OAIAgentSession,
   OAIInputEvent,
+  AgentImportResult,
   CreateAgentParams,
   HostToolInfo,
   OAIAgent,
@@ -630,6 +631,10 @@ export const api = {
   },
   getAgent(id: string): Promise<OAIAgent> {
     return request('GET', `${AGENTRY}/agents/${seg(id)}`)
+  },
+  /** Reads an agent definition from a link or pasted text into a draft; nothing is saved. */
+  importAgent(input: { url: string } | { text: string }): Promise<AgentImportResult> {
+    return request('POST', `${AGENTRY}/agents/import`, input)
   },
   createAgent(params: CreateAgentParams): Promise<OAIAgent> {
     return request('POST', `${AGENTRY}/agents`, params)

@@ -2,7 +2,7 @@
 export const ID_SEGMENT = /^[A-Za-z0-9_-]+$/
 
 /** Names under `/agents/` that are routes, never an agent id. */
-const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files', 'projects'])
+const RESERVED_AGENT_IDS = new Set(['sessions', 'tools', 'environments', 'schedules', 'skills', 'artifacts', 'commands', 'files', 'projects', 'import', 'connectors'])
 
 type Segment = string | { id: 'agent' | 'session' | 'subagent' | 'schedule' | 'artifact' | 'command' | 'file' | 'template' | 'environment' | 'skill' | 'terminal' | 'turn' | 'index' | 'job' | 'project' | 'snapshot' }
 interface Rule {
@@ -37,6 +37,8 @@ const SNAPSHOT_ID = /^snap_[a-f0-9]{32}$/
  */
 const RULES: readonly Rule[] = [
   { methods: ['GET'], segments: ['agents', 'tools'] },
+  // Agent import: a draft from a GitHub/gist link or pasted text; nothing is saved.
+  { methods: ['POST'], segments: ['agents', 'import'] },
   { methods: ['GET'], segments: ['agents', 'skills'] },
   { methods: ['GET'], segments: ['agents', 'commands'] },
   // Artifacts listing; the bytes live under session workspace paths and their

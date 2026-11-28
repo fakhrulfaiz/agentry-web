@@ -174,6 +174,14 @@ export interface CreateAgentParams {
 }
 export type UpdateAgentParams = Partial<CreateAgentParams>
 
+/** A draft agent from `POST /v1/agents/import`: create params whose model may be missing. */
+export type AgentDraft = Omit<CreateAgentParams, 'model'> & { model?: string }
+
+/** `POST /v1/agents/import` answer: a draft, or a GitHub folder's agent files to pick from. */
+export type AgentImportResult =
+  | { object: 'agent.import.draft'; draft: AgentDraft; source: { url?: string; format: 'ecc' | 'agentry' }; notes: string[] }
+  | { object: 'agent.import.candidates'; data: Array<{ name: string; description: string; url: string }> }
+
 /** One Host tool from `GET /v1/agents/tools`. */
 export interface HostToolInfo {
   name: string

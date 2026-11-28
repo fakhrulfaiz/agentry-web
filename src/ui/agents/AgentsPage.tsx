@@ -19,7 +19,9 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { VStack } from '@astryxdesign/core/VStack'
-import { MagnifyingGlassIcon, PuzzlePieceIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, PuzzlePieceIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
+import { IconButton } from '@astryxdesign/core/IconButton'
 import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, isSignedOut } from '@/api/client'
@@ -30,6 +32,9 @@ import { goToLogin } from '@/chat/use-conversation'
 import { CardGrid, EntityCard, Fact } from '@/ui/cards/EntityCard'
 import { AgentEditorDialog, editorTargetOf } from './AgentEditorDialog'
 import { useCachedState } from '@/ui/page-cache'
+import { ImportAgentDialog } from './ImportAgentDialog'
+import { setPendingDraft } from '@/agents/draft'
+import { download, slugOf, toAgentJson, toAgentMarkdown } from '@/agents/export'
 
 const COLUMN_WIDTH = 880
 
@@ -85,6 +90,7 @@ export function AgentsPage() {
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'yours' | 'starters'>('yours')
   const [query, setQuery] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -117,6 +123,7 @@ export function AgentsPage() {
               <ToggleButton label="Starters" size="sm" isPressed={view === 'starters'} onPressedChange={() => setView('starters')} />
             </HStack>
           </StackItem>
+          <IconButton label="Import an agent" tooltip="Import from a link or pasted text" variant="ghost" size="sm" icon={<Icon icon={ArrowDownTrayIcon} size="sm" />} onClick={() => setImporting(true)} />
           <Button label="New agent" variant="primary" onClick={() => go('/agents?new=1')} />
         </HStack>
         {error !== null && (
@@ -154,7 +161,19 @@ export function AgentsPage() {
                       }}
                       title={agent.name || 'Untitled agent'}
                       leading={<AgentAvatar avatar={avatarOf(agent)} size="md" />}
-                      trailing={<Text type="supporting" color="secondary" maxLines={1}>{agent.model}</Text>}
+                      trailing={
+                        <HStack gap={1} vAlign="center">
+                          <Text type="supporting" color="secondary" maxLines={1}>{agent.model}</Text>
+                          <DropdownMenu
+                            renderTrigger={(props) => <IconButton {...props} label={`More for ${agent.name || 'agent'}`} icon={<Icon icon={EllipsisHorizontalIcon} size="sm" />} size="sm" variant="ghost" />}
+                            alignment="end"
+                            items={[
+                              { label: 'Export as JSON', onClick: () => download(`${slugOf(agent.name)}.json`, toAgentJson(agent), 'application/json') },
+                              { label: 'Export as Markdown', description: 'Claude Code agent file', onClick: () => download(`${slugOf(agent.name)}.md`, toAgentMarkdown(agent), 'text/markdown') },
+                            ]}
+                          />
+                        </HStack>
+                      }
                       footer={
                         <>
                           <Fact icon={<Icon icon={WrenchScrewdriverIcon} size="sm" color="secondary" />}>
@@ -182,6 +201,15 @@ export function AgentsPage() {
           </VStack>
         )}
       </VStack>
+      <ImportAgentDialog
+        isOpen={importing}
+        onClose={() => setImporting(false)}
+        onDraft={(draft) => {
+          setImporting(false)
+          setPendingDraft(draft)
+          go('/agents?new=1&draft=1')
+        }}
+      />
       <AgentEditorDialog
         target={target}
         onClose={close}

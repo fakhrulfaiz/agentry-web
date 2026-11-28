@@ -9,6 +9,7 @@
  */
 import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Banner } from '@astryxdesign/core/Banner'
+import { Link } from '@astryxdesign/core/Link'
 import { Button } from '@astryxdesign/core/Button'
 import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
 import { Heading } from '@astryxdesign/core/Heading'
@@ -36,6 +37,7 @@ import type { HostToolInfo } from '@/api/types'
 import { connectedAppsMemo, hostToolsMemo, modelsMemo } from '@/agents/form-data'
 import { agentToForm, emptyForm, formToParams, MAX_SUBAGENTS, toolMask, type AgentForm as FormState, type EffortChoice } from '@/agents/form'
 import { STARTERS, type Starter } from '@/agents/starters'
+import { applyDraft, pendingDraft, type PendingDraft } from '@/agents/draft'
 import { goToLogin } from '@/chat/use-conversation'
 import { HUES, tint } from '@/ui/brand/palette'
 import { AgentAvatar } from './AgentAvatar'
@@ -161,9 +163,11 @@ function applyStarter(base: FormState, starter: Starter, toolNames: string[]): F
   return { ...base, name: starter.name, icon: starter.icon, color: starter.color, instructions: starter.instructions, subagents: starter.subagents ?? false, allTools: names === null, tools: names ?? [] }
 }
 
-export function AgentForm({ agentId, starterId, onClose, onSaved }: {
+export function AgentForm({ agentId, starterId, fromDraft = false, onClose, onSaved }: {
   agentId?: string
   starterId?: string | null
+  /** Start from the held draft (an import or a chat's subagent); nothing is saved until Save. */
+  fromDraft?: boolean
   /** Close without saving. Defaults to going back to the Agents page. */
   onClose?: () => void
   /** After a create, save or delete. Without it, create and delete go back to the Agents page. */
@@ -182,6 +186,7 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
   const [saved, setSaved] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
+  const [draftInfo, setDraftInfo] = useState<PendingDraft | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -198,6 +203,9 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
         let base = agent ? agentToForm(agent, defaultModel) : emptyForm(defaultModel)
         const starter = !agentId ? STARTERS.find((s) => s.id === starterId) : undefined
         if (starter) base = applyStarter(base, starter, toolList.map((t) => t.name))
+        const held = !agentId && fromDraft ? pendingDraft() : null
+        if (held) base = applyDraft(base, held.draft, toolList.map((t) => t.name), modelList)
+        setDraftInfo(held)
         setModels(modelList)
         setTools(toolList)
         setApps(connected)
@@ -211,7 +219,7 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
     return () => {
       alive = false
     }
-  }, [agentId, starterId])
+  }, [agentId, starterId, fromDraft])
 
   const set = (patch: Partial<FormState>) => {
     setSaved(false)
@@ -328,6 +336,25 @@ export function AgentForm({ agentId, starterId, onClose, onSaved }: {
       ) : (
         <div {...stylex.props(ui.body)}>
           <section aria-label="Profile" {...stylex.props(ui.profile)}>
+            {draftInfo && (draftInfo.notes.length > 0 || draftInfo.sourceUrl) && (
+              <Banner
+                status="info"
+                title="Review this draft before you save it."
+                isDismissable
+                dismissLabel="Hide"
+                description={
+                  <VStack gap={1}>
+                    {draftInfo.notes.map((note) => <Text key={note} type="supporting">{note}</Text>)}
+                    {draftInfo.sourceUrl && (
+                      <>
+                        <Link href={draftInfo.sourceUrl} target="_blank" rel="noopener noreferrer">{draftInfo.sourceUrl}</Link>
+                        <Text type="supporting">Check the source&apos;s license before you share this agent.</Text>
+                      </>
+                    )}
+                  </VStack>
+                }
+              />
+            )}
             <TextInput label="Name" value={form.name} onChange={(name) => set({ name })} placeholder="Inbox assistant" isRequired />
             <HStack gap={3}>
               <StackItem size="fill">
