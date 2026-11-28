@@ -113,16 +113,6 @@ export function PortPreview({ environmentId }: { environmentId: string }) {
   const apply = useCallback(() => setCustom(parsePort(typed)), [typed])
 
   if (!loaded) return <EmptyState title="Looking for a running app…" headingLevel={2} />
-  if (ports.length === 0 && choice !== OTHER) {
-    return (
-      <EmptyState
-        title="Nothing is listening yet"
-        description="Ask the agent to start your app, for example `npm run dev -- --host 0.0.0.0`. The app has to listen on 0.0.0.0, not only on 127.0.0.1."
-        headingLevel={2}
-        data-testid="preview-empty"
-      />
-    )
-  }
   const options = [...ports.map((p) => ({ value: String(p), label: `localhost:${String(p)}` })), { value: OTHER, label: 'Other port…' }]
   return (
     <VStack gap={2} data-testid="port-preview" xstyle={styles.tab}>
@@ -150,6 +140,13 @@ export function PortPreview({ environmentId }: { environmentId: string }) {
           src={url}
           sandbox="allow-scripts allow-forms allow-popups allow-modals"
           {...stylex.props(styles.frame)}
+        />
+      ) : port === null && ports.length === 0 && choice !== OTHER ? (
+        <EmptyState
+          title="Nothing is listening yet"
+          description="Ask the agent to start your app, for example `npm run dev -- --host 0.0.0.0`. Apps listening on all addresses are listed here; for any other port, choose Other port."
+          headingLevel={2}
+          data-testid="preview-empty"
         />
       ) : (
         <EmptyState title={port === null ? 'Enter a port number' : 'Opening the preview…'} headingLevel={2} />
