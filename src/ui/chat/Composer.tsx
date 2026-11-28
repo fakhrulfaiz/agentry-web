@@ -44,7 +44,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
 import { LightBulbIcon, PaperClipIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { AgentCommand, ReasoningEffort } from '@/api/types'
 import { APP_COMMANDS, AppCommandError, parseSlashLine, type AppCommandHandlers } from '@/commands/app-commands'
 import type { UserFile } from '@/chat/attachments'
@@ -211,6 +211,7 @@ export function Composer({
   status,
   autoFocus = false,
   density = 'balanced',
+  extraActions,
 }: {
   /** Resolves when the message was accepted; a rejection keeps the text in the composer. */
   onSend(text: string, files?: UserFile[]): Promise<void>
@@ -233,6 +234,8 @@ export function Composer({
   autoFocus?: boolean
   /** `spacious` makes the input taller (the new-chat page). */
   density?: 'balanced' | 'spacious'
+  /** Extra controls after Attach in the footer (the open chat's Helpers button). */
+  extraActions?: ReactNode
 }) {
   const toast = useToast()
   const [value, setValue] = useState(initialValue)
@@ -396,6 +399,7 @@ export function Composer({
       footerActions={
         <>
           <Button label="Attach files" variant="ghost" size="sm" icon={<Icon icon={PaperClipIcon} />} isIconOnly onClick={() => picker.current?.click()} />
+          {extraActions}
         </>
       }
       sendActions={settings ? <ModelMenus settings={settings} /> : undefined}

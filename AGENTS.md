@@ -77,6 +77,7 @@ Generic, reused pieces. New generic UI goes in `src/ui/shared/` with a one-line 
 - `src/ui/shared/AppLogo.tsx`: a connected app's logo with a letter-avatar fallback (2026-11-29, Connect cards).
 - `src/ui/shared/PromptChips.tsx`: wrapping row of small clickable suggestion chips (starter prompts) (2026-11-28, Ask Agentry on the new-chat page).
 - `src/ui/shared/DefinitionRow.tsx`: label/value rows for About panels; `src/ui/shared/CopyButton.tsx`: copy-to-clipboard icon button (2026-11-28, Sandboxes detail).
+- `src/ui/shared/FlowGraph.tsx`: root card joined by elbow lines to a column of status node cards; stacks when narrow (2026-11-29, Tasks tab Flow view).
 - `src/ui/cards/EntityCard.tsx`: `EntityCard`, `CardGrid`, `Fact` for card grids (Agents, Sandboxes).
 - `src/ui/preview/FileTree.tsx` + `src/preview/tree.ts`: keyboard-accessible file tree built from flat paths (`buildTree` takes a path filter; `FileTree` takes `renderEnd`, `emptyText`, `expandTop`).
 - `src/ui/preview/renderers/index.tsx`: `RendererBody` previews a file by type (text, code, CSV, images, PDF, Office as PDF, video with cursor track).

@@ -303,7 +303,7 @@ function HelperChat({ sessionId, onNewChat }: { sessionId: string; onNewChat(): 
           <SubagentItems.Provider value={subagentItems}>
             <SubagentActions.Provider value={split.bySubagent}>
               <ChatMessageList isStreaming={streaming}>
-                {groupTurns(split.items, state.turnOf, state.turns, { live: true }).map((entry) => {
+                {groupTurns(split.items, state.turnOf, state.turns, { live: true, waitingSubagents: new Set(split.bySubagent.keys()) }).map((entry) => {
                   const row = (view: (typeof split.items)[number]) => <Message key={view.id} view={view} answer={answer} />
                   if (entry.type === 'view') return row(entry.view)
                   return (

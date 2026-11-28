@@ -58,6 +58,7 @@ import { TrajectoryView } from '@/ui/trajectory/TrajectoryView'
 import { useChatSettings, withSettings } from './chat-settings'
 import type { UserFile } from '@/chat/attachments'
 import { Composer } from './Composer'
+import { HelpersButton } from './HelpersButton'
 import { ConnectionPill } from './ConnectionPill'
 import { Message, renderRows } from './Message'
 import { scrollToItem } from './reveal'
@@ -380,6 +381,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
 
   const panelData = useMemo<PanelConversation>(
     () => ({
+      agentName: session?.agent.name ?? undefined,
       tasks: deriveTasks(state.items, state.subagents, split.bySubagent),
       jobs: state.jobs,
       subagentViews: state.items.flatMap((v) => (v.kind === 'subagent' ? [v] : [])),
@@ -389,7 +391,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
       actions: split.bySubagent,
       answer: onAnswer,
     }),
-    [state.items, state.subagents, state.jobs, split.bySubagent, subagentItems, onAnswer],
+    [session?.agent.name, state.items, state.subagents, state.jobs, split.bySubagent, subagentItems, onAnswer],
   )
 
   if (missing) {
@@ -423,7 +425,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
   })
   const retries = retryTexts(state.items)
   // A running turn folds into one live line too, unless "Always show steps" is on.
-  const entries = groupTurns(split.items, state.turnOf, state.turns, { live: !showSteps })
+  const entries = groupTurns(split.items, state.turnOf, state.turns, { live: !showSteps, waitingSubagents: new Set(split.bySubagent.keys()) })
   const changesAt = changesPlacement(entries, state.turnOf, state.turns)
   // Delivered files sit after the turn whose `present` call delivered them; any whose turn is not shown go last.
   const deliverables = useSessionDeliverables(sessionId ?? null, ready, !running)
@@ -461,6 +463,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
             scrollButton={<StreamScrollButton />}
             composer={
               <Composer
+                extraActions={<HelpersButton />}
                 onSend={onSend}
                 onStop={onStop}
                 isRunning={running}

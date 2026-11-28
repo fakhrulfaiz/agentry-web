@@ -21,6 +21,18 @@ const turnOf = new Map([['r', 't1'], ['t', 't1'], ['a', 't1']])
 const turn = (status: OAITurn['status']): OAITurn => ({ id: 't1', object: 'agent.session.turn', session_id: 's', agent_id: 'a', status, created_at: 0, started_at: 10, completed_at: 135 })
 
 describe('groupTurns', () => {
+  it('keeps a subagent that needs the user outside the folded group', () => {
+    const views: MessageView[] = [
+      { kind: 'user', id: 'u', text: 'go' },
+      { kind: 'reasoning', id: 'r', text: 'hmm', streaming: false },
+      { kind: 'tool', id: 't', callId: 'c', name: 'ls', args: {}, status: 'done' },
+      { kind: 'subagent', id: 's', subagentId: 'sa1', name: 'Echo', status: 'completed', startedAt: 1, endedAt: 2 } as MessageView,
+      { kind: 'assistant', id: 'a', text: 'ok', streaming: false },
+    ]
+    const of = new Map(views.slice(1).map((v) => [v.id, 't1']))
+    const out = groupTurns(views, of, [turn('completed')], { waitingSubagents: new Set(['sa1']) })
+    expect(out.map((e) => (e.type === 'group' ? 'group' : e.view.id))).toEqual(['u', 'group', 's', 'a'])
+  })
   it('keeps a running turn expanded', () => {
     expect(groupTurns(items, turnOf, [turn('in_progress')]).every((e) => e.type === 'view')).toBe(true)
   })

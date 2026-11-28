@@ -13,7 +13,9 @@ export type ChatEntry =
 const FINISHED = new Set<OAITurn['status']>(['completed', 'failed', 'cancelled'])
 
 /** Rows that belong to the process of a turn (everything but the final answer, files, commands, notices, actions and Connect buttons). */
-function isProcess(v: MessageView): boolean {
+function isProcess(v: MessageView, waiting?: ReadonlySet<string>): boolean {
+  // A helper waiting on the user stays visible too.
+  if (v.kind === 'subagent' && waiting?.has(v.subagentId)) return false
   // A failed tool call stays visible as its own row; it is never folded away. So does a call that carries a
   // Connect button: the user has to act on it, so it must not hide inside a collapsed group.
   return v.kind === 'reasoning' || (v.kind === 'tool' && v.status !== 'failed' && !v.connect) || v.kind === 'subagent' || (v.kind === 'assistant' && v.text.trim() !== '')
@@ -37,7 +39,7 @@ function isRunning(v: MessageView): boolean {
  * running row, or has a pending action is left as it is, unless `live` is set: then it is folded too, as a
  * `running` group, while actions (approvals, questions), failed tools and the newest assistant text stay outside.
  */
-export function groupTurns(items: MessageView[], turnOf: ReadonlyMap<string, string>, turns: OAITurn[], options: { live?: boolean } = {}): ChatEntry[] {
+export function groupTurns(items: MessageView[], turnOf: ReadonlyMap<string, string>, turns: OAITurn[], options: { live?: boolean; waitingSubagents?: ReadonlySet<string> } = {}): ChatEntry[] {
   const turnById = new Map(turns.map((t) => [t.id, t]))
   const byTurn = new Map<string, MessageView[]>()
   for (const v of items) {
@@ -51,7 +53,7 @@ export function groupTurns(items: MessageView[], turnOf: ReadonlyMap<string, str
     const busy = !FINISHED.has(turn.status) || views.some((v) => isRunning(v) || v.kind === 'action')
     if (busy && !options.live) continue
     const lastAnswer = views.findLast((v) => v.kind === 'assistant' && v.text.trim() !== '')
-    const process = views.filter((v) => isProcess(v) && v !== lastAnswer)
+    const process = views.filter((v) => isProcess(v, options.waitingSubagents) && v !== lastAnswer)
     const steps = process.filter((v) => v.kind !== 'assistant')
     // One quick tool call and nothing else is just that line, not a block.
     const single = steps.length === 1 && steps[0]!.kind === 'tool' && process.length === 1

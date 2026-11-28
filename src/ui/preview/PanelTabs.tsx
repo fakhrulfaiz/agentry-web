@@ -4,6 +4,7 @@
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { HStack } from '@astryxdesign/core/HStack'
 import { Icon } from '@astryxdesign/core/Icon'
+import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { Spinner } from '@astryxdesign/core/Spinner'
 import { Text } from '@astryxdesign/core/Text'
@@ -17,7 +18,10 @@ import type { TaskRow, TaskStatus } from '@/chat/tasks'
 import type { OAIJob } from '@/api/types'
 import { isLiveJob, jobElapsed, jobState, jobTitle, jobViewKey, visibleJobs } from '@/chat/jobs'
 import type { TodoStatus } from '@/chat/todos'
+import { WorkflowIcon } from '@/ui/icons/WorkflowIcon'
 import { usePreviewPanel } from '@/preview/store'
+import { setTasksView, useTasksView } from '@/chat/tasks-view'
+import { FlowGraph, type FlowNode } from '@/ui/shared/FlowGraph'
 import { SubagentItems, SubagentActions, SubagentTranscript, Waiting, formatDuration } from '@/ui/chat/SubagentCard'
 
 const styles = stylex.create({
@@ -85,15 +89,51 @@ function JobRow({ job, now }: { job: OAIJob; now: number }) {
   )
 }
 
-/** The chat's subagents (status, model, time, tokens, a waiting-approval badge) and background commands (status, live time). */
+function flowNode(task: TaskRow, now: number, open: () => void): FlowNode {
+  const end = task.status === 'running' ? now : task.endedAt
+  const elapsed = task.startedAt !== undefined && end !== undefined ? formatDuration(end - task.startedAt) : null
+  return {
+    id: task.id,
+    title: task.name,
+    status: task.waiting > 0 ? 'needs' : task.status,
+    meta: [task.model, elapsed, task.tokens !== undefined ? `${formatTokens(task.tokens)} tokens` : null].filter((x): x is string => Boolean(x)),
+    onSelect: open,
+  }
+}
+
+/** 3100 -> "3.1k", 18000 -> "18k". */
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  const k = n / 1000
+  return `${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`
+}
+
+/** The chat's helpers (subagents) as a flow graph or a list, plus background commands (list only). */
 export function TasksTab() {
-  const { tasks, jobs } = usePanelConversation()
+  const { tasks, jobs, agentName } = usePanelConversation()
+  const { actions, state } = usePreviewPanel()
+  const view = useTasksView()
   const now = useNow(tasks.some((t) => t.status === 'running') || jobs.some(isLiveJob))
   const shown = visibleJobs(jobs, now)
   if (tasks.length === 0 && shown.length === 0) return <EmptyState title="No background tasks" description="Subagents and background commands this chat starts will be listed here." headingLevel={2} />
+  const flow = view === 'flow' && tasks.length > 0
   return (
     <VStack gap={3} data-testid="tasks-list">
-      {tasks.map((t) => <Row key={t.id} task={t} now={now} />)}
+      {tasks.length > 0 && (
+        <SegmentedControl label="Tasks view" size="sm" value={view} onChange={(v) => setTasksView(v === 'list' ? 'list' : 'flow')}>
+          <SegmentedControlItem value="flow" label="Flow" />
+          <SegmentedControlItem value="list" label="List" />
+        </SegmentedControl>
+      )}
+      {flow ? (
+        <FlowGraph
+          root={{ title: agentName ?? 'Agent', subtitle: 'this chat', icon: WorkflowIcon }}
+          nodes={tasks.map((t) => flowNode(t, now, () => actions.openView(`sub:${t.id}`, t.name)))}
+          selectedId={state.active.startsWith('view:sub:') ? state.active.slice(9) : undefined}
+        />
+      ) : (
+        tasks.map((t) => <Row key={t.id} task={t} now={now} />)
+      )}
       {shown.map((j) => <JobRow key={j.id} job={j} now={now} />)}
     </VStack>
   )

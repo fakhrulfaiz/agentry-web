@@ -63,6 +63,7 @@ describe('Tasks tab', () => {
     mount(value)
     act(() => controls!.showStart())
     await userEvent.click(await screen.findByRole('button', { name: /^Tasks/ }))
+    await userEvent.click(await screen.findByRole('radio', { name: 'List' }))
     const row = await screen.findByRole('button', { name: `Open ${subView.name}` })
     expect(within(row).getByText('Approval needed')).toBeInTheDocument()
     expect(within(row).getByText(/Done|Closed|Running|Failed/)).toBeInTheDocument()

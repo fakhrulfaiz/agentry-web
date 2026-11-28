@@ -10,6 +10,8 @@ import type { Todo } from './todos'
 import type { ActionAnswer } from './use-conversation'
 
 export interface PanelConversation {
+  /** This chat's agent name, for the Flow view's root card. */
+  agentName?: string
   tasks: TaskRow[]
   /** Background jobs (commands the agent runs in the background), oldest first. */
   jobs: OAIJob[]
