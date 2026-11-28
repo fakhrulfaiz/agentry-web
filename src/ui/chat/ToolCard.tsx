@@ -65,6 +65,8 @@ export function summarizeArgs(args: unknown): string {
     text = typeof source === "string" ? source : (JSON.stringify(source) ?? "");
   }
   text = text.replace(/\s+/g, " ").trim();
+  // A call with no arguments has nothing worth showing next to its name.
+  if (text === "{}" || text === "[]" || text === "null") return "";
   return text.length > SUMMARY_MAX
     ? `${text.slice(0, SUMMARY_MAX - 1)}…`
     : text;
@@ -103,7 +105,7 @@ const STATUS = {
 } as const;
 
 /** A tool call: name, short argument summary and status; expands to the full input and output. */
-export function ToolCard({ view }: { view: ToolView }) {
+export function ToolCard({ view, anchor }: { view: ToolView; /** `data-item-id` when this card is not its own row (a run of calls). */ anchor?: string }) {
   const full = view.output === undefined ? null : formatValue(view.output);
   const output =
     full !== null && full.length > OUTPUT_MAX
@@ -115,7 +117,7 @@ export function ToolCard({ view }: { view: ToolView }) {
   const page = browserTitle === null || recording !== null ? null : pageOf(view);
   const { actions } = usePreviewPanel();
   return (
-    <div data-shimmer={view.status === "running" ? "row" : undefined}>
+    <div data-shimmer={view.status === "running" ? "row" : undefined} data-item-id={anchor}>
       <ChatToolCalls
         calls={[
           {

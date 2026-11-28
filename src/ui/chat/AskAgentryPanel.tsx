@@ -32,7 +32,9 @@ import { ErrorBanner, isUnavailable } from '@/ui/errors/ErrorBanner'
 import { withSettings, useChatSettings } from './chat-settings'
 import { Composer, type EffortChoice } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
-import { Message } from './Message'
+import { groupTurns } from './group-turns'
+import { Message, renderRows } from './Message'
+import { TurnGroup } from './TurnGroup'
 import { StreamScrollButton } from './StreamScrollButton'
 import { SubagentActions, SubagentItems } from './SubagentCard'
 import { Thinking } from './Thinking'
@@ -164,6 +166,8 @@ function HelperStart({ onSessionCreated }: { onSessionCreated(id: string): void 
 /** An existing helper chat: live stream, cards and a composer, all in the drawer. */
 function HelperChat({ sessionId, onNewChat }: { sessionId: string; onNewChat(): void }) {
   const { state, loaded, ready, firstSend, connection, closedReason, send, stop, answer } = useConversation(sessionId)
+  // Turns the user opened (steps are folded by default, like the full chat's compact mode).
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [session, setSession] = useState<OAIAgentSession | null>(null)
   const [models, setModels] = useState<string[] | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -299,7 +303,27 @@ function HelperChat({ sessionId, onNewChat }: { sessionId: string; onNewChat(): 
           <SubagentItems.Provider value={subagentItems}>
             <SubagentActions.Provider value={split.bySubagent}>
               <ChatMessageList isStreaming={streaming}>
-                {split.items.map((view) => <Message key={view.id} view={view} answer={answer} />)}
+                {groupTurns(split.items, state.turnOf, state.turns, { live: true }).map((entry) => {
+                  const row = (view: (typeof split.items)[number]) => <Message key={view.id} view={view} answer={answer} />
+                  if (entry.type === 'view') return row(entry.view)
+                  return (
+                    <TurnGroup
+                      key={`group-${entry.turnId}`}
+                      group={entry}
+                      open={expanded.has(entry.turnId)}
+                      onOpenChange={(open) =>
+                        setExpanded((cur) => {
+                          const next = new Set(cur)
+                          if (open) next.add(entry.turnId)
+                          else next.delete(entry.turnId)
+                          return next
+                        })
+                      }
+                    >
+                      {renderRows(entry.views, row)}
+                    </TurnGroup>
+                  )
+                })}
                 {waiting && <Thinking label={waitingLabel(!loaded || !ready, state.status, firstSend, ready)} />}
               </ChatMessageList>
             </SubagentActions.Provider>

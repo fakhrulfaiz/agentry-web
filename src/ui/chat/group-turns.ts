@@ -12,10 +12,11 @@ export type ChatEntry =
 
 const FINISHED = new Set<OAITurn['status']>(['completed', 'failed', 'cancelled'])
 
-/** Rows that belong to the process of a turn (everything but the final answer, files, commands, notices and actions). */
+/** Rows that belong to the process of a turn (everything but the final answer, files, commands, notices, actions and Connect buttons). */
 function isProcess(v: MessageView): boolean {
-  // A failed tool call stays visible as its own row; it is never folded away.
-  return v.kind === 'reasoning' || (v.kind === 'tool' && v.status !== 'failed') || v.kind === 'subagent' || (v.kind === 'assistant' && v.text.trim() !== '')
+  // A failed tool call stays visible as its own row; it is never folded away. So does a call that carries a
+  // Connect button: the user has to act on it, so it must not hide inside a collapsed group.
+  return v.kind === 'reasoning' || (v.kind === 'tool' && v.status !== 'failed' && !v.connect) || v.kind === 'subagent' || (v.kind === 'assistant' && v.text.trim() !== '')
 }
 
 const COMMANDS = new Set(['command', 'bash', 'shell', 'sandbox_exec', 'run_code'])

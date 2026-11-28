@@ -29,6 +29,36 @@ const styles = stylex.create({
   highlight: { backgroundColor: colorVars['--color-accent-muted'], borderRadius: radiusVars['--radius-container'] },
 })
 
+/**
+ * Consecutive tool calls as one tight list in a single row, instead of one chat row each (each row brings the
+ * message list's full gap, which made a run of quick lookups take a screen). Other views go through `row`.
+ */
+export function renderRows(views: readonly MessageView[], row: (view: MessageView) => ReactNode): ReactNode[] {
+  const out: ReactNode[] = []
+  let run: Extract<MessageView, { kind: 'tool' }>[] = []
+  const flush = () => {
+    if (run.length === 1) out.push(row(run[0]!))
+    else if (run.length > 1) {
+      const first = run[0]!
+      out.push(
+        <AssistantRow key={`tools-${first.id}`}>
+          <VStack gap={0}>{run.map((view) => <ToolCard key={view.id} view={view} anchor={view.id} />)}</VStack>
+        </AssistantRow>,
+      )
+    }
+    run = []
+  }
+  for (const view of views) {
+    if (view.kind === 'tool') run.push(view)
+    else {
+      flush()
+      out.push(row(view))
+    }
+  }
+  flush()
+  return out
+}
+
 /** The attribute the trace finds a row by (`data-item-id`, the view id); top-level rows only. */
 export const ITEM_ANCHOR = 'data-item-id'
 

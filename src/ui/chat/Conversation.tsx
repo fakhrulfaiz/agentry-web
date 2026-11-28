@@ -59,7 +59,7 @@ import { useChatSettings, withSettings } from './chat-settings'
 import type { UserFile } from '@/chat/attachments'
 import { Composer } from './Composer'
 import { ConnectionPill } from './ConnectionPill'
-import { Message } from './Message'
+import { Message, renderRows } from './Message'
 import { scrollToItem } from './reveal'
 import { StreamScrollButton } from './StreamScrollButton'
 import { DeliveredFiles, useSessionDeliverables } from './SessionArtifacts'
@@ -517,7 +517,7 @@ export function Conversation({ sessionId }: { sessionId: string }) {
                         })
                       }
                     >
-                      {entry.views.map(row)}
+                      {renderRows(entry.views, row)}
                     </TurnGroup>
                   )
                   return card ? [group, ...card] : group

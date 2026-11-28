@@ -13,7 +13,8 @@ export const appLabel = (toolkit: string | null): string => (toolkit ? (NAMES[to
 
 export function ConnectCard({ request }: { request: ConnectRequest }) {
   return (
-    <HStack gap={3} vAlign="center" paddingBlock={2}>
+    // Wraps in a narrow column (the Ask Agentry drawer) so the button keeps its full label.
+    <HStack gap={3} vAlign="center" paddingBlock={2} wrap="wrap">
       <Button label={`Connect ${appLabel(request.toolkit)}`} variant="primary" size="sm" href={request.url} target="_blank" rel="noopener noreferrer" endContent={<ArrowUpRightIcon width={16} height={16} aria-hidden />} />
       <Text type="supporting" color="secondary">Sign in opens in a new tab. Come back here when you are done.</Text>
     </HStack>
@@ -23,7 +24,7 @@ export function ConnectCard({ request }: { request: ConnectRequest }) {
 /** A failed call for an app that is not connected: a link to the connectors page, where the user can connect it. */
 export function ConnectSettingsLink({ toolkit }: { toolkit: string }) {
   return (
-    <HStack gap={3} vAlign="center" paddingBlock={2}>
+    <HStack gap={3} vAlign="center" paddingBlock={2} wrap="wrap">
       <Button label={`Connect ${appLabel(toolkit)}`} variant="primary" size="sm" href="/settings/connectors" endContent={<ArrowUpRightIcon width={16} height={16} aria-hidden />} />
       <Text type="supporting" color="secondary">{appLabel(toolkit)} is not connected yet. Connect it in Settings, then ask again.</Text>
     </HStack>

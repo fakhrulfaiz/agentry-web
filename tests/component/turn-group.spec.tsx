@@ -48,6 +48,13 @@ describe('groupTurns', () => {
     const entries = groupTurns(failed, new Map([...turnOf, ['f', 't1']]), [turn('completed')])
     expect(entries.map((e) => (e.type === 'group' ? 'group' : e.view.id))).toEqual(['u', 'group', 'f', 'a'])
   })
+
+  it('keeps a call with a Connect button visible outside the folded steps', () => {
+    const connect = { toolkit: 'googlecalendar', url: 'https://connect.composio.dev/link/x', status: 'initiated' as const }
+    const withConnect: MessageView[] = [...items.slice(0, 3), { kind: 'tool', id: 'c', callId: 'c', name: 'apps_connect', args: {}, status: 'done', connect }, items[3]!]
+    const entries = groupTurns(withConnect, new Map([...turnOf, ['c', 't1']]), [turn('completed')])
+    expect(entries.map((e) => (e.type === 'group' ? 'group' : e.view.id))).toEqual(['u', 'group', 'c', 'a'])
+  })
   it('folds a finished turn above its final answer', () => {
     const entries = groupTurns(items, turnOf, [turn('completed')])
     expect(entries.map((e) => (e.type === 'group' ? 'group' : e.view.id))).toEqual(['u', 'group', 'a'])
