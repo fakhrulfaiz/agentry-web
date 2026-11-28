@@ -10,6 +10,7 @@
  * into a drawer.
  */
 import { Button } from '@astryxdesign/core/Button'
+import { Divider } from '@astryxdesign/core/Divider'
 import { DropdownMenu, DropdownMenuDivider, DropdownMenuGroup, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@astryxdesign/core/DropdownMenu'
 import { StackItem } from '@astryxdesign/core/Layout'
 import { IconButton } from '@astryxdesign/core/IconButton'
@@ -22,7 +23,7 @@ import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { useToast } from '@astryxdesign/core/Toast'
 import { VStack } from '@astryxdesign/core/VStack'
-import { ChatBubbleLeftIcon, ChevronDownIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ChatBubbleLeftIcon, AdjustmentsHorizontalIcon, FolderIcon, FolderPlusIcon, ArchiveBoxIcon, XMarkIcon, ClockIcon, MagnifyingGlassIcon, PencilSquareIcon, QueueListIcon, BarsArrowDownIcon, StarIcon, PuzzlePieceIcon, RectangleStackIcon, ServerStackIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import * as stylex from '@stylexjs/stylex'
 import { usePathname, useRouter } from 'next/navigation'
 import type React from 'react'
@@ -36,6 +37,7 @@ import { announceProjects, useProjectChanges } from './project-events'
 import { groupSessionsForSidebar, type SidebarSection } from './project-groups'
 import { DeleteDialog, isStarred, RenameDialog, SESSIONS_CHANGED, useSessionChanges, useStarToggle } from './session-actions'
 import { UserMenu, type ShellIdentity } from './UserMenu'
+import { SectionHeader } from './SectionHeader'
 import { DEFAULT_VIEW, groupByEnvironment, orderProjects, orderSessions, readView, writeView, type GroupBy, type OrderBy, type ShowChats, type SidebarView } from './sidebar-view'
 
 const styles = stylex.create({
@@ -69,6 +71,7 @@ function ChatRow({ label, href, isSelected, items }: { label: string; href: stri
       label={label}
       href={href}
       isSelected={isSelected}
+      size="sm"
       {...hover}
       actions={
         <span {...hover} {...stylex.props(styles.rowActions, (hot || open) && styles.rowActionsShown)}>
@@ -82,6 +85,7 @@ function ChatRow({ label, href, isSelected, items }: { label: string; href: stri
 export const SIDEBAR_COLLAPSED_KEY = 'agentry.sidebar.collapsed'
 export const PAGE_SIZE = 30
 const RECENTS_HIDDEN_KEY = 'agentry_recents_hidden'
+const PROJECTS_HIDDEN_KEY = 'agentry_projects_hidden'
 
 /** Most starred chats the Starred section loads. */
 const STARRED_LIMIT = 100
@@ -176,6 +180,19 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   }, [view.group])
   // Folding Recents away is remembered per browser; storage can be unavailable, so it is best-effort.
   const [recentsHidden, setRecentsHidden] = useState(false)
+  const [projectsHidden, setProjectsHidden] = useState(false)
+  useEffect(() => {
+    try {
+      setProjectsHidden(window.localStorage.getItem(PROJECTS_HIDDEN_KEY) === '1')
+    } catch {}
+  }, [])
+  const toggleProjects = () =>
+    setProjectsHidden((hidden) => {
+      try {
+        window.localStorage.setItem(PROJECTS_HIDDEN_KEY, hidden ? '0' : '1')
+      } catch {}
+      return !hidden
+    })
   useEffect(() => {
     try {
       setRecentsHidden(window.localStorage.getItem(RECENTS_HIDDEN_KEY) === '1')
@@ -411,6 +428,7 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         key={project.id}
         label={project.name}
         icon={FolderIcon}
+        size="sm"
         collapsible={{ isCollapsed: !isExpanded, onCollapsedChange: () => toggleProject(project.id) }}
         actions={
           <MoreMenu
@@ -442,8 +460,9 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
   }
 
   const projectsSection = (
-    <SideNavSection title="Projects">
-      {orderProjects(projectSections.map((section) => section.project), view.order).map(projectItem)}
+    <SideNavSection title="Projects" isHeaderHidden>
+      <SectionHeader label="Projects" isOpen={!projectsHidden} onToggle={toggleProjects} />
+      {!projectsHidden && orderProjects(projectSections.map((section) => section.project), view.order).map(projectItem)}
     </SideNavSection>
   )
 
@@ -480,7 +499,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
 
   // The Workspace header: parent of Projects and Recents, with search and the view options.
   const workspaceHeader = (
-    <VStack gap={2} paddingInline={2} paddingBlockStart={2}>
+    <VStack gap={2} paddingInline={2} paddingBlockStart={1}>
+      <Divider />
       <HStack gap={1} vAlign="center">
         <StackItem size="fill">
           <Text weight="semibold">Workspace</Text>
@@ -520,33 +540,38 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
         header={<SideNavHeading heading="Agentry" headingHref="/" icon={<Icon icon={AgentryMark} color="accent" />} />}
         topContent={
           <VStack gap={2}>
-            <SideNavItem label="New chat" icon={PencilSquareIcon} href="/" isSelected={pathname === '/'} onClick={(e) => { e.preventDefault(); router.push('/?fresh=1') }} />
+            <SideNavItem label="New chat" icon={PencilSquareIcon} href="/" isSelected={pathname === '/'} size="sm" onClick={(e) => { e.preventDefault(); router.push('/?fresh=1') }} />
             <SideNavItem
               label="Scheduled"
+              size="sm"
               icon={ClockIcon}
               href="/scheduled"
               isSelected={pathname.startsWith('/scheduled')}
             />
             <SideNavItem
               label="Agents"
+              size="sm"
               icon={UserGroupIcon}
               href="/agents"
               isSelected={pathname.startsWith('/agents')}
             />
             <SideNavItem
               label="Artifacts"
+              size="sm"
               icon={RectangleStackIcon}
               href="/artifacts"
               isSelected={pathname.startsWith('/artifacts')}
             />
             <SideNavItem
               label="Plugins"
+              size="sm"
               icon={PuzzlePieceIcon}
               href="/plugins"
               isSelected={pathname.startsWith('/plugins')}
             />
             <SideNavItem
               label="Sandboxes"
+              size="sm"
               icon={ServerStackIcon}
               href="/sandboxes"
               isSelected={pathname.startsWith('/sandboxes')}
@@ -573,18 +598,8 @@ export function Sidebar({ identity }: { identity: ShellIdentity }) {
             {projectSections.length > 0 && projectsSection}
             {starred.length > 0 && <SideNavSection title="Starred">{rows(orderSessions(starred, view.order))}</SideNavSection>}
             {recents.length > 0 && (
-              <SideNavSection
-                title="Recents"
-                endContent={
-                  <IconButton
-                    label={recentsHidden ? 'Show recents' : 'Hide recents'}
-                    icon={<Icon icon={recentsHidden ? ChevronRightIcon : ChevronDownIcon} size="sm" />}
-                    size="sm"
-                    variant="ghost"
-                    onClick={toggleRecents}
-                  />
-                }
-              >
+              <SideNavSection title="Recents" isHeaderHidden>
+                <SectionHeader label="Recents" isOpen={!recentsHidden} onToggle={toggleRecents} />
                 {!recentsHidden && rows(recents)}
               </SideNavSection>
             )}
